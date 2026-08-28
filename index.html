@@ -1,0 +1,401 @@
+
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#14171C">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Muscu">
+<link rel="manifest" href="manifest.json">
+<link rel="apple-touch-icon" href="icon-192.png">
+<title>Muscu</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Anton&family=Inter+Tight:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+:root{
+  --iron:#14171C; --plate:#1D2128; --edge:#2C323C;
+  --chalk:#F2F4F7; --dust:#8E96A3; --amber:#F5B700;
+  --p25:#D32F2F; --p20:#1E6FD9; --p15:#F5B700; --p10:#3F9E4D; --p5:#E8EAEE; --p2:#9AA3B0;
+  --r:14px;
+}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html,body{margin:0;height:100%}
+body{
+  background:var(--iron); color:var(--chalk);
+  font-family:'Inter Tight',system-ui,sans-serif; font-size:16px;
+  padding:env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
+  overscroll-behavior-y:contain;
+}
+h1,h2,h3,.num{font-family:'Anton',Impact,sans-serif;font-weight:400;letter-spacing:.01em;margin:0}
+.num{font-variant-numeric:tabular-nums}
+.wrap{max-width:560px;margin:0 auto;padding:20px 18px 96px}
+.eyebrow{font-size:11px;letter-spacing:.18em;text-transform:uppercase;color:var(--dust);font-weight:600}
+button{font-family:inherit;font-size:16px;border:0;cursor:pointer;color:inherit;background:none}
+.hidden{display:none!important}
+
+/* Connexion */
+#login{min-height:100dvh;display:flex;flex-direction:column;justify-content:center;align-items:center;gap:28px;padding:32px;text-align:center}
+#login h1{font-size:clamp(52px,17vw,84px);line-height:.88;text-transform:uppercase}
+#login h1 span{display:block;color:var(--amber)}
+#login p{color:var(--dust);max-width:32ch;margin:0;line-height:1.5}
+
+/* En-tête */
+header{display:flex;align-items:baseline;justify-content:space-between;gap:12px;margin-bottom:22px}
+header h2{font-size:30px;text-transform:uppercase;line-height:1}
+.streak{font-size:13px;color:var(--dust);font-variant-numeric:tabular-nums}
+
+/* Sélecteur de jour */
+.days{display:flex;gap:8px;overflow-x:auto;padding-bottom:14px;margin-bottom:6px;scrollbar-width:none}
+.days::-webkit-scrollbar{display:none}
+.day{flex:0 0 auto;padding:11px 18px;border-radius:999px;background:var(--plate);border:1px solid var(--edge);
+  font-weight:600;font-size:14px;white-space:nowrap;min-height:44px}
+.day[aria-pressed="true"]{background:var(--amber);color:#14171C;border-color:var(--amber)}
+
+/* Carte exercice */
+.card{background:var(--plate);border:1px solid var(--edge);border-radius:var(--r);padding:16px;margin-bottom:12px;
+  display:flex;align-items:center;gap:14px;width:100%;text-align:left;min-height:76px}
+.card:active{transform:scale(.99)}
+.card .body{flex:1;min-width:0}
+.card .nom{font-size:17px;font-weight:600;line-height:1.25}
+.card .meta{font-size:13px;color:var(--dust);margin-top:3px}
+.card .done{width:34px;height:34px;border-radius:50%;border:2px solid var(--edge);display:grid;place-items:center;
+  font-size:13px;font-weight:700;flex:0 0 auto;font-variant-numeric:tabular-nums}
+.card .done.full{background:var(--amber);border-color:var(--amber);color:#14171C}
+
+/* Disques — élément signature */
+.bar{display:flex;align-items:center;gap:2px;margin-top:7px;height:16px}
+.bar i{display:block;width:7px;border-radius:2px;border:1px solid rgba(0,0,0,.35)}
+.bar .rod{width:14px;height:3px;background:var(--p2);border-radius:2px;border:0}
+
+/* Panneau de saisie */
+#logger{position:fixed;inset:0;background:var(--iron);z-index:20;display:flex;flex-direction:column;
+  padding:20px 18px calc(20px + env(safe-area-inset-bottom));animation:up .22s ease}
+@keyframes up{from{transform:translateY(14px);opacity:0}to{transform:none;opacity:1}}
+@media (prefers-reduced-motion:reduce){#logger{animation:none}}
+#logger .top{display:flex;justify-content:space-between;align-items:center;margin-bottom:6px}
+#logger h3{font-size:26px;text-transform:uppercase;line-height:1.05;margin:10px 0 2px}
+.consigne{color:var(--dust);font-size:14px;line-height:1.45}
+.steppers{display:flex;gap:14px;margin:auto 0}
+.stepper{flex:1;background:var(--plate);border:1px solid var(--edge);border-radius:var(--r);padding:14px 10px;text-align:center}
+.stepper .val{font-size:52px;line-height:1;margin:10px 0}
+.stepper .row{display:flex;gap:8px}
+.stepper .row button{flex:1;height:52px;border-radius:10px;background:#262C36;font-size:20px;font-weight:600}
+.stepper .row button:active{background:#333B47}
+.valider{width:100%;min-height:60px;border-radius:var(--r);background:var(--amber);color:#14171C;
+  font-size:18px;font-weight:700;letter-spacing:.02em;margin-top:16px}
+.valider:disabled{opacity:.45}
+.sets{display:flex;flex-wrap:wrap;gap:8px;margin-top:14px;min-height:34px}
+.set{background:var(--plate);border:1px solid var(--edge);border-radius:8px;padding:7px 11px;font-size:14px;
+  font-variant-numeric:tabular-nums}
+.close{font-size:15px;color:var(--dust);padding:10px 4px}
+
+/* Minuteur de repos */
+#repos{position:fixed;left:0;right:0;bottom:0;background:var(--amber);color:#14171C;padding:14px 18px;
+  display:flex;justify-content:space-between;align-items:center;z-index:30;
+  padding-bottom:calc(14px + env(safe-area-inset-bottom))}
+#repos .t{font-size:30px;font-family:'Anton';font-variant-numeric:tabular-nums}
+#repos button{font-weight:700;font-size:14px;text-decoration:underline}
+
+/* Coach */
+.athlete{display:flex;justify-content:space-between;align-items:center;gap:12px;padding:15px 16px;
+  background:var(--plate);border:1px solid var(--edge);border-radius:var(--r);margin-bottom:10px;width:100%;text-align:left}
+.tag{font-size:12px;font-weight:700;padding:5px 9px;border-radius:999px;background:#262C36;color:var(--dust);white-space:nowrap}
+.tag.warn{background:rgba(211,47,47,.16);color:#FF7A7A}
+.nav{position:fixed;bottom:0;left:0;right:0;background:rgba(20,23,28,.94);backdrop-filter:blur(8px);
+  border-top:1px solid var(--edge);display:flex;padding-bottom:env(safe-area-inset-bottom)}
+.nav button{flex:1;padding:15px 0;font-size:13px;font-weight:600;color:var(--dust)}
+.nav button[aria-pressed="true"]{color:var(--amber)}
+.empty{color:var(--dust);text-align:center;padding:48px 20px;line-height:1.6}
+.toast{position:fixed;top:16px;left:50%;transform:translateX(-50%);background:var(--plate);border:1px solid var(--edge);
+  padding:11px 16px;border-radius:10px;font-size:14px;z-index:50}
+:focus-visible{outline:2px solid var(--amber);outline-offset:2px}
+</style>
+</head>
+<body>
+
+<section id="login">
+  <h1>Salle<span>de force</span></h1>
+  <p>Connectez-vous avec le compte Google que votre coach a inscrit.</p>
+  <div id="gbtn"></div>
+  <p id="loginErr" class="hidden" style="color:#FF7A7A"></p>
+</section>
+
+<main id="app" class="wrap hidden"></main>
+
+<nav id="nav" class="nav hidden">
+  <button data-vue="seance" aria-pressed="true">Séance</button>
+  <button data-vue="progres">Progrès</button>
+  <button data-vue="coach" class="hidden">Coach</button>
+</nav>
+
+<div id="logger" class="hidden"></div>
+<div id="repos" class="hidden"></div>
+
+<script src="https://accounts.google.com/gsi/client" async defer></script>
+<script>
+// ── Configuration ────────────────────────────────────────────
+const API = 'A_REMPLACER_URL_WEB_APP';                  // URL /exec du déploiement Apps Script
+const CLIENT_ID = 'A_REMPLACER.apps.googleusercontent.com';
+
+// ── État ─────────────────────────────────────────────────────
+const S = { token:null, moi:null, jour:null, exos:[], seanceId:null, faits:{}, vue:'seance', timer:null };
+const $ = s => document.querySelector(s);
+
+// ── Appels API ───────────────────────────────────────────────
+async function api(action, payload = {}) {
+  const r = await fetch(API, {
+    method:'POST',
+    headers:{'Content-Type':'text/plain;charset=utf-8'},   // évite le préflight CORS
+    body:JSON.stringify({ token:S.token, action, payload })
+  });
+  const j = await r.json();
+  if (!j.ok) {
+    if (/TOKEN/.test(j.error)) return reconnexion();
+    throw new Error(j.error);
+  }
+  return j.data;
+}
+
+function toast(msg) {
+  const t = document.createElement('div');
+  t.className = 'toast'; t.textContent = msg;
+  document.body.appendChild(t);
+  setTimeout(() => t.remove(), 2600);
+}
+
+// ── Connexion Google ─────────────────────────────────────────
+window.onload = () => {
+  google.accounts.id.initialize({ client_id:CLIENT_ID, callback:onGoogle, auto_select:true });
+  google.accounts.id.renderButton($('#gbtn'), { theme:'filled_black', size:'large', shape:'pill', text:'signin_with', locale:'fr' });
+  google.accounts.id.prompt();
+};
+
+async function onGoogle(res) {
+  S.token = res.credential;
+  try {
+    S.moi = await api('bootstrap');
+  } catch (e) {
+    $('#loginErr').textContent = e.message === 'NON_INSCRIT'
+      ? 'Ce compte n\'est pas encore inscrit. Demandez à votre coach de vous ajouter.'
+      : 'Connexion impossible : ' + e.message;
+    $('#loginErr').classList.remove('hidden');
+    return;
+  }
+  $('#login').classList.add('hidden');
+  $('#app').classList.remove('hidden');
+  $('#nav').classList.remove('hidden');
+  if (S.moi.estCoach) document.querySelector('[data-vue="coach"]').classList.remove('hidden');
+  S.jour = S.moi.jours[0] || null;
+  rendre();
+}
+
+function reconnexion() {
+  S.token = null;
+  $('#app').classList.add('hidden'); $('#nav').classList.add('hidden');
+  $('#login').classList.remove('hidden');
+  google.accounts.id.prompt();
+  throw new Error('SESSION_EXPIREE');
+}
+
+// ── Navigation ───────────────────────────────────────────────
+$('#nav').addEventListener('click', e => {
+  const b = e.target.closest('button'); if (!b) return;
+  S.vue = b.dataset.vue;
+  document.querySelectorAll('#nav button').forEach(x => x.setAttribute('aria-pressed', x === b));
+  rendre();
+});
+
+async function rendre() {
+  if (S.vue === 'seance') return vueSeance();
+  if (S.vue === 'progres') return vueProgres();
+  if (S.vue === 'coach') return vueCoach();
+}
+
+// ── Vue séance ───────────────────────────────────────────────
+async function vueSeance() {
+  const app = $('#app');
+  if (!S.moi.jours.length) {
+    app.innerHTML = `<div class="empty">Aucun programme pour l'instant.<br>Votre coach doit vous en assigner un.</div>`;
+    return;
+  }
+  app.innerHTML = `
+    <header>
+      <h2>${S.moi.nom.split(' ')[0] || 'Salut'}</h2>
+      <span class="streak num">${S.moi.nbSeances} séance${S.moi.nbSeances > 1 ? 's' : ''}</span>
+    </header>
+    <div class="eyebrow">Programme</div>
+    <div class="days">${S.moi.jours.map(j =>
+      `<button class="day" data-jour="${j}" aria-pressed="${j === S.jour}">${j}</button>`).join('')}</div>
+    <div id="liste"><div class="empty">Chargement…</div></div>`;
+
+  app.querySelectorAll('.day').forEach(b => b.onclick = () => {
+    S.jour = b.dataset.jour; S.seanceId = null; S.faits = {}; vueSeance();
+  });
+
+  S.exos = await api('seance', { jour:S.jour });
+  $('#liste').innerHTML = S.exos.map((e, i) => {
+    const n = (S.faits[e.exercice_id] || []).length;
+    return `<button class="card" data-i="${i}">
+      <div class="body">
+        <div class="nom">${e.nom}</div>
+        <div class="meta">${e.series} × ${e.reps_cible} ${e.charge_cible ? '· ' + e.charge_cible + ' kg' : ''}
+          ${e.dernier ? ' · dernière fois ' + e.dernier.charge + ' kg' : ''}</div>
+        ${e.charge_cible ? disques(e.charge_cible) : ''}
+      </div>
+      <div class="done ${n >= e.series ? 'full' : ''}">${n}/${e.series}</div>
+    </button>`;
+  }).join('');
+  $('#liste').querySelectorAll('.card').forEach(c => c.onclick = () => ouvrirLogger(Number(c.dataset.i)));
+}
+
+/** Décompose une charge en disques olympiques colorés (barre de 20 kg). */
+function disques(kg) {
+  const parSide = (Number(kg) - (S.moi.barKg || 20)) / 2;
+  if (!(parSide > 0)) return '';
+  const dispo = [[25,'var(--p25)',15],[20,'var(--p20)',14],[15,'var(--p15)',13],
+                 [10,'var(--p10)',11],[5,'var(--p5)',9],[2.5,'var(--p2)',7],[1.25,'var(--p2)',5]];
+  let reste = parSide, html = '<span class="bar"><i class="rod"></i>';
+  dispo.forEach(([p, c, h]) => {
+    while (reste >= p - 0.01) { html += `<i style="background:${c};height:${h}px"></i>`; reste -= p; }
+  });
+  return html + '<i class="rod"></i></span>';
+}
+
+// ── Saisie des séries ────────────────────────────────────────
+async function ouvrirLogger(i) {
+  const e = S.exos[i];
+  if (!S.seanceId) S.seanceId = (await api('demarrer', { jour:S.jour })).seance_id;
+
+  let reps = Number(String(e.reps_cible).split('-')[0]) || 10;
+  let charge = e.dernier ? e.dernier.charge : (e.charge_cible || 20);
+
+  const L = $('#logger');
+  L.classList.remove('hidden');
+  L.innerHTML = `
+    <div class="top"><button class="close">← Retour</button>
+      <span class="eyebrow">${e.groupe}</span></div>
+    <h3>${e.nom}</h3>
+    <p class="consigne">${e.consigne || ''}</p>
+    <div class="sets" id="sets"></div>
+    <div class="steppers">
+      <div class="stepper"><div class="eyebrow">Répétitions</div>
+        <div class="val num" id="vReps">${reps}</div>
+        <div class="row"><button data-r="-1">−</button><button data-r="1">+</button></div></div>
+      <div class="stepper"><div class="eyebrow">Charge (kg)</div>
+        <div class="val num" id="vCharge">${charge}</div>
+        <div class="row"><button data-c="-2.5">−</button><button data-c="2.5">+</button></div></div>
+    </div>
+    <button class="valider">Valider la série ${(S.faits[e.exercice_id] || []).length + 1}</button>`;
+
+  const maj = () => {
+    $('#vReps').textContent = reps;
+    $('#vCharge').textContent = charge;
+    L.querySelector('.valider').textContent = `Valider la série ${(S.faits[e.exercice_id] || []).length + 1}`;
+    $('#sets').innerHTML = (S.faits[e.exercice_id] || [])
+      .map((s, n) => `<span class="set">${n + 1} · ${s.reps} × ${s.charge} kg</span>`).join('');
+  };
+  maj();
+
+  L.querySelectorAll('[data-r]').forEach(b => b.onclick = () => { reps = Math.max(1, reps + Number(b.dataset.r)); maj(); });
+  L.querySelectorAll('[data-c]').forEach(b => b.onclick = () => { charge = Math.max(0, charge + Number(b.dataset.c)); maj(); });
+  L.querySelector('.close').onclick = () => { L.classList.add('hidden'); vueSeance(); };
+
+  L.querySelector('.valider').onclick = async function () {
+    this.disabled = true;
+    try {
+      const num = (S.faits[e.exercice_id] || []).length + 1;
+      await api('serie', { seance_id:S.seanceId, exercice_id:e.exercice_id, serie_num:num, reps, charge });
+      (S.faits[e.exercice_id] = S.faits[e.exercice_id] || []).push({ reps, charge });
+      maj();
+      lancerRepos(e.repos_s);
+      if (S.faits[e.exercice_id].length >= e.series) { L.classList.add('hidden'); vueSeance(); }
+    } catch (err) { toast('Non enregistré : ' + err.message); }
+    this.disabled = false;
+  };
+}
+
+// ── Minuteur de repos ────────────────────────────────────────
+function lancerRepos(secondes) {
+  clearInterval(S.timer);
+  let t = secondes || 90;
+  const box = $('#repos');
+  box.classList.remove('hidden');
+  const peindre = () => box.innerHTML =
+    `<span><span class="eyebrow" style="color:#14171C">Repos</span><br>
+     <span class="t">${String(Math.floor(t / 60))}:${String(t % 60).padStart(2, '0')}</span></span>
+     <button id="skip">Passer</button>`;
+  peindre();
+  box.querySelector('#skip').onclick = () => { clearInterval(S.timer); box.classList.add('hidden'); };
+  S.timer = setInterval(() => {
+    t--; peindre();
+    box.querySelector('#skip').onclick = () => { clearInterval(S.timer); box.classList.add('hidden'); };
+    if (t <= 0) { clearInterval(S.timer); box.classList.add('hidden'); bip(); }
+  }, 1000);
+}
+
+function bip() {
+  try {
+    const c = new (window.AudioContext || window.webkitAudioContext)();
+    const o = c.createOscillator(), g = c.createGain();
+    o.frequency.value = 880; o.connect(g); g.connect(c.destination);
+    g.gain.setValueAtTime(.25, c.currentTime);
+    g.gain.exponentialRampToValueAtTime(.001, c.currentTime + .4);
+    o.start(); o.stop(c.currentTime + .4);
+    if (navigator.vibrate) navigator.vibrate(200);
+  } catch (e) {}
+}
+
+// ── Vue progrès ──────────────────────────────────────────────
+async function vueProgres() {
+  const app = $('#app');
+  app.innerHTML = `<header><h2>Progrès</h2></header><div id="liste"><div class="empty">Chargement…</div></div>`;
+  if (!S.exos.length && S.jour) S.exos = await api('seance', { jour:S.jour });
+  if (!S.exos.length) { $('#liste').innerHTML = `<div class="empty">Enregistrez une première séance pour voir vos courbes.</div>`; return; }
+
+  const blocs = await Promise.all(S.exos.map(async e => {
+    const h = await api('historique', { exercice_id:e.exercice_id });
+    if (!h.length) return '';
+    const max = Math.max(...h.map(x => x.charge));
+    return `<div class="card" style="display:block">
+      <div class="nom">${e.nom}</div>
+      <div class="meta">Record ${max} kg · ${h.length} séries enregistrées</div>
+      ${disques(max)}
+      <div class="sets">${h.slice(0, 6).map(x =>
+        `<span class="set">${x.reps} × ${x.charge} kg</span>`).join('')}</div>
+    </div>`;
+  }));
+  $('#liste').innerHTML = blocs.join('') || `<div class="empty">Rien à afficher pour l'instant.</div>`;
+}
+
+// ── Vue coach ────────────────────────────────────────────────
+async function vueCoach() {
+  const app = $('#app');
+  app.innerHTML = `<header><h2>Athlètes</h2></header><div id="liste"><div class="empty">Chargement…</div></div>`;
+  const list = await api('coachAthletes');
+  $('#liste').innerHTML = list.map(a => `
+    <button class="athlete" data-email="${a.email}">
+      <span><strong>${a.nom}</strong><br><span class="meta" style="color:var(--dust);font-size:13px">${a.nbSeances} séances</span></span>
+      <span class="tag ${a.joursDepuis === null || a.joursDepuis >= 10 ? 'warn' : ''}">
+        ${a.joursDepuis === null ? 'jamais venu' : 'il y a ' + a.joursDepuis + ' j'}</span>
+    </button>`).join('') || `<div class="empty">Aucun pratiquant inscrit.<br>Ajoutez-les dans l'onglet Pratiquants du Sheet.</div>`;
+
+  $('#liste').querySelectorAll('.athlete').forEach(b => b.onclick = async () => {
+    const d = await api('coachDetail', { email:b.dataset.email });
+    app.innerHTML = `<header><h2>${b.querySelector('strong').textContent}</h2>
+      <button class="close" onclick="vueCoach()">← Retour</button></header>` +
+      (d.map(s => `<div class="card" style="display:block">
+        <div class="nom">${new Date(s.date).toLocaleDateString('fr-FR')} · ${s.jour}</div>
+        <div class="sets">${s.series.map(x =>
+          `<span class="set">${x.exercice} ${x.reps}×${x.charge}kg</span>`).join('')}</div>
+      </div>`).join('') || `<div class="empty">Aucune séance enregistrée.</div>`);
+  });
+}
+
+// ── Service worker (mode hors ligne) ─────────────────────────
+if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {});
+</script>
+</body>
+</html>
