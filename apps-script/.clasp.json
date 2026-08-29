@@ -1,0 +1,17 @@
+{
+  "scriptId": "1IGvh4SSg-1YAZpO3yjEipg3YucdGG32HMLLSa1VQmhyqBU8g6Sciu09N",
+  "rootDir": "",
+  "projectId": "coaching-musculation",
+  "scriptExtensions": [
+    ".js",
+    ".gs"
+  ],
+  "htmlExtensions": [
+    ".html"
+  ],
+  "jsonExtensions": [
+    ".json"
+  ],
+  "filePushOrder": [],
+  "skipSubdirectories": false
+}

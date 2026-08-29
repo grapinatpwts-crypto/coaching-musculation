@@ -1,0 +1,9 @@
+# Identifiants clasp — ne jamais committer
+.clasprc.json
+.clasp-credentials.json
+node_modules/
+
+# Identifiants OAuth pour « clasp run » — jamais dans le dépôt
+creds.json
+client_secret*.json
+*-creds.json

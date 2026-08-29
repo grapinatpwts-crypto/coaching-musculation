@@ -3,20 +3,26 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="theme-color" content="#14171C">
+<meta name="theme-color" content="#151515">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="Muscu">
 <link rel="manifest" href="manifest.json">
 <link rel="apple-touch-icon" href="icon-192.png">
+<link rel="icon" href="favicon.ico" sizes="any">
 <title>Muscu</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Anton&family=Inter+Tight:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Jost:wght@400;500;600;700&display=swap" rel="stylesheet">
 <style>
 :root{
-  --iron:#14171C; --plate:#1D2128; --edge:#2C323C;
-  --chalk:#F2F4F7; --dust:#8E96A3; --amber:#F5B700;
+  /* Charte Wellness Sport Club — relevée sur wellness-sportclub.fr */
+  --iron:#151515; --plate:#1E1E1E; --edge:#2E2E2E;
+  --chalk:#F4F4F4; --dust:#9A9A9A;
+  /* --brand : aplats uniquement (blanc dessus = 7,4:1).
+     --brand-ink : version éclaircie, seule lisible en texte sur fond sombre (4,8:1).
+     Le rouge officiel #A61E1F ne plafonne qu'à 2,4:1 sur le fond : jamais en texte. */
+  --brand:#A61E1F; --brand-ink:#E05253; --on-brand:#FFFFFF;
   --p25:#D32F2F; --p20:#1E6FD9; --p15:#F5B700; --p10:#3F9E4D; --p5:#E8EAEE; --p2:#9AA3B0;
   --r:14px;
 }
@@ -24,11 +30,11 @@
 html,body{margin:0;height:100%}
 body{
   background:var(--iron); color:var(--chalk);
-  font-family:'Inter Tight',system-ui,sans-serif; font-size:16px;
+  font-family:'Jost',system-ui,sans-serif; font-size:16px;
   padding:env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
   overscroll-behavior-y:contain;
 }
-h1,h2,h3,.num{font-family:'Anton',Impact,sans-serif;font-weight:400;letter-spacing:.01em;margin:0}
+h1,h2,h3,.num{font-family:'Bebas Neue',Impact,sans-serif;font-weight:400;letter-spacing:.01em;margin:0}
 .num{font-variant-numeric:tabular-nums}
 .wrap{max-width:560px;margin:0 auto;padding:20px 18px 96px}
 .eyebrow{font-size:11px;letter-spacing:.18em;text-transform:uppercase;color:var(--dust);font-weight:600}
@@ -38,7 +44,8 @@ button{font-family:inherit;font-size:16px;border:0;cursor:pointer;color:inherit;
 /* Connexion */
 #login{min-height:100dvh;display:flex;flex-direction:column;justify-content:center;align-items:center;gap:28px;padding:32px;text-align:center}
 #login h1{font-size:clamp(52px,17vw,84px);line-height:.88;text-transform:uppercase}
-#login h1 span{display:block;color:var(--amber)}
+#marque{width:min(210px,52vw);height:auto}
+#login h1 span{display:block;color:var(--brand-ink)}
 #login p{color:var(--dust);max-width:32ch;margin:0;line-height:1.5}
 
 /* En-tête */
@@ -46,12 +53,25 @@ header{display:flex;align-items:baseline;justify-content:space-between;gap:12px;
 header h2{font-size:30px;text-transform:uppercase;line-height:1}
 .streak{font-size:13px;color:var(--dust);font-variant-numeric:tabular-nums}
 
+/* Bloc : plusieurs exercices enchaînés, un seul repos à la fin du tour */
+.bloc{border-left:3px solid var(--brand);padding-left:12px;margin-bottom:14px}
+.bloc-tete{display:flex;justify-content:space-between;align-items:baseline;gap:10px;margin-bottom:8px}
+.bloc-info{font-size:12px;color:var(--dust);font-variant-numeric:tabular-nums;white-space:nowrap}
+.bloc .card{margin-bottom:8px}
+.bloc .card:last-child{margin-bottom:0}
+.pause{font-size:12px;color:var(--dust);padding:1px 0 9px 3px;font-variant-numeric:tabular-nums}
+.cadence{display:inline-block;font-size:11px;font-weight:700;letter-spacing:.09em;padding:3px 7px;
+  border-radius:5px;background:#2A2A2A;color:var(--dust);font-variant-numeric:tabular-nums}
+.cadbloc{display:flex;align-items:center;gap:10px;margin-top:8px}
+.cad{display:block;overflow:visible}
+.cad.grand{margin-top:10px;max-width:100%;height:auto}
+
 /* Sélecteur de jour */
 .days{display:flex;gap:8px;overflow-x:auto;padding-bottom:14px;margin-bottom:6px;scrollbar-width:none}
 .days::-webkit-scrollbar{display:none}
 .day{flex:0 0 auto;padding:11px 18px;border-radius:999px;background:var(--plate);border:1px solid var(--edge);
   font-weight:600;font-size:14px;white-space:nowrap;min-height:44px}
-.day[aria-pressed="true"]{background:var(--amber);color:#14171C;border-color:var(--amber)}
+.day[aria-pressed="true"]{background:var(--brand);color:var(--on-brand);border-color:var(--brand)}
 
 /* Carte exercice */
 .card{background:var(--plate);border:1px solid var(--edge);border-radius:var(--r);padding:16px;margin-bottom:12px;
@@ -62,7 +82,7 @@ header h2{font-size:30px;text-transform:uppercase;line-height:1}
 .card .meta{font-size:13px;color:var(--dust);margin-top:3px}
 .card .done{width:34px;height:34px;border-radius:50%;border:2px solid var(--edge);display:grid;place-items:center;
   font-size:13px;font-weight:700;flex:0 0 auto;font-variant-numeric:tabular-nums}
-.card .done.full{background:var(--amber);border-color:var(--amber);color:#14171C}
+.card .done.full{background:var(--brand);border-color:var(--brand);color:var(--on-brand)}
 
 /* Disques — élément signature */
 .bar{display:flex;align-items:center;gap:2px;margin-top:7px;height:16px}
@@ -81,9 +101,12 @@ header h2{font-size:30px;text-transform:uppercase;line-height:1}
 .stepper{flex:1;background:var(--plate);border:1px solid var(--edge);border-radius:var(--r);padding:14px 10px;text-align:center}
 .stepper .val{font-size:52px;line-height:1;margin:10px 0}
 .stepper .row{display:flex;gap:8px}
-.stepper .row button{flex:1;height:52px;border-radius:10px;background:#262C36;font-size:20px;font-weight:600}
-.stepper .row button:active{background:#333B47}
-.valider{width:100%;min-height:60px;border-radius:var(--r);background:var(--amber);color:#14171C;
+.stepper .row button{flex:1;height:52px;border-radius:10px;background:#2A2A2A;font-size:20px;font-weight:600}
+.stepper .row button:active{background:#383838}
+.chrono .val.court{color:var(--brand-ink)}
+.chrono .row button{height:46px;font-size:15px}
+.tempo{font-size:12.5px;color:var(--dust);line-height:1.5;margin:6px 0 0;font-variant-numeric:tabular-nums}
+.valider{width:100%;min-height:60px;border-radius:var(--r);background:var(--brand);color:var(--on-brand);
   font-size:18px;font-weight:700;letter-spacing:.02em;margin-top:16px}
 .valider:disabled{opacity:.45}
 .sets{display:flex;flex-wrap:wrap;gap:8px;margin-top:14px;min-height:34px}
@@ -92,30 +115,31 @@ header h2{font-size:30px;text-transform:uppercase;line-height:1}
 .close{font-size:15px;color:var(--dust);padding:10px 4px}
 
 /* Minuteur de repos */
-#repos{position:fixed;left:0;right:0;bottom:0;background:var(--amber);color:#14171C;padding:14px 18px;
+#repos{position:fixed;left:0;right:0;bottom:0;background:var(--brand);color:var(--on-brand);padding:14px 18px;
   display:flex;justify-content:space-between;align-items:center;z-index:30;
   padding-bottom:calc(14px + env(safe-area-inset-bottom))}
-#repos .t{font-size:30px;font-family:'Anton';font-variant-numeric:tabular-nums}
+#repos .t{font-size:30px;font-family:'Bebas Neue';font-variant-numeric:tabular-nums}
 #repos button{font-weight:700;font-size:14px;text-decoration:underline}
 
 /* Coach */
 .athlete{display:flex;justify-content:space-between;align-items:center;gap:12px;padding:15px 16px;
   background:var(--plate);border:1px solid var(--edge);border-radius:var(--r);margin-bottom:10px;width:100%;text-align:left}
-.tag{font-size:12px;font-weight:700;padding:5px 9px;border-radius:999px;background:#262C36;color:var(--dust);white-space:nowrap}
+.tag{font-size:12px;font-weight:700;padding:5px 9px;border-radius:999px;background:#2A2A2A;color:var(--dust);white-space:nowrap}
 .tag.warn{background:rgba(211,47,47,.16);color:#FF7A7A}
 .nav{position:fixed;bottom:0;left:0;right:0;background:rgba(20,23,28,.94);backdrop-filter:blur(8px);
   border-top:1px solid var(--edge);display:flex;padding-bottom:env(safe-area-inset-bottom)}
 .nav button{flex:1;padding:15px 0;font-size:13px;font-weight:600;color:var(--dust)}
-.nav button[aria-pressed="true"]{color:var(--amber)}
+.nav button[aria-pressed="true"]{color:var(--brand-ink)}
 .empty{color:var(--dust);text-align:center;padding:48px 20px;line-height:1.6}
 .toast{position:fixed;top:16px;left:50%;transform:translateX(-50%);background:var(--plate);border:1px solid var(--edge);
   padding:11px 16px;border-radius:10px;font-size:14px;z-index:50}
-:focus-visible{outline:2px solid var(--amber);outline-offset:2px}
+:focus-visible{outline:2px solid var(--brand-ink);outline-offset:2px}
 </style>
 </head>
 <body>
 
 <section id="login">
+  <img id="marque" src="assets/logo-wellness-dark.png" alt="Wellness Sport Club" width="300" height="86">
   <h1>Salle<span>de force</span></h1>
   <p>Connectez-vous avec le compte Google que votre coach a inscrit.</p>
   <div id="gbtn"></div>
@@ -140,7 +164,7 @@ const API = 'https://script.google.com/macros/s/AKfycbw8wC_TmFuLzP8yTrOmX5wH5k3Y
 const CLIENT_ID = '765877661024-r5p4dhadda0i9eb9996ctb8298f7m6h8.apps.googleusercontent.com';
 
 // ── État ─────────────────────────────────────────────────────
-const S = { token:null, moi:null, jour:null, exos:[], seanceId:null, faits:{}, vue:'seance', timer:null };
+const S = { token:null, moi:null, jour:null, exos:[], blocs:[], seanceId:null, faits:{}, vue:'seance', timer:null };
 const $ = s => document.querySelector(s);
 
 // ── Appels API ───────────────────────────────────────────────
@@ -234,20 +258,54 @@ async function vueSeance() {
     S.jour = b.dataset.jour; S.seanceId = null; S.faits = {}; vueSeance();
   });
 
-  S.exos = await api('seance', { jour:S.jour });
-  $('#liste').innerHTML = S.exos.map((e, i) => {
-    const n = (S.faits[e.exercice_id] || []).length;
-    return `<button class="card" data-i="${i}">
-      <div class="body">
-        <div class="nom">${e.nom}</div>
-        <div class="meta">${e.series} × ${e.reps_cible} ${e.charge_cible ? '· ' + e.charge_cible + ' kg' : ''}
-          ${e.dernier ? ' · dernière fois ' + e.dernier.charge + ' kg' : ''}</div>
-        ${e.charge_cible ? disques(e.charge_cible) : ''}
-      </div>
-      <div class="done ${n >= e.series ? 'full' : ''}">${n}/${e.series}</div>
-    </button>`;
+  const blocs = await chargerSeance(S.jour);
+  $('#liste').innerHTML = blocs.map(b => {
+    const cartes = b.exercices.map((e, k) => carte(e) +
+      (k < b.exercices.length - 1 && e.pause_s ? `<div class="pause">↓ ${e.pause_s} s de pause</div>` : '')
+    ).join('');
+    if (b.exercices.length < 2) return cartes;
+    // Superset : on enchaîne les exercices, le repos vient après le tour complet.
+    return `<div class="bloc">
+      <div class="bloc-tete">
+        <span class="eyebrow">Bloc ${b.bloc} · superset</span>
+        <span class="bloc-info">${b.series} tours · ${b.repos_s} s</span>
+      </div>${cartes}</div>`;
   }).join('');
   $('#liste').querySelectorAll('.card').forEach(c => c.onclick = () => ouvrirLogger(Number(c.dataset.i)));
+}
+
+/** Charge la séance en blocs et remet à plat S.exos, index utilisé par le logger. */
+async function chargerSeance(jour) {
+  const blocs = await api('seance', { jour });
+  S.exos = []; S.blocs = blocs;
+  blocs.forEach((b, bi) => b.exercices.forEach((e, ei) => {
+    e._b = bi; e._e = ei; e._i = S.exos.length;   // bloc, rang dans le bloc, index plat
+    S.exos.push(e);
+  }));
+  return blocs;
+}
+
+/** « 45 s », « max », « 1:30 ». */
+function duree(sec) {
+  if (sec === 'max' || sec === 'MAX') return 'max';
+  const n = Number(sec) || 0;
+  return n >= 60 ? `${Math.floor(n / 60)}:${String(n % 60).padStart(2, '0')}` : `${n} s`;
+}
+
+/** Carte d'un exercice. series et repos_s sont hérités de son bloc. */
+function carte(e) {
+  const n = (S.faits[e.exercice_id] || []).length;
+  const cible = e.duree_s ? duree(e.duree_s) : e.reps_cible;
+  return `<button class="card" data-i="${e._i}">
+    <div class="body">
+      <div class="nom">${e.nom}</div>
+      <div class="meta">${e.series} × ${cible}${e.charge_cible ? ' · ' + e.charge_cible + ' kg' : ''}${
+        e.dernier && e.charge_cible ? ' · dernière fois ' + e.dernier.charge + ' kg' : ''}</div>
+      ${e.cadence ? `<div class="cadbloc"><span class="cadence">${e.cadence}</span>${courbeCadence(e.cadence, false)}</div>` : ''}
+      ${e.charge_cible ? disques(e.charge_cible) : ''}
+    </div>
+    <div class="done ${n >= e.series ? 'full' : ''}">${n}/${e.series}</div>
+  </button>`;
 }
 
 /** Décompose une charge en disques olympiques colorés (barre de 20 kg). */
@@ -266,10 +324,18 @@ function disques(kg) {
 // ── Saisie des séries ────────────────────────────────────────
 async function ouvrirLogger(i) {
   const e = S.exos[i];
+  const b = S.blocs[e._b];
   if (!S.seanceId) S.seanceId = (await api('demarrer', { jour:S.jour })).seance_id;
 
+  // Exercice au temps : duree_s renseigné. Un nombre = durée à tenir (décompte),
+  // 'max' = jusqu'à l'échec (le chrono monte).
+  const auTemps = !!e.duree_s;
+  const cible = auTemps && String(e.duree_s).toLowerCase() !== 'max' ? Number(e.duree_s) : 0;
+  const N = b.exercices.length;
+
   let reps = Number(String(e.reps_cible).split('-')[0]) || 10;
-  let charge = e.dernier ? e.dernier.charge : (e.charge_cible || 20);
+  let charge = e.dernier ? e.dernier.charge : (e.charge_cible || (auTemps ? 0 : 20));
+  let ecoule = 0, chrono = null, tourne = false;
 
   const L = $('#logger');
   L.classList.remove('hidden');
@@ -277,12 +343,19 @@ async function ouvrirLogger(i) {
     <div class="top"><button class="close">← Retour</button>
       <span class="eyebrow">${e.groupe}</span></div>
     <h3>${e.nom}</h3>
+    ${N > 1 ? `<span class="eyebrow">Bloc ${b.bloc} · exercice ${e._e + 1} sur ${N}</span>` : ''}
     <p class="consigne">${e.consigne || ''}</p>
+    ${e.cadence ? `<div class="tempo"><strong>Cadence ${e.cadence}</strong><br>${tempo(e.cadence)}
+      ${courbeCadence(e.cadence, true)}</div>` : ''}
     <div class="sets" id="sets"></div>
     <div class="steppers">
+      ${auTemps ? `
+      <div class="stepper chrono"><div class="eyebrow">${cible ? 'À tenir' : 'Durée'}</div>
+        <div class="val num" id="vChrono">${duree(cible || 0)}</div>
+        <div class="row"><button id="go">Démarrer</button></div></div>` : `
       <div class="stepper"><div class="eyebrow">Répétitions</div>
         <div class="val num" id="vReps">${reps}</div>
-        <div class="row"><button data-r="-1">−</button><button data-r="1">+</button></div></div>
+        <div class="row"><button data-r="-1">−</button><button data-r="1">+</button></div></div>`}
       <div class="stepper"><div class="eyebrow">Charge (kg)</div>
         <div class="val num" id="vCharge">${charge}</div>
         <div class="row"><button data-c="-2.5">−</button><button data-c="2.5">+</button></div></div>
@@ -290,48 +363,143 @@ async function ouvrirLogger(i) {
     <button class="valider">Valider la série ${(S.faits[e.exercice_id] || []).length + 1}</button>`;
 
   const maj = () => {
-    $('#vReps').textContent = reps;
+    if (auTemps) {
+      const reste = cible ? Math.max(0, cible - ecoule) : ecoule;
+      const v = $('#vChrono');
+      v.textContent = duree(reste);
+      v.classList.toggle('court', cible > 0 && tourne && reste <= 5);
+    } else {
+      $('#vReps').textContent = reps;
+    }
     $('#vCharge').textContent = charge;
-    L.querySelector('.valider').textContent = `Valider la série ${(S.faits[e.exercice_id] || []).length + 1}`;
-    $('#sets').innerHTML = (S.faits[e.exercice_id] || [])
-      .map((s, n) => `<span class="set">${n + 1} · ${s.reps} × ${s.charge} kg</span>`).join('');
+    const btn = L.querySelector('.valider');
+    btn.textContent = `Valider la série ${(S.faits[e.exercice_id] || []).length + 1}`;
+    btn.disabled = auTemps && ecoule === 0;
+    $('#sets').innerHTML = (S.faits[e.exercice_id] || []).map((x, n) =>
+      `<span class="set">${n + 1} · ${x.duree_s ? duree(x.duree_s) : x.reps + ' × ' + x.charge + ' kg'}</span>`).join('');
   };
   maj();
 
-  L.querySelectorAll('[data-r]').forEach(b => b.onclick = () => { reps = Math.max(1, reps + Number(b.dataset.r)); maj(); });
-  L.querySelectorAll('[data-c]').forEach(b => b.onclick = () => { charge = Math.max(0, charge + Number(b.dataset.c)); maj(); });
-  L.querySelector('.close').onclick = () => { L.classList.add('hidden'); vueSeance(); };
+  if (auTemps) {
+    const go = L.querySelector('#go');
+    const stop = (libelle) => { clearInterval(chrono); chrono = null; tourne = false; go.textContent = libelle; maj(); };
+    go.onclick = () => {
+      if (tourne) return stop('Reprendre');
+      tourne = true; go.textContent = 'Arrêter'; maj();
+      chrono = setInterval(() => {
+        ecoule++;
+        if (cible && ecoule >= cible) { ecoule = cible; bip(); stop('Terminé'); return; }
+        maj();
+      }, 1000);
+    };
+  } else {
+    L.querySelectorAll('[data-r]').forEach(x => x.onclick = () => { reps = Math.max(1, reps + Number(x.dataset.r)); maj(); });
+  }
+  L.querySelectorAll('[data-c]').forEach(x => x.onclick = () => { charge = Math.max(0, charge + Number(x.dataset.c)); maj(); });
+  L.querySelector('.close').onclick = () => { clearInterval(chrono); L.classList.add('hidden'); vueSeance(); };
+
+  /**
+   * Après une série validée, deux minuteurs distincts :
+   *  - il reste des exercices dans le bloc → PAUSE (pause_s), puis on enchaîne ;
+   *  - le tour est bouclé → REPOS (repos_s), puis retour au premier du bloc.
+   */
+  const suite = () => {
+    const faits = (S.faits[e.exercice_id] || []).length;
+    if (N > 1 && e._e < N - 1) {
+      return lancerMinuteur(e.pause_s, 'Pause', () => ouvrirLogger(b.exercices[e._e + 1]._i));
+    }
+    if (faits < b.series) {
+      return lancerMinuteur(b.repos_s, 'Repos', () => { if (N > 1) ouvrirLogger(b.exercices[0]._i); });
+    }
+    clearInterval(chrono);
+    L.classList.add('hidden');
+    vueSeance();
+  };
 
   L.querySelector('.valider').onclick = async function () {
     this.disabled = true;
+    clearInterval(chrono); chrono = null; tourne = false;
     try {
       const num = (S.faits[e.exercice_id] || []).length + 1;
-      await api('serie', { seance_id:S.seanceId, exercice_id:e.exercice_id, serie_num:num, reps, charge });
-      (S.faits[e.exercice_id] = S.faits[e.exercice_id] || []).push({ reps, charge });
+      const p = { seance_id:S.seanceId, exercice_id:e.exercice_id, serie_num:num, charge };
+      if (auTemps) p.duree_s = ecoule; else p.reps = reps;
+      await api('serie', p);
+      (S.faits[e.exercice_id] = S.faits[e.exercice_id] || [])
+        .push(auTemps ? { duree_s:ecoule, charge } : { reps, charge });
+      if (auTemps) { ecoule = 0; const g = L.querySelector('#go'); if (g) g.textContent = 'Démarrer'; }
       maj();
-      lancerRepos(e.repos_s);
-      if (S.faits[e.exercice_id].length >= e.series) { L.classList.add('hidden'); vueSeance(); }
-    } catch (err) { toast('Non enregistré : ' + err.message); }
-    this.disabled = false;
+      suite();
+    } catch (err) {
+      toast('Non enregistré : ' + err.message);
+      this.disabled = false;
+    }
   };
 }
 
-// ── Minuteur de repos ────────────────────────────────────────
-function lancerRepos(secondes) {
+const PHASES = ['montée', 'position haute', 'descente', 'position basse'];
+
+/** « 1-0-3-1 » → « 1 s montée · 0 s position haute · 3 s descente · 1 s position basse ». */
+function tempo(c) {
+  const p = cadence4(c);
+  return p ? PHASES.map((l, i) => `${p[i]} s ${l}`).join(' · ') : '';
+}
+
+function cadence4(c) {
+  const p = String(c).split('-').map(x => Number(x.trim()));
+  return p.length === 4 && p.every(n => !isNaN(n) && n >= 0) ? p : null;
+}
+
+/**
+ * Courbe du tempo : le temps en abscisse, la position de la charge en ordonnée.
+ * Quatre phases dans l'ordre montée · position haute · descente · position basse.
+ * La pente dit la vitesse, le plat dit l'arrêt.
+ */
+function courbeCadence(c, grand) {
+  const p = cadence4(c);
+  if (!p) return '';
+  const total = p[0] + p[1] + p[2] + p[3];
+  if (!total) return '';
+
+  const W = grand ? 300 : 108, H = grand ? 62 : 28, m = grand ? 6 : 3;
+  const x = t => m + (W - 2 * m) * (t / total);
+  const haut = m, bas = H - m;
+
+  let t = 0;
+  const pts = [[x(0), bas]];
+  t += p[0]; pts.push([x(t), haut]);   // montée
+  t += p[1]; pts.push([x(t), haut]);   // maintien en haut
+  t += p[2]; pts.push([x(t), bas]);    // descente
+  t += p[3]; pts.push([x(t), bas]);    // maintien en bas
+
+  return `<svg class="cad${grand ? ' grand' : ''}" viewBox="0 0 ${W} ${H}" width="${W}" height="${H}" role="img"
+      aria-label="Cadence ${c} : ${tempo(c)}">
+    <line x1="${m}" y1="${haut}" x2="${W - m}" y2="${haut}" stroke="var(--edge)" stroke-width="1"/>
+    <line x1="${m}" y1="${bas}" x2="${W - m}" y2="${bas}" stroke="var(--edge)" stroke-width="1"/>
+    <polyline points="${pts.map(q => q.join(',')).join(' ')}" fill="none" stroke="var(--brand-ink)"
+      stroke-width="${grand ? 2.5 : 2}" stroke-linejoin="round" stroke-linecap="round"/>
+  </svg>`;
+}
+
+// ── Minuteurs : pause dans le bloc, repos de fin de tour ──────
+function lancerMinuteur(secondes, libelle, apres) {
   clearInterval(S.timer);
-  let t = secondes || 90;
   const box = $('#repos');
+  let t = Number(secondes) || 0;
+  const fin = () => { clearInterval(S.timer); box.classList.add('hidden'); if (apres) apres(); };
+  if (t <= 0) return fin();   // pas de temps mort : on enchaîne directement
+
   box.classList.remove('hidden');
-  const peindre = () => box.innerHTML =
-    `<span><span class="eyebrow" style="color:#14171C">Repos</span><br>
-     <span class="t">${String(Math.floor(t / 60))}:${String(t % 60).padStart(2, '0')}</span></span>
-     <button id="skip">Passer</button>`;
+  const peindre = () => {
+    box.innerHTML =
+      `<span><span class="eyebrow" style="color:rgba(255,255,255,.72)">${libelle}</span><br>
+       <span class="t">${String(Math.floor(t / 60))}:${String(t % 60).padStart(2, '0')}</span></span>
+       <button id="skip">Passer</button>`;
+    box.querySelector('#skip').onclick = fin;
+  };
   peindre();
-  box.querySelector('#skip').onclick = () => { clearInterval(S.timer); box.classList.add('hidden'); };
   S.timer = setInterval(() => {
     t--; peindre();
-    box.querySelector('#skip').onclick = () => { clearInterval(S.timer); box.classList.add('hidden'); };
-    if (t <= 0) { clearInterval(S.timer); box.classList.add('hidden'); bip(); }
+    if (t <= 0) { bip(); fin(); }
   }, 1000);
 }
 
@@ -351,7 +519,7 @@ function bip() {
 async function vueProgres() {
   const app = $('#app');
   app.innerHTML = `<header><h2>Progrès</h2></header><div id="liste"><div class="empty">Chargement…</div></div>`;
-  if (!S.exos.length && S.jour) S.exos = await api('seance', { jour:S.jour });
+  if (!S.exos.length && S.jour) await chargerSeance(S.jour);
   if (!S.exos.length) { $('#liste').innerHTML = `<div class="empty">Enregistrez une première séance pour voir vos courbes.</div>`; return; }
 
   const blocs = await Promise.all(S.exos.map(async e => {
