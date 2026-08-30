@@ -75,7 +75,10 @@ côté, zone sûre respectée). Régénérables : voir § 9.
 |---|---|
 | `Pratiquants` | email, nom, actif, date_inscription, objectif |
 | `Exercices` | id, nom, groupe, **equipement**, consigne, **video** |
-| `Programmes` | id, email, jour, **bloc**, ordre, exercice_id, series, reps_cible, **duree_s**, charge_cible, **cadence**, **pause_s**, repos_s |
+| `Modeles` | id, nom, categorie, difficulte, description, duree_semaines, statut, cree_le |
+| `ModeleLignes` | id, modele_id, jour, bloc, ordre, exercice_id, series, reps_cible, duree_s, charge_cible, cadence, pause_s, repos_s |
+| `Attributions` | id, email, modele_id, nom, date_debut, date_fin, statut, notes, cree_le |
+| `Programmes` | id, **attribution_id**, email, jour, bloc, ordre, exercice_id, series, reps_cible, duree_s, charge_cible, cadence, pause_s, repos_s |
 | `Seances` | id, email, date, jour, duree_min, ressenti, notes |
 | `Series` | id, seance_id, email, exercice_id, serie_num, reps, **duree_s**, charge, horodatage |
 
@@ -145,7 +148,7 @@ Toutes en POST sur l'URL `/exec`, corps `{token, action, payload}`,
 | Action | Payload | Retour |
 |---|---|---|
 | `bootstrap` | — | profil, jours, nb séances, estCoach |
-| `seance` | `{jour}` | **blocs** du jour : `{bloc, series, repos_s, exercices[]}`, chaque exercice portant `cadence`, `pause_s`, `duree_s` |
+| `seance` | `{jour}` | `{seance_id, faits, blocs}` — `blocs` porte cadence, pause_s, duree_s ; `faits` les séries déjà saisies aujourd'hui |
 | `demarrer` | `{jour}` | `{seance_id}` |
 | `serie` | `{seance_id, exercice_id, serie_num, reps \| duree_s, charge}` | confirmation |
 | `terminer` | `{seance_id, duree_min, ressenti, notes}` | confirmation |
@@ -156,9 +159,19 @@ Toutes en POST sur l'URL `/exec`, corps `{token, action, payload}`,
 | `coachDetail` | `{email}` | 15 dernières séances détaillées |
 | `exerciceSave` | `{id?, nom, groupe, equipement, consigne, video}` | crée ou met à jour ; sans `id` c'est une création |
 | `exerciceSuppr` | `{id}` | refuse si l'exercice est employé dans un programme |
-| `programme` | `{email}` | programme complet groupé par jour puis par bloc |
-| `programmeSave` | `{email, jour, blocs}` | réécrit **un seul jour** |
-| `programmeJour` | `{email, jour}` | supprime un jour entier |
+| `programme` | `{email, attribution_id?}` | contenu d'une attribution ; par défaut celle en cours |
+| `programmeSave` | `{email, attribution_id, jour, blocs}` | réécrit **un seul jour** |
+| `programmeJour` | `{attribution_id, jour}` | supprime un jour entier |
+| `modeles` | — | liste des modèles génériques + nombre de jours et d'exercices |
+| `modele` | `{id}` | un modèle avec son contenu |
+| `modeleSave` | `{id?, nom, categorie, difficulte, description, duree_semaines, statut}` | fiche du modèle |
+| `modeleJourSave` | `{modele_id, jour, blocs}` | réécrit un jour du modèle |
+| `modeleJour` | `{modele_id, jour}` | supprime un jour du modèle |
+| `modeleSuppr` | `{id}` | supprime le modèle et son contenu |
+| `attributions` | `{email}` | historique des programmes d'un pratiquant |
+| `attribuer` | `{email, modele_id?, nom?, date_debut?}` | donne un programme, en copiant le modèle |
+| `attributionMaj` | `{id, statut?, nom?, date_fin?, notes?}` | modifie une attribution |
+| `attributionSuppr` | `{id}` | supprime l'attribution **et ses lignes** |
 
 Les cinq dernières sont réservées au coach (`guardCoach_`). `calendrier` accepte un
 `email` **uniquement** si l'appelant est le coach : pour tout le monde d'autre, la
@@ -233,6 +246,63 @@ personnes, c'est encore douze saisies. Le modèle `Programme` réutilisable et a
 du § 13 reste le prochain chantier — c'est lui qui ferait passer l'outil à l'échelle
 des 40 pratiquants.
 
+## 8 ter. Modèles génériques et attributions
+
+Le programme d'un pratiquant naît en deux temps, et cette séparation est le cœur
+du modèle de données.
+
+```
+Modele  « Force 5×5 » · Force · Intermédiaire · 8 semaines · Actif
+  └─ ModeleLignes            générique, aucun pratiquant
+        │
+        │  attribuer_() COPIE les lignes
+        ▼
+Attribution  Guillaume · « Force 5×5 » · depuis le 21/07 · En cours
+  └─ Programmes              personnalisable sans toucher au modèle
+```
+
+**La copie est délibérée.** Personnaliser le programme d'un pratiquant — alléger une
+charge, retirer un exercice qui réveille une épaule — ne doit pas modifier le modèle
+ni les programmes des autres. Et le même modèle peut être redonné au même pratiquant
+des mois plus tard, sur des bases différentes, sans conflit.
+
+**Une seule attribution « En cours » par pratiquant.** `attribuer_()` clôt
+automatiquement la précédente en la passant à « Terminé » avec sa date de fin.
+L'historique reste : la liste des attributions est la chronologie des programmes
+suivis, et le coach peut rouvrir n'importe lequel pour le consulter ou le corriger.
+
+Une attribution peut naître **sans modèle** : page blanche, pour du sur-mesure.
+`modele_id` reste alors vide.
+
+`getSeance_` et `bootstrap_` lisent les lignes de l'attribution en cours, via
+`lignesProgramme_()`. Sans attribution, on retombe sur les lignes non rattachées :
+un Sheet non migré continue de fonctionner.
+
+### L'éditeur est le même des deux côtés
+
+`peindreEditeur()` sert aux modèles comme aux programmes attribués : la structure
+jour → bloc → exercice est identique, seule la clé de rattachement change.
+`S.ed.cible` vaut `'modele'` ou `'programme'` et aiguille l'enregistrement.
+
+## 8 quater. Session et reprise
+
+**La session survit au rechargement.** Le jeton Google et le profil sont conservés
+dans `localStorage`, et restaurés au chargement si le jeton n'est pas expiré — il
+vaut environ une heure. Le profil est rafraîchi en arrière-plan.
+
+Un échec de ce rafraîchissement ne déconnecte pas : en salle, le réseau saute, et
+perdre sa séance parce qu'un mur est en béton serait absurde. Seul un compte devenu
+inconnu, ou un jeton refusé par le serveur, ramène à l'écran de connexion.
+
+Le jeton en `localStorage` est une clé de session au porteur. Il expire seul en une
+heure et le bouton **Quitter** l'efface, en coupant aussi la reconnexion
+automatique de Google.
+
+**La séance en cours se reprend.** `getSeance_` renvoie la séance du jour si elle est
+ouverte, avec les séries déjà saisies ; `demarrerSeance_` la réutilise au lieu d'en
+créer une seconde. Auparavant les données étaient bien écrites dans le Sheet, mais
+les compteurs de l'écran repartaient de zéro après un rechargement.
+
 ## 9. Parti pris visuel — charte Wellness Sport Club
 
 L'app reprend l'identité de **Wellness Sport Club** (`wellness-sportclub.fr`),
@@ -303,7 +373,9 @@ Ces couleurs sont normatives, pas décoratives : elles ne suivent pas la charte.
 6. Saisir le catalogue d'exercices réel du coach
 7. Activer le déclencheur hebdomadaire sur `rapportHebdo()`
 8. Saisir le vrai catalogue du coach depuis la Bibliothèque (§ 8 bis)
-9. Programmes réutilisables et affectables : le chantier qui fait passer à l'échelle (§ 13)
+9. ~~Programmes réutilisables et affectables~~ — fait (§ 8 ter)
+10. Laisser le pratiquant ajuster certaines valeurs de son programme
+11. `% RM` et schémas top set / back-off (§ 13)
 
 ## 11. Idées d'évolution non implémentées
 

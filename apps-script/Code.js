@@ -20,15 +20,29 @@ const CONFIG = {
 const TABS = {
   PRATIQUANTS: 'Pratiquants',
   EXERCICES: 'Exercices',
+  MODELES: 'Modeles',
+  MODELE_LIGNES: 'ModeleLignes',
+  ATTRIBUTIONS: 'Attributions',
   PROGRAMMES: 'Programmes',
   SEANCES: 'Seances',
   SERIES: 'Series'
 };
 
+/** Statuts d'une attribution. Un seul « En cours » par pratiquant à la fois. */
+const STATUTS = { COURS: 'En cours', TERMINE: 'Terminé', ARCHIVE: 'Archivé' };
+
 const SCHEMA = {
   Pratiquants: ['email', 'nom', 'actif', 'date_inscription', 'objectif'],
   Exercices: ['id', 'nom', 'groupe', 'equipement', 'consigne', 'video'],
-  Programmes: ['id', 'email', 'jour', 'bloc', 'ordre', 'exercice_id', 'series', 'reps_cible', 'duree_s', 'charge_cible', 'cadence', 'pause_s', 'repos_s'],
+  // Modèles : programmes génériques, sans pratiquant. Le coach les compose une fois.
+  Modeles: ['id', 'nom', 'categorie', 'difficulte', 'description', 'duree_semaines', 'statut', 'cree_le'],
+  ModeleLignes: ['id', 'modele_id', 'jour', 'bloc', 'ordre', 'exercice_id', 'series', 'reps_cible', 'duree_s', 'charge_cible', 'cadence', 'pause_s', 'repos_s'],
+  // Attribution : un modèle donné à un pratiquant à une date. Le même modèle peut
+  // être attribué plusieurs fois au même pratiquant au fil du temps.
+  Attributions: ['id', 'email', 'modele_id', 'nom', 'date_debut', 'date_fin', 'statut', 'notes', 'cree_le'],
+  // Programmes : les lignes RÉELLES d'une attribution, personnalisables sans
+  // toucher au modèle dont elles sont issues.
+  Programmes: ['id', 'attribution_id', 'email', 'jour', 'bloc', 'ordre', 'exercice_id', 'series', 'reps_cible', 'duree_s', 'charge_cible', 'cadence', 'pause_s', 'repos_s'],
   Seances: ['id', 'email', 'date', 'jour', 'duree_min', 'ressenti', 'notes'],
   Series: ['id', 'seance_id', 'email', 'exercice_id', 'serie_num', 'reps', 'duree_s', 'charge', 'horodatage']
 };
@@ -114,9 +128,19 @@ function route_(action, p, user, profil, estCoach) {
     case 'coachDetail':    return guardCoach_(estCoach, function () { return coachDetail_(p.email); });
     case 'exerciceSave':   return guardCoach_(estCoach, function () { return exerciceSave_(p); });
     case 'exerciceSuppr':  return guardCoach_(estCoach, function () { return exerciceSuppr_(p.id); });
-    case 'programme':      return guardCoach_(estCoach, function () { return programme_(p.email); });
+    case 'programme':      return guardCoach_(estCoach, function () { return programme_(p); });
     case 'programmeSave':  return guardCoach_(estCoach, function () { return programmeSave_(p); });
     case 'programmeJour':  return guardCoach_(estCoach, function () { return programmeJourSuppr_(p); });
+    case 'modeles':        return guardCoach_(estCoach, modeles_);
+    case 'modele':         return guardCoach_(estCoach, function () { return modele_(p.id); });
+    case 'modeleSave':     return guardCoach_(estCoach, function () { return modeleSave_(p); });
+    case 'modeleJourSave': return guardCoach_(estCoach, function () { return modeleJourSave_(p); });
+    case 'modeleJour':     return guardCoach_(estCoach, function () { return modeleJourSuppr_(p); });
+    case 'modeleSuppr':    return guardCoach_(estCoach, function () { return modeleSuppr_(p.id); });
+    case 'attributions':   return guardCoach_(estCoach, function () { return attributions_(p.email); });
+    case 'attribuer':      return guardCoach_(estCoach, function () { return attribuer_(p); });
+    case 'attributionMaj': return guardCoach_(estCoach, function () { return attributionMaj_(p); });
+    case 'attributionSuppr': return guardCoach_(estCoach, function () { return attributionSuppr_(p.id); });
     default: throw new Error('ACTION_INCONNUE');
   }
 }
@@ -270,9 +294,7 @@ function uid_(prefixe) {
 // 6. LOGIQUE MÉTIER — pratiquant
 // ─────────────────────────────────────────────────────────────
 function bootstrap_(user, profil, estCoach) {
-  const prog = lire_(TABS.PROGRAMMES).filter(function (l) {
-    return String(l.email).toLowerCase() === user.email;
-  });
+  const prog = lignesProgramme_(user.email);
   const jours = [];
   prog.forEach(function (l) { if (jours.indexOf(l.jour) === -1) jours.push(l.jour); });
 
@@ -301,6 +323,40 @@ function bootstrap_(user, profil, estCoach) {
  */
 const SEMAINE = ['lundi', 'mardi', 'mercredi', 'jeudi', 'vendredi', 'samedi', 'dimanche'];
 
+/** Attribution « En cours » d'un pratiquant ; la plus récente s'il y en a plusieurs. */
+function attributionActive_(email) {
+  const list = lire_(TABS.ATTRIBUTIONS).filter(function (a) {
+    return String(a.email).toLowerCase() === email && String(a.statut) === STATUTS.COURS;
+  });
+  if (!list.length) return null;
+  return list.sort(function (a, b) { return new Date(b.date_debut) - new Date(a.date_debut); })[0];
+}
+
+/**
+ * Lignes du programme en vigueur pour un pratiquant. Sans attribution active,
+ * on retombe sur les lignes non rattachées : un Sheet non migré continue de marcher.
+ */
+function lignesProgramme_(email) {
+  const toutes = lire_(TABS.PROGRAMMES).filter(function (l) {
+    return String(l.email).toLowerCase() === email;
+  });
+  const att = attributionActive_(email);
+  if (!att) return toutes.filter(function (l) { return !l.attribution_id; });
+  return toutes.filter(function (l) { return String(l.attribution_id) === String(att.id); });
+}
+
+/** Séance du jour non terminée, s'il y en a une. Sert à reprendre après un rechargement. */
+function seanceOuverte_(email, jour) {
+  const minuit = new Date(); minuit.setHours(0, 0, 0, 0);
+  const list = lire_(TABS.SEANCES).filter(function (s) {
+    return String(s.email).toLowerCase() === email &&
+           String(s.jour) === String(jour) &&
+           new Date(s.date) >= minuit &&
+           (s.duree_min === '' || s.duree_min === null || s.duree_min === undefined);
+  });
+  return list.length ? list[list.length - 1] : null;
+}
+
 /** Trie « Lundi — Haut » avant « Jeudi — Bas » : l'alphabétique donnait l'inverse. */
 function triJours_(a, b) {
   const rang = function (j) {
@@ -316,10 +372,8 @@ function getSeance_(email, jour) {
   const exercices = {};
   lire_(TABS.EXERCICES).forEach(function (e) { exercices[e.id] = e; });
 
-  const lignes = lire_(TABS.PROGRAMMES)
-    .filter(function (l) {
-      return String(l.email).toLowerCase() === email && String(l.jour) === String(jour);
-    })
+  const lignes = lignesProgramme_(email)
+    .filter(function (l) { return String(l.jour) === String(jour); })
     .sort(function (a, b) {
       const d = numBloc_(a) - numBloc_(b);
       return d !== 0 ? d : Number(a.ordre) - Number(b.ordre);
@@ -343,7 +397,24 @@ function getSeance_(email, jour) {
     }
     parNum[num].exercices.push(ligneExercice_(l, parNum[num], exercices, series));
   });
-  return blocs;
+
+  // Reprise : si une séance du jour est ouverte, on renvoie son identifiant et
+  // les séries déjà saisies. Sans ça, un rechargement remettait les compteurs à zéro
+  // alors que les données étaient bien enregistrées.
+  const ouverte = seanceOuverte_(email, jour);
+  const faits = {};
+  if (ouverte) {
+    series.filter(function (s) { return String(s.seance_id) === String(ouverte.id); })
+      .sort(function (a, b) { return Number(a.serie_num) - Number(b.serie_num); })
+      .forEach(function (s) {
+        (faits[s.exercice_id] = faits[s.exercice_id] || []).push({
+          reps: Number(s.reps) || 0,
+          charge: Number(s.charge) || 0,
+          duree_s: Number(s.duree_s) || 0
+        });
+      });
+  }
+  return { seance_id: ouverte ? ouverte.id : null, faits: faits, blocs: blocs };
 }
 
 /** Numéro de bloc. Sans colonne « bloc », chaque ligne forme son propre bloc. */
@@ -382,6 +453,9 @@ function ligneExercice_(l, bloc, exercices, series) {
 }
 
 function demarrerSeance_(email, jour) {
+  const ouverte = seanceOuverte_(email, jour);
+  if (ouverte) return { seance_id: ouverte.id, reprise: true };   // pas de doublon
+
   const id = uid_('SE');
   ajouter_(TABS.SEANCES, {
     id: id, email: email, date: new Date(), jour: jour,
@@ -559,28 +633,19 @@ function exerciceSuppr_(id) {
 // ─────────────────────────────────────────────────────────────
 
 /**
- * Programme complet d'un pratiquant, groupé par jour puis par bloc.
- * Même forme que getSeance_ mais sans les perfs passées : c'est une vue d'édition.
+ * Regroupe des lignes plates en jours puis en blocs. Sert aussi bien aux modèles
+ * qu'aux programmes attribués : la structure est la même, seule la clé de
+ * rattachement change.
  */
-function programme_(email) {
-  const cible = String(email || '').toLowerCase();
-  if (!cible) throw new Error('EMAIL_REQUIS');
-
-  const noms = {};
-  lire_(TABS.EXERCICES).forEach(function (e) { noms[e.id] = e.nom; });
-
-  const lignes = lire_(TABS.PROGRAMMES)
-    .filter(function (l) { return String(l.email).toLowerCase() === cible; })
-    .sort(function (a, b) {
-      const j = triJours_(a.jour, b.jour);
-      if (j !== 0) return j;
-      const d = numBloc_(a) - numBloc_(b);
-      return d !== 0 ? d : Number(a.ordre) - Number(b.ordre);
-    });
-
+function grouperEnJours_(lignes, noms) {
   const jours = [];
   const parJour = {};
-  lignes.forEach(function (l) {
+  lignes.slice().sort(function (a, b) {
+    const j = triJours_(a.jour, b.jour);
+    if (j !== 0) return j;
+    const d = numBloc_(a) - numBloc_(b);
+    return d !== 0 ? d : Number(a.ordre) - Number(b.ordre);
+  }).forEach(function (l) {
     const j = String(l.jour);
     if (!parJour[j]) { parJour[j] = { jour: j, blocs: [], _n: {} }; jours.push(parJour[j]); }
     const num = numBloc_(l);
@@ -601,35 +666,20 @@ function programme_(email) {
     });
   });
   jours.forEach(function (j) { delete j._n; });
-  return { email: cible, jours: jours };
+  return jours;
 }
 
-/**
- * Réécrit UN jour du programme d'un pratiquant : les lignes existantes de ce
- * couple (email, jour) sont supprimées puis remplacées. Les autres jours et les
- * autres pratiquants ne sont pas touchés.
- * p : {email, jour, blocs:[{series, repos_s, exercices:[{exercice_id, reps_cible,
- *      duree_s, charge_cible, cadence, pause_s}]}]}
- */
-function programmeSave_(p) {
-  const email = String(p.email || '').toLowerCase();
-  const jour = String(p.jour || '').trim();
-  if (!email) throw new Error('EMAIL_REQUIS');
-  if (!jour) throw new Error('JOUR_REQUIS');
-  if (!findPratiquant_(email)) throw new Error('PRATIQUANT_INCONNU');
-  const blocs = p.blocs || [];
-  if (!blocs.length) throw new Error('PROGRAMME_VIDE');
-
+/** Transforme des blocs d'édition en lignes plates, prêtes à écrire. */
+function aplatirBlocs_(blocs, jour, base) {
   const connus = {};
   lire_(TABS.EXERCICES).forEach(function (e) { connus[String(e.id)] = true; });
 
   const rangs = [];
-  blocs.forEach(function (b, bi) {
+  (blocs || []).forEach(function (b, bi) {
     (b.exercices || []).forEach(function (e, ei) {
       if (!connus[String(e.exercice_id)]) throw new Error('EXERCICE_INCONNU_' + e.exercice_id);
-      rangs.push({
-        id: uid_('PR'), email: email, jour: jour,
-        bloc: bi + 1, ordre: ei + 1,
+      const r = {
+        id: uid_(base.prefixe), jour: jour, bloc: bi + 1, ordre: ei + 1,
         exercice_id: e.exercice_id,
         series: Number(b.series) || 3,
         reps_cible: e.reps_cible === undefined ? '' : e.reps_cible,
@@ -638,27 +688,267 @@ function programmeSave_(p) {
         cadence: e.cadence || '',
         pause_s: Number(e.pause_s) || 0,
         repos_s: Number(b.repos_s) || 90
-      });
+      };
+      Object.keys(base.champs).forEach(function (k) { r[k] = base.champs[k]; });
+      rangs.push(r);
     });
   });
   if (!rangs.length) throw new Error('PROGRAMME_VIDE');
+  return rangs;
+}
 
+// ── Modèles génériques ───────────────────────────────────────
+
+/** Liste des modèles, avec le nombre de jours et d'exercices de chacun. */
+function modeles_() {
+  const lignes = lire_(TABS.MODELE_LIGNES);
+  return lire_(TABS.MODELES)
+    .filter(function (m) { return m.id !== '' && m.id !== null; })
+    .map(function (m) {
+      const mien = lignes.filter(function (l) { return String(l.modele_id) === String(m.id); });
+      const jours = {};
+      mien.forEach(function (l) { jours[l.jour] = true; });
+      return {
+        id: m.id, nom: m.nom, categorie: m.categorie || '', difficulte: m.difficulte || '',
+        description: m.description || '', duree_semaines: Number(m.duree_semaines) || 0,
+        statut: m.statut || 'Brouillon',
+        nbJours: Object.keys(jours).length, nbExercices: mien.length
+      };
+    })
+    .sort(function (a, b) { return String(a.nom).localeCompare(String(b.nom), 'fr'); });
+}
+
+/** Un modèle avec son contenu, groupé par jour puis par bloc. */
+function modele_(id) {
+  const m = lire_(TABS.MODELES).filter(function (x) { return String(x.id) === String(id); })[0];
+  if (!m) throw new Error('MODELE_INTROUVABLE');
+  const noms = {};
+  lire_(TABS.EXERCICES).forEach(function (e) { noms[e.id] = e.nom; });
+  const lignes = lire_(TABS.MODELE_LIGNES).filter(function (l) {
+    return String(l.modele_id) === String(id);
+  });
+  return {
+    id: m.id, nom: m.nom, categorie: m.categorie || '', difficulte: m.difficulte || '',
+    description: m.description || '', duree_semaines: Number(m.duree_semaines) || 0,
+    statut: m.statut || 'Brouillon',
+    jours: grouperEnJours_(lignes, noms)
+  };
+}
+
+function modeleSave_(p) {
+  const nom = String(p.nom || '').trim();
+  if (!nom) throw new Error('NOM_REQUIS');
+  const champs = {
+    nom: nom,
+    categorie: String(p.categorie || '').trim(),
+    difficulte: String(p.difficulte || '').trim(),
+    description: String(p.description || '').trim(),
+    duree_semaines: Number(p.duree_semaines) || 0,
+    statut: String(p.statut || 'Brouillon').trim()
+  };
+  if (p.id) {
+    if (!majLigne_(TABS.MODELES, 'id', p.id, champs)) throw new Error('MODELE_INTROUVABLE');
+    return { id: p.id, cree: false };
+  }
+  champs.id = uid_('MD');
+  champs.cree_le = new Date();
+  ajouter_(TABS.MODELES, champs);
+  return { id: champs.id, cree: true };
+}
+
+/** Réécrit un jour du modèle. Les attributions déjà faites ne sont pas touchées. */
+function modeleJourSave_(p) {
+  const mid = String(p.modele_id || '');
+  const jour = String(p.jour || '').trim();
+  if (!mid || !jour) throw new Error('PARAMS_REQUIS');
+
+  const rangs = aplatirBlocs_(p.blocs, jour, { prefixe: 'ML', champs: { modele_id: mid } });
+  supprimerLignes_(TABS.MODELE_LIGNES, function (l) {
+    return String(l.modele_id) === mid && String(l.jour) === jour;
+  });
+  ajouterPlusieurs_(TABS.MODELE_LIGNES, rangs);
+  return { lignes: rangs.length };
+}
+
+function modeleJourSuppr_(p) {
+  const mid = String(p.modele_id || ''), jour = String(p.jour || '').trim();
+  if (!mid || !jour) throw new Error('PARAMS_REQUIS');
+  return { supprimees: supprimerLignes_(TABS.MODELE_LIGNES, function (l) {
+    return String(l.modele_id) === mid && String(l.jour) === jour;
+  }) };
+}
+
+/**
+ * Supprime un modèle et son contenu. Les programmes déjà attribués survivent :
+ * ce sont des copies, seul le lien d'origine devient orphelin.
+ */
+function modeleSuppr_(id) {
+  if (!id) throw new Error('ID_REQUIS');
+  supprimerLignes_(TABS.MODELE_LIGNES, function (l) { return String(l.modele_id) === String(id); });
+  const n = supprimerLignes_(TABS.MODELES, function (m) { return String(m.id) === String(id); });
+  if (!n) throw new Error('MODELE_INTROUVABLE');
+  return { supprime: true };
+}
+
+// ── Attributions ─────────────────────────────────────────────
+
+/** Historique des programmes d'un pratiquant, du plus récent au plus ancien. */
+function attributions_(email) {
+  const cible = String(email || '').toLowerCase();
+  if (!cible) throw new Error('EMAIL_REQUIS');
+  const lignes = lire_(TABS.PROGRAMMES);
+  return lire_(TABS.ATTRIBUTIONS)
+    .filter(function (a) { return String(a.email).toLowerCase() === cible; })
+    .map(function (a) {
+      const mien = lignes.filter(function (l) { return String(l.attribution_id) === String(a.id); });
+      const jours = {};
+      mien.forEach(function (l) { jours[l.jour] = true; });
+      return {
+        id: a.id, email: a.email, modele_id: a.modele_id || '', nom: a.nom,
+        date_debut: a.date_debut, date_fin: a.date_fin || '',
+        statut: a.statut || STATUTS.COURS, notes: a.notes || '',
+        nbJours: Object.keys(jours).length, nbExercices: mien.length
+      };
+    })
+    .sort(function (a, b) { return new Date(b.date_debut) - new Date(a.date_debut); });
+}
+
+/**
+ * Donne un programme à un pratiquant. Avec `modele_id`, le contenu du modèle est
+ * COPIÉ : le personnaliser ensuite ne touche pas le modèle, et le même modèle peut
+ * être redonné plus tard sans conflit. Sans `modele_id`, l'attribution démarre vide,
+ * pour un programme sur mesure.
+ * L'attribution « En cours » précédente passe à « Terminé ».
+ */
+function attribuer_(p) {
+  const email = String(p.email || '').toLowerCase();
+  if (!email) throw new Error('EMAIL_REQUIS');
+  if (!findPratiquant_(email)) throw new Error('PRATIQUANT_INCONNU');
+
+  let nom = String(p.nom || '').trim();
+  const mid = String(p.modele_id || '');
+  let source = null;
+  if (mid) {
+    source = lire_(TABS.MODELES).filter(function (m) { return String(m.id) === mid; })[0];
+    if (!source) throw new Error('MODELE_INTROUVABLE');
+    if (!nom) nom = source.nom;
+  }
+  if (!nom) nom = 'Programme sur mesure';
+
+  // Clore le programme en cours, s'il y en a un.
+  const active = attributionActive_(email);
+  if (active) {
+    majLigne_(TABS.ATTRIBUTIONS, 'id', active.id, { statut: STATUTS.TERMINE, date_fin: new Date() });
+  }
+
+  const id = uid_('AT');
+  ajouter_(TABS.ATTRIBUTIONS, {
+    id: id, email: email, modele_id: mid, nom: nom,
+    date_debut: p.date_debut ? new Date(p.date_debut) : new Date(),
+    date_fin: '', statut: STATUTS.COURS, notes: String(p.notes || ''), cree_le: new Date()
+  });
+
+  let copiees = 0;
+  if (mid) {
+    const lignes = lire_(TABS.MODELE_LIGNES).filter(function (l) {
+      return String(l.modele_id) === mid;
+    });
+    const rangs = lignes.map(function (l) {
+      return {
+        id: uid_('PR'), attribution_id: id, email: email, jour: l.jour,
+        bloc: l.bloc, ordre: l.ordre, exercice_id: l.exercice_id,
+        series: l.series, reps_cible: l.reps_cible, duree_s: l.duree_s,
+        charge_cible: l.charge_cible, cadence: l.cadence,
+        pause_s: l.pause_s, repos_s: l.repos_s
+      };
+    });
+    copiees = ajouterPlusieurs_(TABS.PROGRAMMES, rangs);
+  }
+  return { id: id, nom: nom, lignes: copiees };
+}
+
+function attributionMaj_(p) {
+  if (!p.id) throw new Error('ID_REQUIS');
+  const patch = {};
+  ['nom', 'statut', 'notes'].forEach(function (k) {
+    if (p[k] !== undefined) patch[k] = String(p[k]);
+  });
+  if (p.date_fin !== undefined) patch.date_fin = p.date_fin ? new Date(p.date_fin) : '';
+  if (p.date_debut !== undefined) patch.date_debut = new Date(p.date_debut);
+  if (!majLigne_(TABS.ATTRIBUTIONS, 'id', p.id, patch)) throw new Error('ATTRIBUTION_INTROUVABLE');
+  return { maj: true };
+}
+
+/** Supprime une attribution ET ses lignes de programme. L'historique des séances reste. */
+function attributionSuppr_(id) {
+  if (!id) throw new Error('ID_REQUIS');
+  supprimerLignes_(TABS.PROGRAMMES, function (l) { return String(l.attribution_id) === String(id); });
+  const n = supprimerLignes_(TABS.ATTRIBUTIONS, function (a) { return String(a.id) === String(id); });
+  if (!n) throw new Error('ATTRIBUTION_INTROUVABLE');
+  return { supprime: true };
+}
+
+// ── Programme attribué : lecture et édition ──────────────────
+
+/** Contenu d'une attribution. Sans `attribution_id`, celle en cours. */
+function programme_(p) {
+  const email = String(p.email || '').toLowerCase();
+  if (!email) throw new Error('EMAIL_REQUIS');
+
+  let att = null;
+  if (p.attribution_id) {
+    att = lire_(TABS.ATTRIBUTIONS).filter(function (a) {
+      return String(a.id) === String(p.attribution_id);
+    })[0];
+    if (!att) throw new Error('ATTRIBUTION_INTROUVABLE');
+    if (String(att.email).toLowerCase() !== email) throw new Error('ATTRIBUTION_ETRANGERE');
+  } else {
+    att = attributionActive_(email);
+  }
+
+  const noms = {};
+  lire_(TABS.EXERCICES).forEach(function (e) { noms[e.id] = e.nom; });
+
+  const lignes = att
+    ? lire_(TABS.PROGRAMMES).filter(function (l) { return String(l.attribution_id) === String(att.id); })
+    : lire_(TABS.PROGRAMMES).filter(function (l) {
+        return String(l.email).toLowerCase() === email && !l.attribution_id;
+      });
+
+  return {
+    email: email,
+    attribution: att ? {
+      id: att.id, nom: att.nom, modele_id: att.modele_id || '',
+      date_debut: att.date_debut, date_fin: att.date_fin || '', statut: att.statut
+    } : null,
+    jours: grouperEnJours_(lignes, noms)
+  };
+}
+
+/** Réécrit un jour d'une attribution. Les autres jours ne bougent pas. */
+function programmeSave_(p) {
+  const email = String(p.email || '').toLowerCase();
+  const jour = String(p.jour || '').trim();
+  const aid = String(p.attribution_id || '');
+  if (!email || !jour || !aid) throw new Error('PARAMS_REQUIS');
+  if (!findPratiquant_(email)) throw new Error('PRATIQUANT_INCONNU');
+
+  const rangs = aplatirBlocs_(p.blocs, jour, {
+    prefixe: 'PR', champs: { attribution_id: aid, email: email }
+  });
   supprimerLignes_(TABS.PROGRAMMES, function (l) {
-    return String(l.email).toLowerCase() === email && String(l.jour) === jour;
+    return String(l.attribution_id) === aid && String(l.jour) === jour;
   });
   ajouterPlusieurs_(TABS.PROGRAMMES, rangs);
   return { lignes: rangs.length };
 }
 
-/** Supprime un jour entier du programme d'un pratiquant. */
 function programmeJourSuppr_(p) {
-  const email = String(p.email || '').toLowerCase();
-  const jour = String(p.jour || '').trim();
-  if (!email || !jour) throw new Error('PARAMS_REQUIS');
-  const n = supprimerLignes_(TABS.PROGRAMMES, function (l) {
-    return String(l.email).toLowerCase() === email && String(l.jour) === jour;
-  });
-  return { supprimees: n };
+  const aid = String(p.attribution_id || ''), jour = String(p.jour || '').trim();
+  if (!aid || !jour) throw new Error('PARAMS_REQUIS');
+  return { supprimees: supprimerLignes_(TABS.PROGRAMMES, function (l) {
+    return String(l.attribution_id) === aid && String(l.jour) === jour;
+  }) };
 }
 
 // ─────────────────────────────────────────────────────────────
@@ -757,8 +1047,14 @@ function migrerSchema() {
     const rapport = [];
 
     Object.keys(SCHEMA).forEach(function (nom) {
-      const sh = ss.getSheetByName(nom);
-      if (!sh) return;
+      let sh = ss.getSheetByName(nom);
+      if (!sh) {
+        sh = ss.insertSheet(nom);
+        sh.getRange(1, 1, 1, SCHEMA[nom].length).setValues([SCHEMA[nom]])
+          .setFontWeight('bold').setBackground('#1C2027').setFontColor('#FFFFFF');
+        sh.setFrozenRows(1);
+        rapport.push(nom + ' : onglet créé');
+      }
       let head = sh.getRange(1, 1, 1, sh.getLastColumn()).getValues()[0];
 
       const manquantes = SCHEMA[nom].filter(function (c) { return head.indexOf(c) === -1; });
@@ -791,7 +1087,57 @@ function migrerSchema() {
       }
     });
 
+    const att = migrerAttributions_();
+    if (att) rapport.push(att);
+
     return finMigration_(rapport.length ? rapport.join('\n') : 'Rien à migrer, tout est à jour.');
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+/**
+ * Les lignes de Programmes antérieures au modèle « attribution » n'ont pas de
+ * rattachement. On crée une attribution « Programme courant » par pratiquant
+ * concerné et on y rattache ses lignes. Sans effet si tout est déjà rattaché.
+ */
+function migrerAttributions_() {
+  const lignes = lire_(TABS.PROGRAMMES);
+  const orphelins = {};
+  lignes.forEach(function (l) {
+    if (!l.attribution_id && l.email) orphelins[String(l.email).toLowerCase()] = true;
+  });
+  const emails = Object.keys(orphelins);
+  if (!emails.length) return '';
+
+  const sh = SpreadsheetApp.getActive().getSheetByName(TABS.PROGRAMMES);
+  const vals = sh.getDataRange().getValues();
+  const head = vals[0];
+  const ai = head.indexOf('attribution_id'), ei = head.indexOf('email');
+
+  const neuves = [];
+  const parEmail = {};
+  emails.forEach(function (em) {
+    const id = uid_('AT');
+    parEmail[em] = id;
+    neuves.push({
+      id: id, email: em, modele_id: '', nom: 'Programme courant',
+      date_debut: new Date(), date_fin: '', statut: STATUTS.COURS,
+      notes: 'Créé par la migration, à partir des lignes existantes.', cree_le: new Date()
+    });
+  });
+  ajouterPlusieurs_(TABS.ATTRIBUTIONS, neuves);
+
+  const lock = LockService.getScriptLock();
+  lock.waitLock(20000);
+  try {
+    let n = 0;
+    for (let r = 1; r < vals.length; r++) {
+      const em = String(vals[r][ei]).toLowerCase();
+      if (!vals[r][ai] && parEmail[em]) { vals[r][ai] = parEmail[em]; n++; }
+    }
+    sh.getRange(1, 1, vals.length, head.length).setValues(vals);
+    return 'Attributions : ' + neuves.length + ' créée(s), ' + n + ' ligne(s) rattachée(s)';
   } finally {
     lock.releaseLock();
   }

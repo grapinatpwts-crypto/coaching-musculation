@@ -49,9 +49,12 @@ button{font-family:inherit;font-size:16px;border:0;cursor:pointer;color:inherit;
 #login p{color:var(--dust);max-width:32ch;margin:0;line-height:1.5}
 
 /* En-tête */
-header{display:flex;align-items:baseline;justify-content:space-between;gap:12px;margin-bottom:22px}
+header{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:22px;flex-wrap:wrap}
+header h2{flex:1}
 header h2{font-size:30px;text-transform:uppercase;line-height:1}
 .streak{font-size:13px;color:var(--dust);font-variant-numeric:tabular-nums}
+.quitter{font-size:12px;font-weight:600;color:var(--dust);border:1px solid var(--edge);
+  border-radius:999px;padding:7px 12px;background:var(--plate);white-space:nowrap}
 
 /* Calendrier */
 .mois{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:12px}
@@ -248,15 +251,69 @@ function toast(msg) {
   setTimeout(() => t.remove(), 2600);
 }
 
-// ── Connexion Google ─────────────────────────────────────────
+// ── Connexion Google et session ──────────────────────────────
+const CLE_SESSION = 'muscu.session';
+
+/** `exp` du jeton Google, en secondes epoch. 0 si illisible. */
+function expiration(jwt) {
+  try {
+    const c = jwt.split('.')[1].replace(/-/g, '+').replace(/_/g, '/');
+    return JSON.parse(decodeURIComponent(escape(atob(c)))).exp || 0;
+  } catch (e) { return 0; }
+}
+
+/**
+ * La session tient dans localStorage : le jeton Google et le profil.
+ * Le jeton expire de lui-même au bout d'une heure environ ; on ne le garde
+ * que tant qu'il est valide, et la clé est effacée à la déconnexion.
+ */
+function sauverSession() {
+  try {
+    localStorage.setItem(CLE_SESSION, JSON.stringify({
+      token: S.token, exp: S.exp, moi: S.moi
+    }));
+  } catch (e) {}
+}
+
+function lireSession() {
+  try {
+    const o = JSON.parse(localStorage.getItem(CLE_SESSION) || 'null');
+    // 60 s de marge : inutile de restaurer un jeton sur le point d'expirer.
+    return o && o.token && o.exp > Date.now() / 1000 + 60 ? o : null;
+  } catch (e) { return null; }
+}
+
+function oublierSession() {
+  try { localStorage.removeItem(CLE_SESSION); } catch (e) {}
+}
+
 window.onload = () => {
+  const reprise = lireSession();
   google.accounts.id.initialize({ client_id:CLIENT_ID, callback:onGoogle, auto_select:true });
+
+  if (reprise) {
+    S.token = reprise.token; S.exp = reprise.exp;
+    ouvrirApp(reprise.moi);
+    // On rafraîchit le profil en arrière-plan : si le jeton a été révoqué, on retombe
+    // proprement sur l'écran de connexion plutôt que d'afficher un état périmé.
+    // Un jeton révoqué renvoie à la connexion — reconnexion() s'en charge. Une simple
+    // coupure réseau, elle, ne doit pas déconnecter : en salle, le wifi est capricieux.
+    api('bootstrap')
+      .then(m => { S.moi = m; sauverSession(); rendre(); })
+      .catch(e => {
+        if (/NON_INSCRIT/.test(e.message || '')) { oublierSession(); ecranConnexion(); }
+        else toast('Hors ligne : affichage de la dernière version connue');
+      });
+    return;
+  }
+
   google.accounts.id.renderButton($('#gbtn'), { theme:'filled_black', size:'large', shape:'pill', text:'signin_with', locale:'fr' });
   google.accounts.id.prompt();
 };
 
 async function onGoogle(res) {
   S.token = res.credential;
+  S.exp = expiration(res.credential);
   try {
     S.moi = await api('bootstrap');
   } catch (e) {
@@ -266,21 +323,49 @@ async function onGoogle(res) {
     $('#loginErr').classList.remove('hidden');
     return;
   }
+  sauverSession();
+  ouvrirApp(S.moi);
+}
+
+function ouvrirApp(moi) {
+  S.moi = moi;
   $('#login').classList.add('hidden');
   $('#app').classList.remove('hidden');
   $('#nav').classList.remove('hidden');
-  if (S.moi.estCoach) document.querySelector('[data-vue="coach"]').classList.remove('hidden');
-  S.jour = S.moi.jours[0] || null;
+  if (moi.estCoach) document.querySelector('[data-vue="coach"]').classList.remove('hidden');
+  S.jour = S.jour || moi.jours[0] || null;
   rendre();
 }
 
-function reconnexion() {
-  S.token = null;
+function ecranConnexion() {
+  S.token = null; S.moi = null; S.exp = 0;
+  $('#logger').classList.add('hidden');
   $('#app').classList.add('hidden'); $('#nav').classList.add('hidden');
   $('#login').classList.remove('hidden');
+  $('#gbtn').innerHTML = '';
+  google.accounts.id.renderButton($('#gbtn'), { theme:'filled_black', size:'large', shape:'pill', text:'signin_with', locale:'fr' });
+}
+
+/** Déconnexion : on oublie la session et on coupe la reconnexion automatique. */
+function deconnexion() {
+  oublierSession();
+  try { google.accounts.id.disableAutoSelect(); } catch (e) {}
+  Object.assign(S, { token:null, moi:null, exp:0, jour:null, exos:[], blocs:[],
+                     seanceId:null, faits:{}, vue:'seance', cal:null, coach:null, ed:null });
+  ecranConnexion();
+}
+
+function reconnexion() {
+  oublierSession();
+  ecranConnexion();
   google.accounts.id.prompt();
   throw new Error('SESSION_EXPIREE');
 }
+
+// Le bouton Quitter est réécrit à chaque rendu : on délègue plutôt que de le relier.
+document.addEventListener('click', e => {
+  if (e.target.closest('#quitter')) deconnexion();
+});
 
 // ── Navigation ───────────────────────────────────────────────
 $('#nav').addEventListener('click', e => {
@@ -309,6 +394,7 @@ async function vueSeance() {
     <header>
       <h2>${S.moi.nom.split(' ')[0] || 'Salut'}</h2>
       <span class="streak num">${S.moi.nbSeances} séance${S.moi.nbSeances > 1 ? 's' : ''}</span>
+      <button class="quitter" id="quitter" title="Se déconnecter">Quitter</button>
     </header>
     <div class="eyebrow">Programme</div>
     <div class="days">${S.moi.jours.map(j =>
@@ -316,7 +402,7 @@ async function vueSeance() {
     <div id="liste"><div class="empty">Chargement…</div></div>`;
 
   app.querySelectorAll('.day').forEach(b => b.onclick = () => {
-    S.jour = b.dataset.jour; S.seanceId = null; S.faits = {}; vueSeance();
+    S.jour = b.dataset.jour; vueSeance();
   });
 
   const blocs = await chargerSeance(S.jour);
@@ -337,7 +423,12 @@ async function vueSeance() {
 
 /** Charge la séance en blocs et remet à plat S.exos, index utilisé par le logger. */
 async function chargerSeance(jour) {
-  const blocs = await api('seance', { jour });
+  const r = await api('seance', { jour });
+  // Le serveur renvoie la séance du jour si elle est ouverte, avec les séries déjà
+  // saisies : un rechargement de page ne perd plus les compteurs.
+  const blocs = r.blocs || [];
+  S.seanceId = r.seance_id || null;
+  S.faits = r.faits || {};
   S.exos = []; S.blocs = blocs;
   blocs.forEach((b, bi) => b.exercices.forEach((e, ei) => {
     e._b = bi; e._e = ei; e._i = S.exos.length;   // bloc, rang dans le bloc, index plat
@@ -582,7 +673,9 @@ function bip() {
 // ── Vue progrès ──────────────────────────────────────────────
 async function vueProgres() {
   const app = $('#app');
-  app.innerHTML = `<header><h2>Progrès</h2></header><div id="liste"><div class="empty">Chargement…</div></div>`;
+  app.innerHTML = `<header><h2>Progrès</h2>
+    <button class="quitter" id="quitter" title="Se déconnecter">Quitter</button></header>
+    <div id="liste"><div class="empty">Chargement…</div></div>`;
   if (!S.exos.length && S.jour) await chargerSeance(S.jour);
   if (!S.exos.length) { $('#liste').innerHTML = `<div class="empty">Enregistrez une première séance pour voir vos courbes.</div>`; return; }
 
@@ -615,7 +708,8 @@ async function vueCalendrier(email) {
     const d = new Date();
     S.cal = { email: cible, annee: d.getFullYear(), mois: d.getMonth(), seances: null, sel: null };
   }
-  $('#app').innerHTML = `<header><h2>Calendrier</h2></header><div id="calzone"></div>`;
+  $('#app').innerHTML = `<header><h2>Calendrier</h2>
+    <button class="quitter" id="quitter" title="Se déconnecter">Quitter</button></header><div id="calzone"></div>`;
   await peindreCalendrier();
 }
 
@@ -705,18 +799,30 @@ async function vueCoach() {
   const c = S.coach;
   const app = $('#app');
 
+  if (c.modele) {
+    app.innerHTML = `
+      <header><h2>Modèle</h2><button class="close" id="retour">← Modèles</button></header>
+      <div id="zone"><div class="empty">Chargement…</div></div>`;
+    $('#retour').onclick = () => { c.modele = null; S.ed = null; vueCoach(); };
+    return vueModele();
+  }
+
   if (!c.email) {
     app.innerHTML = `
-      <header><h2>Coach</h2></header>
+      <header><h2>Coach</h2>
+        <button class="quitter" id="quitter" title="Se déconnecter">Quitter</button></header>
       <div class="sous">
         <button data-o="athletes" aria-pressed="${c.onglet === 'athletes'}">Athlètes</button>
+        <button data-o="modeles" aria-pressed="${c.onglet === 'modeles'}">Modèles</button>
         <button data-o="biblio" aria-pressed="${c.onglet === 'biblio'}">Bibliothèque</button>
       </div>
       <div id="zone"><div class="empty">Chargement…</div></div>`;
     app.querySelectorAll('.sous button').forEach(b => b.onclick = () => {
       c.onglet = b.dataset.o; vueCoach();
     });
-    return c.onglet === 'biblio' ? vueBibliotheque() : listeAthletes();
+    if (c.onglet === 'biblio') return vueBibliotheque();
+    if (c.onglet === 'modeles') return vueModeles();
+    return listeAthletes();
   }
 
   app.innerHTML = `
@@ -728,7 +834,7 @@ async function vueCoach() {
     </div>
     <div id="zone"><div class="empty">Chargement…</div></div>`;
 
-  $('#retour').onclick = () => { c.email = null; S.cal = null; vueCoach(); };
+  $('#retour').onclick = () => { c.email = null; S.cal = null; S.attSel = null; S.ed = null; vueCoach(); };
   app.querySelectorAll('.sous button').forEach(b => b.onclick = () => {
     c.sous = b.dataset.s; vueCoach();
   });
@@ -759,7 +865,7 @@ async function listeAthletes() {
     S.coach.email = b.dataset.email;
     S.coach.nom = b.dataset.nom;
     S.coach.sous = 'programme';
-    S.cal = null;
+    S.cal = null; S.attSel = null; S.ed = null;
     vueCoach();
   });
 }
@@ -871,61 +977,6 @@ function modalExercice(ex) {
   };
 }
 
-// ── Éditeur de programme ─────────────────────────────────────
-async function vueProgramme() {
-  const prog = await api('programme', { email: S.coach.email });
-  S.prog = prog;
-  if (!S.cat) S.cat = await api('catalogue');
-
-  const jours = prog.jours.map(j => j.jour);
-  if (!S.ed || S.ed.email !== S.coach.email || (S.ed.jour && jours.indexOf(S.ed.jour) === -1 && !S.ed.neuf)) {
-    S.ed = null;
-  }
-  if (!S.ed && jours.length) chargerJour(jours[0]);
-
-  $('#zone').innerHTML = `
-    <div class="days" id="jours">
-      ${jours.map(j => `<button class="day" data-j="${j}" aria-pressed="${S.ed && S.ed.jour === j}">${j}</button>`).join('')}
-      <button class="day" id="addJour">＋ jour</button>
-    </div>
-    <div id="edit"></div>`;
-
-  $('#zone').querySelectorAll('.day[data-j]').forEach(b =>
-    b.onclick = () => { chargerJour(b.dataset.j); vueProgramme(); });
-  $('#addJour').onclick = modalNouveauJour;
-
-  peindreEditeur();
-}
-
-function chargerJour(jour) {
-  const j = (S.prog.jours || []).find(x => x.jour === jour);
-  S.ed = {
-    email: S.coach.email,
-    jour: jour,
-    neuf: !j,
-    blocs: j ? JSON.parse(JSON.stringify(j.blocs)) : []
-  };
-}
-
-function modalNouveauJour() {
-  const m = modal('Nouveau jour', `
-    <div class="champ"><label>Intitulé</label>
-      <input class="f" id="nj" placeholder="Lundi — Haut du corps" list="lj">
-      <datalist id="lj">${SEMAINE.map(j => `<option>${j} — </option>`).join('')}</datalist></div>
-    <p class="consigne">Le jour de la semaine doit apparaître dans l'intitulé : c'est lui qui donne l'ordre d'affichage.</p>
-    <div class="barre"><button class="btn" id="njAnn">Annuler</button>
-      <button class="btn plein" id="njOk" style="flex:1">Créer</button></div>`);
-  m.querySelector('#njAnn').onclick = m.fermer;
-  m.querySelector('#njOk').onclick = () => {
-    const v = m.querySelector('#nj').value.trim();
-    if (!v) return toast('Donnez un intitulé');
-    S.ed = { email: S.coach.email, jour: v, neuf: true, blocs: [] };
-    m.fermer();
-    $('#zone').querySelectorAll('.day[data-j]').forEach(b => b.setAttribute('aria-pressed', 'false'));
-    peindreEditeur();
-  };
-}
-
 function peindreEditeur() {
   const z = $('#edit');
   if (!S.ed) { z.innerHTML = `<div class="empty">Aucun jour. Créez-en un pour composer le programme.</div>`; return; }
@@ -991,13 +1042,7 @@ function peindreEditeur() {
   $('#addBloc').onclick = () => { ed.blocs.push({ series: 3, repos_s: 90, exercices: [] }); peindreEditeur(); };
   $('#save').onclick = enregistrerJour;
   const dj = $('#delJour');
-  if (dj) dj.onclick = async function () {
-    this.disabled = true;
-    try {
-      await api('programmeJour', { email: ed.email, jour: ed.jour });
-      toast('Jour supprimé'); S.ed = null; vueProgramme();
-    } catch (err) { toast(err.message); this.disabled = false; }
-  };
+  if (dj) dj.onclick = function () { supprimerJour(this); };
 }
 
 function choisirExercice(bi) {
@@ -1060,18 +1105,291 @@ function modalLigne(bi, ei) {
   };
 }
 
+// ── Modèles génériques ───────────────────────────────────────
+const DIFFICULTES = ['Débutant', 'Intermédiaire', 'Avancé', 'Challengeant'];
+
+async function vueModeles() {
+  const list = await api('modeles');
+  $('#zone').innerHTML = `
+    <div class="barre" style="margin-top:0">
+      <button class="btn plein" id="nm" style="flex:1">＋ Nouveau modèle</button></div>
+    <p class="consigne" style="margin-top:12px">Un modèle est un programme générique, sans pratiquant.
+      On le compose une fois, puis on le donne à qui l'on veut, autant de fois qu'on veut.</p>
+    <div style="margin-top:16px">${list.map(m => `
+      <div class="ligne" data-md="${m.id}">
+        <div class="g">
+          <div class="nom">${m.nom}</div>
+          <div class="meta">${[m.categorie, m.difficulte,
+            m.duree_semaines ? m.duree_semaines + ' semaines' : '',
+            m.nbJours + ' jour' + (m.nbJours > 1 ? 's' : ''),
+            m.nbExercices + ' exercices'].filter(Boolean).join(' · ')}</div>
+        </div>
+        <span class="tag ${m.statut === 'Brouillon' ? 'warn' : ''}">${m.statut}</span>
+      </div>`).join('') || `<div class="empty">Aucun modèle pour l'instant.</div>`}</div>`;
+
+  $('#nm').onclick = () => modalModele(null);
+  $('#zone').querySelectorAll('[data-md]').forEach(l =>
+    l.onclick = () => { S.coach.modele = l.dataset.md; S.ed = null; vueCoach(); });
+}
+
+function modalModele(m) {
+  const x = m || { id:'', nom:'', categorie:'', difficulte:'', description:'', duree_semaines:'', statut:'Brouillon' };
+  const w = modal(m ? 'Modifier le modèle' : 'Nouveau modèle', `
+    <div class="champ"><label>Nom</label><input class="f" id="kNom" value="${x.nom}" placeholder="Force 5×5"></div>
+    <div class="duo">
+      <div class="champ"><label>Catégorie</label><input class="f" id="kCat" value="${x.categorie}" placeholder="Force, Hypertrophie…"></div>
+      <div class="champ"><label>Difficulté</label>
+        <select class="f" id="kDif">${['', ...DIFFICULTES].map(d =>
+          `<option ${d === x.difficulte ? 'selected' : ''}>${d}</option>`).join('')}</select></div>
+    </div>
+    <div class="duo">
+      <div class="champ"><label>Durée (semaines)</label><input class="f" id="kDur" type="number" min="0" value="${x.duree_semaines || ''}"></div>
+      <div class="champ"><label>Statut</label>
+        <select class="f" id="kSta">${['Brouillon', 'Actif', 'Archivé'].map(d =>
+          `<option ${d === x.statut ? 'selected' : ''}>${d}</option>`).join('')}</select></div>
+    </div>
+    <div class="champ"><label>Description</label><textarea class="f" id="kDes" rows="3">${x.description}</textarea></div>
+    <div class="barre"><button class="btn" id="kAnn">Annuler</button>
+      <button class="btn plein" id="kOk" style="flex:1">Enregistrer</button></div>
+    ${m ? '<div class="barre"><button class="btn danger" id="kDel">Supprimer le modèle</button></div>' : ''}`);
+
+  w.querySelector('#kAnn').onclick = w.fermer;
+  w.querySelector('#kOk').onclick = async function () {
+    this.disabled = true;
+    try {
+      const r = await api('modeleSave', {
+        id: x.id || undefined,
+        nom: w.querySelector('#kNom').value,
+        categorie: w.querySelector('#kCat').value,
+        difficulte: w.querySelector('#kDif').value,
+        duree_semaines: w.querySelector('#kDur').value,
+        statut: w.querySelector('#kSta').value,
+        description: w.querySelector('#kDes').value
+      });
+      w.fermer(); toast('Modèle enregistré');
+      S.coach.modele = x.id || r.id; S.ed = null; vueCoach();
+    } catch (err) { toast(err.message === 'NOM_REQUIS' ? 'Le nom est obligatoire' : err.message); this.disabled = false; }
+  };
+  if (m) w.querySelector('#kDel').onclick = async function () {
+    this.disabled = true;
+    try {
+      await api('modeleSuppr', { id: x.id });
+      w.fermer(); toast('Modèle supprimé');
+      S.coach.modele = null; S.ed = null; vueCoach();
+    } catch (err) { toast(err.message); this.disabled = false; }
+  };
+}
+
+/** Écran d'un modèle : sa fiche, puis le même éditeur de jours que pour un pratiquant. */
+async function vueModele() {
+  const m = await api('modele', { id: S.coach.modele });
+  S.modele = m;
+  if (!S.cat) S.cat = await api('catalogue');   // le sélecteur d'exercices s'en sert
+  const jours = m.jours.map(j => j.jour);
+
+  if (!S.ed || S.ed.cible !== 'modele' || S.ed.modele_id !== m.id ||
+      (!S.ed.neuf && jours.indexOf(S.ed.jour) === -1)) {
+    S.ed = null;
+    if (jours.length) chargerJour(jours[0]);
+  }
+
+  $('#zone').innerHTML = `
+    <div class="card" style="display:block;margin-bottom:16px">
+      <div class="nom">${m.nom}</div>
+      <div class="meta">${[m.categorie, m.difficulte,
+        m.duree_semaines ? m.duree_semaines + ' semaines' : '', m.statut].filter(Boolean).join(' · ')}</div>
+      ${m.description ? `<p class="consigne" style="margin-top:8px">${m.description}</p>` : ''}
+      <div class="barre"><button class="btn" id="editMeta">Modifier la fiche</button></div>
+    </div>
+    <div class="days" id="jours">
+      ${jours.map(j => `<button class="day" data-j="${j}" aria-pressed="${S.ed && S.ed.jour === j}">${j}</button>`).join('')}
+      <button class="day" id="addJour">＋ jour</button>
+    </div>
+    <div id="edit"></div>`;
+
+  $('#editMeta').onclick = () => modalModele(m);
+  $('#zone').querySelectorAll('.day[data-j]').forEach(b =>
+    b.onclick = () => { chargerJour(b.dataset.j); vueModele(); });
+  $('#addJour').onclick = modalNouveauJour;
+  peindreEditeur();
+}
+
+// ── Programme d'un pratiquant ────────────────────────────────
+async function vueProgramme() {
+  const atts = await api('attributions', { email: S.coach.email });
+  S.atts = atts;
+  if (!S.attSel || !atts.some(a => a.id === S.attSel)) {
+    const active = atts.find(a => a.statut === 'En cours');
+    S.attSel = (active || atts[0] || {}).id || null;
+  }
+  if (!S.cat) S.cat = await api('catalogue');
+
+  if (!S.attSel) {
+    $('#zone').innerHTML = `
+      <div class="empty">Aucun programme attribué.<br>Donnez-lui un modèle, ou partez d'une page blanche.</div>
+      <div class="barre"><button class="btn plein" id="donner" style="flex:1">Donner un programme</button></div>`;
+    $('#donner').onclick = modalAttribuer;
+    return;
+  }
+
+  const prog = await api('programme', { email: S.coach.email, attribution_id: S.attSel });
+  S.prog = prog;
+  const att = S.atts.find(a => a.id === S.attSel);
+  const jours = prog.jours.map(j => j.jour);
+
+  if (!S.ed || S.ed.cible !== 'programme' || S.ed.attribution_id !== S.attSel ||
+      (!S.ed.neuf && jours.indexOf(S.ed.jour) === -1)) {
+    S.ed = null;
+    if (jours.length) chargerJour(jours[0]);
+  }
+
+  const debut = att.date_debut ? new Date(att.date_debut).toLocaleDateString('fr-FR') : '';
+  $('#zone').innerHTML = `
+    <div class="champ">
+      <label>Programme attribué</label>
+      <select class="f" id="selAtt">${S.atts.map(a => `<option value="${a.id}" ${a.id === S.attSel ? 'selected' : ''}>
+        ${a.nom} · ${a.statut}${a.date_debut ? ' · depuis le ' + new Date(a.date_debut).toLocaleDateString('fr-FR') : ''}</option>`).join('')}</select>
+    </div>
+    <div class="meta" style="color:var(--dust);font-size:12.5px;margin:-2px 0 12px">
+      ${att.nbJours} jour${att.nbJours > 1 ? 's' : ''} · ${att.nbExercices} exercices${debut ? ' · démarré le ' + debut : ''}${
+      att.modele_id ? ' · issu d\'un modèle' : ' · sur mesure'}</div>
+    <div class="barre" style="margin-top:0">
+      <button class="btn plein" id="donner">Donner un programme</button>
+      ${att.statut === 'En cours' ? '<button class="btn" id="clore">Clore</button>' : ''}
+      <button class="btn danger" id="supprAtt">Supprimer</button>
+    </div>
+    <div class="days" id="jours" style="margin-top:16px">
+      ${jours.map(j => `<button class="day" data-j="${j}" aria-pressed="${S.ed && S.ed.jour === j}">${j}</button>`).join('')}
+      <button class="day" id="addJour">＋ jour</button>
+    </div>
+    <div id="edit"></div>`;
+
+  $('#selAtt').onchange = e => { S.attSel = e.target.value; S.ed = null; vueProgramme(); };
+  $('#donner').onclick = modalAttribuer;
+  $('#addJour').onclick = modalNouveauJour;
+  $('#zone').querySelectorAll('.day[data-j]').forEach(b =>
+    b.onclick = () => { chargerJour(b.dataset.j); vueProgramme(); });
+
+  const cl = $('#clore');
+  if (cl) cl.onclick = async function () {
+    this.disabled = true;
+    try {
+      await api('attributionMaj', { id: S.attSel, statut: 'Terminé', date_fin: new Date().toISOString() });
+      toast('Programme clos'); vueProgramme();
+    } catch (err) { toast(err.message); this.disabled = false; }
+  };
+  $('#supprAtt').onclick = async function () {
+    this.disabled = true;
+    try {
+      await api('attributionSuppr', { id: S.attSel });
+      toast('Attribution supprimée'); S.attSel = null; S.ed = null; vueProgramme();
+    } catch (err) { toast(err.message); this.disabled = false; }
+  };
+
+  peindreEditeur();
+}
+
+/** Donner un programme : depuis un modèle, ou vierge pour du sur-mesure. */
+async function modalAttribuer() {
+  const mods = await api('modeles');
+  const w = modal('Donner un programme', `
+    <div class="champ"><label>Modèle de départ</label>
+      <select class="f" id="aMod">
+        <option value="">— Sur mesure, page blanche —</option>
+        ${mods.map(m => `<option value="${m.id}">${m.nom}${m.categorie ? ' · ' + m.categorie : ''}${
+          m.difficulte ? ' · ' + m.difficulte : ''}</option>`).join('')}
+      </select></div>
+    <div class="champ"><label>Nom donné au pratiquant</label>
+      <input class="f" id="aNom" placeholder="Laisser vide pour reprendre le nom du modèle"></div>
+    <div class="champ"><label>Date de début</label>
+      <input class="f" id="aDeb" type="date" value="${new Date().toISOString().slice(0, 10)}"></div>
+    <p class="consigne">Le contenu du modèle est <strong>copié</strong> : le personnaliser ensuite
+      ne touche pas le modèle, et le programme en cours est clos automatiquement.</p>
+    <div class="barre"><button class="btn" id="aAnn">Annuler</button>
+      <button class="btn plein" id="aOk" style="flex:1">Attribuer</button></div>`);
+
+  w.querySelector('#aAnn').onclick = w.fermer;
+  w.querySelector('#aOk').onclick = async function () {
+    this.disabled = true;
+    try {
+      const r = await api('attribuer', {
+        email: S.coach.email,
+        modele_id: w.querySelector('#aMod').value || undefined,
+        nom: w.querySelector('#aNom').value,
+        date_debut: w.querySelector('#aDeb').value
+      });
+      w.fermer();
+      toast(r.lignes ? `${r.nom} attribué, ${r.lignes} lignes copiées` : `${r.nom} attribué`);
+      S.attSel = r.id; S.ed = null; vueProgramme();
+    } catch (err) { toast(err.message); this.disabled = false; }
+  };
+}
+
+// ── Éditeur de jour, commun aux modèles et aux programmes ─────
+function chargerJour(jour) {
+  const modele = !!S.coach.modele;
+  const src = modele ? S.modele : S.prog;
+  const j = ((src && src.jours) || []).find(x => x.jour === jour);
+  S.ed = {
+    cible: modele ? 'modele' : 'programme',
+    modele_id: modele ? S.coach.modele : null,
+    email: modele ? null : S.coach.email,
+    attribution_id: modele ? null : S.attSel,
+    jour: jour,
+    neuf: !j,
+    blocs: j ? JSON.parse(JSON.stringify(j.blocs)) : []
+  };
+}
+
+function modalNouveauJour() {
+  const w = modal('Nouveau jour', `
+    <div class="champ"><label>Intitulé</label>
+      <input class="f" id="nj" placeholder="Lundi — Haut du corps" list="lj">
+      <datalist id="lj">${SEMAINE.map(j => `<option>${j} — </option>`).join('')}</datalist></div>
+    <p class="consigne">Le jour de la semaine doit apparaître dans l'intitulé : c'est lui qui donne l'ordre d'affichage.</p>
+    <div class="barre"><button class="btn" id="njAnn">Annuler</button>
+      <button class="btn plein" id="njOk" style="flex:1">Créer</button></div>`);
+  w.querySelector('#njAnn').onclick = w.fermer;
+  w.querySelector('#njOk').onclick = () => {
+    const v = w.querySelector('#nj').value.trim();
+    if (!v) return toast('Donnez un intitulé');
+    chargerJour(v);
+    S.ed.neuf = true; S.ed.blocs = [];
+    w.fermer();
+    document.querySelectorAll('.day[data-j]').forEach(b => b.setAttribute('aria-pressed', 'false'));
+    peindreEditeur();
+  };
+}
+
 async function enregistrerJour() {
   const ed = S.ed;
   const btn = $('#save');
   if (!ed.blocs.length || ed.blocs.every(b => !b.exercices.length))
     return toast('Ajoutez au moins un exercice');
   btn.disabled = true;
+  const blocs = ed.blocs.filter(b => b.exercices.length);
   try {
-    const blocs = ed.blocs.filter(b => b.exercices.length);
-    await api('programmeSave', { email: ed.email, jour: ed.jour, blocs: blocs });
-    toast('Programme enregistré');
-    S.ed = null;
-    vueProgramme();
+    if (ed.cible === 'modele') {
+      await api('modeleJourSave', { modele_id: ed.modele_id, jour: ed.jour, blocs });
+      toast('Jour enregistré'); S.ed = null; vueModele();
+    } else {
+      await api('programmeSave', { email: ed.email, attribution_id: ed.attribution_id, jour: ed.jour, blocs });
+      toast('Jour enregistré'); S.ed = null; vueProgramme();
+    }
+  } catch (err) { toast(err.message); btn.disabled = false; }
+}
+
+async function supprimerJour(btn) {
+  const ed = S.ed;
+  btn.disabled = true;
+  try {
+    if (ed.cible === 'modele') {
+      await api('modeleJour', { modele_id: ed.modele_id, jour: ed.jour });
+      toast('Jour supprimé'); S.ed = null; vueModele();
+    } else {
+      await api('programmeJour', { attribution_id: ed.attribution_id, jour: ed.jour });
+      toast('Jour supprimé'); S.ed = null; vueProgramme();
+    }
   } catch (err) { toast(err.message); btn.disabled = false; }
 }
 
