@@ -6,11 +6,11 @@
 <meta name="theme-color" content="#151515">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-<meta name="apple-mobile-web-app-title" content="Muscu">
+<meta name="apple-mobile-web-app-title" content="Coaching Fitness">
 <link rel="manifest" href="manifest.json">
 <link rel="apple-touch-icon" href="icon-192.png">
 <link rel="icon" href="favicon.ico" sizes="any">
-<title>Muscu</title>
+<title>Coaching Fitness</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Jost:wght@400;500;600;700&display=swap" rel="stylesheet">
@@ -244,7 +244,7 @@ header h2{font-size:30px;text-transform:uppercase;line-height:1}
 
 <section id="login">
   <img id="marque" src="assets/logo-wellness-dark.png" alt="Wellness Sport Club" width="300" height="86">
-  <h1>Salle<span>de force</span></h1>
+  <h1>Coaching<span>Fitness</span></h1>
   <p>Connectez-vous avec le compte Google que votre coach a inscrit.</p>
   <div id="gbtn"></div>
   <p id="loginErr" class="hidden" style="color:#FF7A7A"></p>
@@ -302,6 +302,8 @@ function toast(msg) {
 // servies depuis un cache local, les écritures sont mises en file et rejouées
 // dès le retour du réseau. Rien n'est perdu, rien ne bloque la séance.
 
+// Les clés de stockage gardent leur préfixe historique : les renommer viderait
+// la file hors ligne et déconnecterait tout le monde, pour rien de visible.
 const CLE_FILE  = 'muscu.file';
 const CLE_CACHE = 'muscu.cache';
 const CLE_MAP   = 'muscu.map';
@@ -1779,7 +1781,7 @@ function modalLigne(bi, ei) {
 }
 
 /**
- * Maintenance depuis l'app. Ces opérations existent aussi dans le menu Muscu du
+ * Maintenance depuis l'app. Ces opérations existent aussi dans le menu du
  * Sheet, mais ce menu n'existe pas dans Sheets mobile : le coach doit pouvoir les
  * lancer depuis son téléphone.
  */
@@ -1806,7 +1808,7 @@ function vueReglages() {
   ];
 
   $('#zone').innerHTML = `
-    <p class="consigne">Les mêmes opérations que le menu <strong>Muscu</strong> du classeur,
+    <p class="consigne">Les mêmes opérations que le menu <strong>Coaching Fitness</strong> du classeur,
       accessibles ici parce que ce menu n'existe pas dans Sheets sur téléphone.</p>
     <div style="margin-top:16px">${ops.map(o => `
       <div class="card" style="display:block">

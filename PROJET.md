@@ -1,4 +1,4 @@
-# Muscu — état du projet
+# Coaching Fitness — état du projet
 
 Document de reprise. À déposer à la racine du dépôt : il donne tout le contexte
 nécessaire pour continuer le travail dans Claude Code sans repartir de zéro.
@@ -106,7 +106,7 @@ n'intervient qu'à la fin du tour. `ordre` classe les exercices à l'intérieur 
 le bloc ; `reps_cible` et `charge_cible` restent propres à chaque ligne.
 
 Une ligne seule dans son bloc = une série classique, comportement d'avant. Sur un
-Sheet déjà installé, `Muscu ▸ Migration : colonne bloc` crée la colonne et recopie
+Sheet déjà installé, `Coaching Fitness ▸ Migration : colonne bloc` crée la colonne et recopie
 `ordre` dedans — chaque ligne devient son propre bloc, rien ne change visuellement.
 
 C'est le niveau « Travail » du modèle AppSheet (§ 13), repris dans sa forme légère :
@@ -345,7 +345,7 @@ met à niveau au premier usage. Une version antérieure exigeait de lancer la mi
 avant de pouvoir seulement se connecter — `bootstrap_` lisait `Attributions`, absent,
 et `getDataRange()` échouait sur `null`.
 
-`Muscu ▸ Migration : aligner les colonnes` reste utile pour une chose que
+`Coaching Fitness ▸ Migration : aligner les colonnes` reste utile pour une chose que
 l'auto-création ne fait pas : rattacher les lignes de `Programmes` antérieures au
 modèle d'attribution à une attribution « Programme courant ».
 
@@ -716,7 +716,7 @@ par le menu du Sheet. **Non retenu.** Trois obstacles levés, un quatrième réd
    Sheets complet, donnant au script l'accès à *tous* les classeurs du coach.
    Refusé : le cloisonnement vaut mieux que la commodité.
 
-Conséquence : **les fonctions se lancent depuis le menu `Muscu` du Sheet.**
+Conséquence : **les fonctions se lancent depuis le menu `Coaching Fitness` du Sheet.**
 `migrerSchema`, `programmeTest`, `rechargerProgrammeTest` y sont toutes.
 
 `projectId` a été ajouté à `.clasp.json` au passage — sans lui, `clasp list-apis` et

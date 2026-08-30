@@ -1,6 +1,6 @@
 {
-  "name": "Muscu — suivi d'entraînement",
-  "short_name": "Muscu",
+  "name": "Coaching Fitness — suivi d'entraînement",
+  "short_name": "Coaching Fitness",
   "description": "Suivi des séances de musculation, connecté au programme de votre coach.",
   "start_url": "./index.html",
   "scope": "./",
@@ -10,8 +10,23 @@
   "theme_color": "#151515",
   "lang": "fr",
   "icons": [
-    { "src": "icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
-    { "src": "icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
-    { "src": "icon-512-maskable.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+    {
+      "src": "icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "icon-512-maskable.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
   ]
 }

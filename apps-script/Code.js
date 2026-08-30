@@ -1,5 +1,5 @@
 /**
- * MUSCU — Backend Apps Script
+ * COACHING FITNESS — Backend Apps Script
  * Déployé en Web App (Exécuter en tant que : moi / Accès : tout le monde).
  * Le front-end (PWA) appelle cette URL en POST et envoie le token Google du pratiquant.
  * Les pratiquants n'ont JAMAIS accès au Google Sheet : tout passe par ce script.
@@ -113,7 +113,7 @@ function setup() {
 // ─────────────────────────────────────────────────────────────
 function doGet() {
   return ContentService
-    .createTextOutput(JSON.stringify({ ok: true, service: 'muscu-api' }))
+    .createTextOutput(JSON.stringify({ ok: true, service: 'coaching-fitness-api' }))
     .setMimeType(ContentService.MimeType.JSON);
 }
 
@@ -1566,7 +1566,7 @@ function pratiquantCreer_(p) {
 // ─────────────────────────────────────────────────────────────
 function onOpen() {
   SpreadsheetApp.getUi()
-    .createMenu('Muscu')
+    .createMenu('Coaching Fitness')
     .addItem('Installer les onglets', 'setup')
     .addItem('Rapport hebdomadaire', 'rapportHebdo')
     .addSeparator()
@@ -1591,7 +1591,7 @@ function rapportHebdo() {
 
   MailApp.sendEmail(
     CONFIG.COACH_EMAIL,
-    'Muscu — ' + inactifs.length + ' pratiquant(s) à relancer',
+    'Coaching Fitness — ' + inactifs.length + ' pratiquant(s) à relancer',
     'Pratiquants sans séance depuis au moins 10 jours :\n\n' + corps
   );
 }
@@ -1710,7 +1710,7 @@ function migrerAttributions_() {
   }
 }
 
-/** Expose les opérations du menu Muscu à l'app, pour le coach uniquement. */
+/** Expose les opérations du menu du Sheet à l'app, pour le coach uniquement. */
 function maintenance_(op) {
   switch (op) {
     case 'migrer':       return { message: migrerSchema() };

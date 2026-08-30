@@ -1,4 +1,4 @@
-# Muscu — installation
+# Coaching Fitness — installation
 
 Application de suivi de musculation : 1 coach, ~40 pratiquants.
 Données stockées dans **votre** Google Sheet. Les pratiquants n'ont jamais accès au Sheet.
@@ -20,11 +20,11 @@ personne que ses propres lignes.
 
 ## Étape 1 — Le Google Sheet
 
-1. Créez un Google Sheet nommé `Muscu`.
+1. Créez un Google Sheet nommé `Coaching Fitness`.
 2. `Extensions ▸ Apps Script`.
 3. Collez le contenu de `Code.gs` (remplacez tout le fichier existant).
-4. Enregistrez, puis rechargez le Sheet : un menu **Muscu** apparaît.
-5. `Muscu ▸ Installer les onglets` → les 5 onglets sont créés avec des exercices d'exemple.
+4. Enregistrez, puis rechargez le Sheet : un menu **Coaching Fitness** apparaît.
+5. `Coaching Fitness ▸ Installer les onglets` → les 5 onglets sont créés avec des exercices d'exemple.
 
 ## Étape 2 — Le projet Google Cloud
 
@@ -34,7 +34,7 @@ personne que ses propres lignes.
 
 ## Étape 3 — L'identifiant OAuth
 
-1. `API et services ▸ Écran de consentement OAuth` : type **Externe**, nom `Muscu`,
+1. `API et services ▸ Écran de consentement OAuth` : type **Externe**, nom `Coaching Fitness`,
    votre email en contact. Publiez l'application (sinon limite à 100 testeurs).
 2. `Identifiants ▸ Créer ▸ ID client OAuth ▸ Application Web`.
 3. **Origines JavaScript autorisées** : l'URL où sera hébergé le front-end,
