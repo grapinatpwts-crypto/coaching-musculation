@@ -232,6 +232,16 @@ automatiquement à la suite du plus grand existant. **La suppression est refusé
 l'exercice figure encore dans un programme** — le message dit combien de lignes
 l'emploient, plutôt que de casser un programme en silence.
 
+**Modèles.** Deux niveaux. L'écran ouvre sur les **catégories**, en boutons : c'est
+la première question que se pose le coach — force, hypertrophie, endurance. Une
+catégorie ouvre sa page, où les modèles sont rangés en **sections pliées par
+difficulté** et triés par nom.
+
+Catégorie et difficulté sont des **listes ouvertes** : le coach tape ce qu'il veut,
+les valeurs déjà utilisées lui sont proposées. Rien n'est figé dans le code, sinon
+l'ordre d'affichage des quatre difficultés usuelles — les autres viennent ensuite,
+« Sans difficulté » en dernier.
+
 **Programme.** Un pratiquant, un jour, des blocs. Le nombre de tours et le repos se
 saisissent sur l'en-tête du bloc ; chaque exercice ouvre une fiche où l'on règle
 répétitions *ou* durée, charge, cadence et pause. La cadence s'y prévisualise en

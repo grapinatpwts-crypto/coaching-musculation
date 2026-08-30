@@ -51,6 +51,26 @@ button{font-family:inherit;font-size:16px;border:0;cursor:pointer;color:inherit;
 /* En-tête */
 header{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:22px;flex-wrap:wrap}
 header h2{flex:1}
+/* Catégories de modèles : de grandes cibles, une par ligne */
+.cats{display:flex;flex-direction:column;gap:9px;margin-top:18px}
+.cat{display:flex;align-items:center;gap:12px;width:100%;text-align:left;padding:16px;
+  background:var(--plate);border:1px solid var(--edge);border-radius:var(--r)}
+.cat .nom{flex:1;font-size:17px;font-weight:600}
+.cat .compte{font-family:'Bebas Neue',Impact,sans-serif;font-size:22px;color:var(--brand-ink)}
+
+/* Sections pliées par difficulté */
+.pli{border-bottom:1px solid var(--edge);margin-bottom:2px}
+.pli summary{display:flex;align-items:center;gap:10px;padding:14px 2px;cursor:pointer;
+  list-style:none}
+.pli summary::-webkit-details-marker{display:none}
+.pli summary::after{content:'▾';color:var(--dust);font-size:13px;transition:transform .2s}
+.pli[open] summary::after{transform:rotate(180deg)}
+.pli summary .eyebrow{flex:1}
+.pli summary .compte{font-size:13px;color:var(--dust);font-variant-numeric:tabular-nums}
+.pli summary:focus-visible{outline:2px solid var(--brand-ink);outline-offset:2px;border-radius:6px}
+.pli .ligne{cursor:pointer}
+.pli > .ligne:last-child{margin-bottom:14px}
+
 .titre-bloc{flex:1;min-width:0;display:flex;flex-direction:column;gap:1px}
 .titre-bloc h2{flex:none}
 .signe{font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:var(--dust);font-weight:600}
@@ -599,10 +619,10 @@ const VUES_COACH = ['athletes', 'modeles', 'biblio', 'reglages'];
 async function rendre() {
   $('#logger').classList.add('hidden');   // l'overlay ne doit pas survivre à un changement de vue
   if (VUES_COACH.indexOf(S.vue) !== -1) {
-    S.coach = S.coach || { onglet:'athletes', email:null, nom:'', sous:'fiche', modele:null };
+    S.coach = S.coach || { onglet:'athletes', email:null, nom:'', sous:'fiche', modele:null, categorie:null };
     // Changer d'onglet principal quitte la fiche ou le modèle en cours.
     if (S.coach.onglet !== S.vue) {
-      S.coach.onglet = S.vue; S.coach.email = null; S.coach.modele = null;
+      S.coach.onglet = S.vue; S.coach.email = null; S.coach.modele = null; S.coach.categorie = null;
       S.attSel = null; S.ed = null; S.cal = null;
     }
     return vueCoach();
@@ -1238,13 +1258,13 @@ async function peindreCalendrier() {
 
 // ── Vue coach ────────────────────────────────────────────────
 async function vueCoach() {
-  S.coach = S.coach || { onglet: 'athletes', email: null, nom: '', sous: 'programme' };
+  S.coach = S.coach || { onglet:'athletes', email:null, nom:'', sous:'fiche', modele:null, categorie:null };
   const c = S.coach;
   const app = $('#app');
 
   if (c.modele) {
     app.innerHTML = `
-      <header><h2>Modèle</h2><button class="close" id="retour">← Modèles</button></header>
+      <header><h2>Modèle</h2><button class="close" id="retour">← ${c.categorie || 'Modèles'}</button></header>
       <div id="zone"><div class="empty">Chargement…</div></div>`;
     $('#retour').onclick = () => { c.modele = null; S.ed = null; vueCoach(); };
     return vueModele();
@@ -1852,40 +1872,108 @@ function vueReglages() {
 
 // ── Modèles génériques ───────────────────────────────────────
 const DIFFICULTES = ['Débutant', 'Intermédiaire', 'Avancé', 'Challengeant'];
+const SANS_CAT = 'Sans catégorie';
+const SANS_DIF = 'Sans difficulté';
+
+/** Ordre d'affichage des difficultés : celles qu'on connaît, puis les autres. */
+function ordreDifficulte(d) {
+  const i = DIFFICULTES.indexOf(d);
+  return i === -1 ? (d === SANS_DIF ? 99 : 50) : i;
+}
 
 async function vueModeles() {
-  const list = await api('modeles');
+  S.modeles = await api('modeles');
+  return S.coach.categorie ? peindreCategorie() : peindreCategories();
+}
+
+/** Premier niveau : les catégories, en boutons. */
+function peindreCategories() {
+  const cats = {};
+  S.modeles.forEach(m => {
+    const c = (m.categorie || '').trim() || SANS_CAT;
+    (cats[c] = cats[c] || []).push(m);
+  });
+  const noms = Object.keys(cats).sort((a, b) =>
+    a === SANS_CAT ? 1 : b === SANS_CAT ? -1 : a.localeCompare(b, 'fr'));
+
   $('#zone').innerHTML = `
     <div class="barre" style="margin-top:0">
       <button class="btn plein" id="nm" style="flex:1">＋ Nouveau modèle</button></div>
     <p class="consigne" style="margin-top:12px">Un modèle est un programme générique, sans pratiquant.
       On le compose une fois, puis on le donne à qui l'on veut, autant de fois qu'on veut.</p>
-    <div style="margin-top:16px">${list.map(m => `
-      <div class="ligne" data-md="${m.id}">
-        <div class="g">
-          <div class="nom">${m.nom}</div>
-          <div class="meta">${[m.categorie, m.difficulte,
-            m.duree_semaines ? m.duree_semaines + ' semaines' : '',
-            m.nbJours + ' jour' + (m.nbJours > 1 ? 's' : ''),
-            m.nbExercices + ' exercices'].filter(Boolean).join(' · ')}</div>
-        </div>
-        <span class="tag ${m.statut === 'Brouillon' ? 'warn' : ''}">${m.statut}</span>
-      </div>`).join('') || `<div class="empty">Aucun modèle pour l'instant.</div>`}</div>`;
+    <div class="cats">${noms.map(c => `
+      <button class="cat" data-cat="${c}">
+        <span class="nom">${c}</span>
+        <span class="compte num">${cats[c].length}</span>
+      </button>`).join('') || `<div class="empty">Aucun modèle pour l'instant.</div>`}</div>`;
 
+  $('#nm').onclick = () => modalModele(null);
+  $('#zone').querySelectorAll('[data-cat]').forEach(b => b.onclick = () => {
+    S.coach.categorie = b.dataset.cat;
+    vueCoach();
+  });
+}
+
+/** Second niveau : une catégorie, ses modèles pliés par difficulté, triés par nom. */
+function peindreCategorie() {
+  const cat = S.coach.categorie;
+  const dedans = S.modeles.filter(m =>
+    ((m.categorie || '').trim() || SANS_CAT) === cat);
+
+  const parDif = {};
+  dedans.forEach(m => {
+    const d = (m.difficulte || '').trim() || SANS_DIF;
+    (parDif[d] = parDif[d] || []).push(m);
+  });
+  const difs = Object.keys(parDif).sort((a, b) => ordreDifficulte(a) - ordreDifficulte(b));
+  // Une seule section : la plier n'aurait aucun intérêt.
+  const seule = difs.length === 1;
+
+  $('#zone').innerHTML = `
+    <div class="barre" style="margin-top:0">
+      <button class="btn" id="retourCats">← Catégories</button>
+      <button class="btn plein" id="nm" style="flex:1">＋ Nouveau modèle</button></div>
+    <div style="margin-top:18px">${difs.map(d => `
+      <details class="pli" ${seule ? 'open' : ''}>
+        <summary>
+          <span class="eyebrow">${d}</span>
+          <span class="compte num">${parDif[d].length}</span>
+        </summary>
+        ${parDif[d].sort((a, b) => a.nom.localeCompare(b.nom, 'fr')).map(m => `
+          <div class="ligne" data-md="${m.id}">
+            <div class="g">
+              <div class="nom">${m.nom}</div>
+              <div class="meta">${[
+                m.duree_semaines ? m.duree_semaines + ' semaines' : '',
+                m.nbJours + ' jour' + (m.nbJours > 1 ? 's' : ''),
+                m.nbExercices + ' exercices'].filter(Boolean).join(' · ')}</div>
+            </div>
+            <span class="tag ${m.statut === 'Brouillon' ? 'warn' : ''}">${m.statut}</span>
+          </div>`).join('')}
+      </details>`).join('') || `<div class="empty">Aucun modèle dans cette catégorie.</div>`}</div>`;
+
+  $('#retourCats').onclick = () => { S.coach.categorie = null; vueCoach(); };
   $('#nm').onclick = () => modalModele(null);
   $('#zone').querySelectorAll('[data-md]').forEach(l =>
     l.onclick = () => { S.coach.modele = l.dataset.md; S.ed = null; vueCoach(); });
 }
 
 function modalModele(m) {
-  const x = m || { id:'', nom:'', categorie:'', difficulte:'', description:'', duree_semaines:'', statut:'Brouillon' };
+  const x = m || { id:'', nom:'', categorie:S.coach.categorie === SANS_CAT ? '' : (S.coach.categorie || ''),
+                   difficulte:'', description:'', duree_semaines:'', statut:'Brouillon' };
+  const cats = [...new Set((S.modeles || []).map(y => (y.categorie || '').trim()).filter(Boolean))].sort();
+
   const w = modal(m ? 'Modifier le modèle' : 'Nouveau modèle', `
     <div class="champ"><label>Nom</label><input class="f" id="kNom" value="${x.nom}" placeholder="Force 5×5"></div>
     <div class="duo">
-      <div class="champ"><label>Catégorie</label><input class="f" id="kCat" value="${x.categorie}" placeholder="Force, Hypertrophie…"></div>
+      <div class="champ"><label>Catégorie</label>
+        <input class="f" id="kCat" value="${x.categorie}" list="lCat" placeholder="Force, Hypertrophie…">
+        <datalist id="lCat">${cats.map(c => `<option>${c}</option>`).join('')}</datalist></div>
       <div class="champ"><label>Difficulté</label>
-        <select class="f" id="kDif">${['', ...DIFFICULTES].map(d =>
-          `<option ${d === x.difficulte ? 'selected' : ''}>${d}</option>`).join('')}</select></div>
+        <input class="f" id="kDif" value="${x.difficulte}" list="lDif" placeholder="Intermédiaire">
+        <datalist id="lDif">${[...new Set(DIFFICULTES.concat(
+          (S.modeles || []).map(y => (y.difficulte || '').trim()).filter(Boolean)))].map(d =>
+          `<option>${d}</option>`).join('')}</datalist></div>
     </div>
     <div class="duo">
       <div class="champ"><label>Durée (semaines)</label><input class="f" id="kDur" type="number" min="0" value="${x.duree_semaines || ''}"></div>
@@ -1893,6 +1981,8 @@ function modalModele(m) {
         <select class="f" id="kSta">${['Brouillon', 'Actif', 'Archivé'].map(d =>
           `<option ${d === x.statut ? 'selected' : ''}>${d}</option>`).join('')}</select></div>
     </div>
+    <p class="consigne">Catégorie et difficulté sont libres : tapez ce que vous voulez,
+      les valeurs déjà utilisées sont proposées.</p>
     <div class="champ"><label>Description</label><textarea class="f" id="kDes" rows="3">${x.description}</textarea></div>
     <div class="barre"><button class="btn" id="kAnn">Annuler</button>
       <button class="btn plein" id="kOk" style="flex:1">Enregistrer</button></div>
