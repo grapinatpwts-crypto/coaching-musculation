@@ -182,8 +182,26 @@ function verifyToken_(idToken) {
 // ─────────────────────────────────────────────────────────────
 // 5. ACCÈS AUX DONNÉES
 // ─────────────────────────────────────────────────────────────
+/**
+ * Feuille d'un onglet, créée à la volée depuis SCHEMA si elle manque.
+ * L'app ne doit jamais dépendre d'une migration pour démarrer : un onglet
+ * déclaré mais absent est créé vide, pas une erreur.
+ */
+function feuille_(tab) {
+  const ss = SpreadsheetApp.getActive();
+  let sh = ss.getSheetByName(tab);
+  if (!sh && SCHEMA[tab]) {
+    sh = ss.insertSheet(tab);
+    sh.getRange(1, 1, 1, SCHEMA[tab].length).setValues([SCHEMA[tab]])
+      .setFontWeight('bold').setBackground('#1C2027').setFontColor('#FFFFFF');
+    sh.setFrozenRows(1);
+  }
+  return sh;
+}
+
 function lire_(tab) {
   const sh = SpreadsheetApp.getActive().getSheetByName(tab);
+  if (!sh) return [];                       // onglet pas encore créé : rien à lire
   const values = sh.getDataRange().getValues();
   if (values.length < 2) return [];
   const head = values.shift();
@@ -198,7 +216,7 @@ function ajouter_(tab, obj) {
   const lock = LockService.getScriptLock();
   lock.waitLock(20000);
   try {
-    const sh = SpreadsheetApp.getActive().getSheetByName(tab);
+    const sh = feuille_(tab);
     const head = sh.getRange(1, 1, 1, sh.getLastColumn()).getValues()[0];
     sh.appendRow(head.map(function (h) { return obj[h] !== undefined ? obj[h] : ''; }));
   } finally {
@@ -212,7 +230,7 @@ function ajouterPlusieurs_(tab, objs) {
   const lock = LockService.getScriptLock();
   lock.waitLock(20000);
   try {
-    const sh = SpreadsheetApp.getActive().getSheetByName(tab);
+    const sh = feuille_(tab);
     const head = sh.getRange(1, 1, 1, sh.getLastColumn()).getValues()[0];
     const rangs = objs.map(function (o) {
       return head.map(function (h) { return o[h] !== undefined ? o[h] : ''; });
@@ -228,7 +246,7 @@ function majLigne_(tab, cleCol, cleVal, patch) {
   const lock = LockService.getScriptLock();
   lock.waitLock(20000);
   try {
-    const sh = SpreadsheetApp.getActive().getSheetByName(tab);
+    const sh = feuille_(tab);
     const values = sh.getDataRange().getValues();
     const head = values[0];
     const ci = head.indexOf(cleCol);
@@ -255,6 +273,7 @@ function supprimerLignes_(tab, predicat) {
   lock.waitLock(20000);
   try {
     const sh = SpreadsheetApp.getActive().getSheetByName(tab);
+    if (!sh) return 0;
     const vals = sh.getDataRange().getValues();
     const head = vals[0];
     let n = 0;
@@ -1110,10 +1129,11 @@ function migrerAttributions_() {
   const emails = Object.keys(orphelins);
   if (!emails.length) return '';
 
-  const sh = SpreadsheetApp.getActive().getSheetByName(TABS.PROGRAMMES);
+  const sh = feuille_(TABS.PROGRAMMES);
   const vals = sh.getDataRange().getValues();
   const head = vals[0];
   const ai = head.indexOf('attribution_id'), ei = head.indexOf('email');
+  if (ai === -1 || ei === -1) return '';
 
   const neuves = [];
   const parEmail = {};
@@ -1244,7 +1264,7 @@ function rechargerProgrammeTest() {
   lock.waitLock(20000);
   try {
     const cibles = TEST_EMAILS.map(function (e) { return String(e).toLowerCase(); });
-    const sh = SpreadsheetApp.getActive().getSheetByName(TABS.PROGRAMMES);
+    const sh = feuille_(TABS.PROGRAMMES);
     const vals = sh.getDataRange().getValues();
     const ei = vals[0].indexOf('email');
     let supprimees = 0;
