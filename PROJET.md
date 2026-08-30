@@ -44,7 +44,7 @@ Apps Script, qui ne renvoie à chaque personne que ses propres lignes.
 | ID client OAuth | `765877661024-r5p4dhadda0i9eb9996ctb8298f7m6h8.apps.googleusercontent.com` |
 | Origine JS autorisée | `https://grapinatpwts-crypto.github.io` |
 | URL API (`/exec`) | `https://script.google.com/macros/s/AKfycbw8wC_TmFuLzP8yTrOmX5wH5k3Yoc-AbauN3Hj9oF57Lc1NSA-MrclnkuTnKr8DtBpEiQ/exec` |
-| Email coach | `grapinat.pwts@gmail.com` |
+| Coach | Jérémy — `grapinat.pwts@gmail.com` |
 | Salle du coach | Wellness Sport Club — Lyon Confluence |
 | Second compte test | `guillaume.rapinat@gmail.com` |
 

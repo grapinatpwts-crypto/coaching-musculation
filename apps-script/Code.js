@@ -14,7 +14,7 @@ const CONFIG = {
   // Email Google du coach : accès à la vue coach
   COACH_EMAIL: 'grapinat.pwts@gmail.com',
   // Nom affiché du coach, signature des messages envoyés aux pratiquants
-  COACH_NOM: 'Votre coach',
+  COACH_NOM: 'Jérémy',
   // Adresse publique de l'app, glissée dans les messages de notification
   APP_URL: 'https://grapinatpwts-crypto.github.io/coaching-musculation/',
   // Poids de la barre olympique, pour l'affichage des disques
