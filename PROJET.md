@@ -14,6 +14,10 @@ Contraintes qui ont dicté l'architecture :
 - Pas de serveur à administrer (rejeté pour raisons de sécurité et de maintenance)
 - Données d'entraînement considérées comme sensibles → jamais exposées publiquement
 - Utilisable sur iPhone et Android ; le coach travaille aussi sur PC
+- **Rien ne part vers un pratiquant sans un geste du coach.** Il est
+  auto-entrepreneur : l'app lui fait gagner du temps, elle ne parle jamais à sa
+  place. Aucun message, aucune relance, aucune notification automatique vers un
+  pratiquant. Décidé explicitement, à ne pas revenir dessus sans nouvelle décision.
 
 ## 2. Architecture retenue
 
@@ -529,13 +533,27 @@ Le texte est composé **côté serveur** (`messageType_`) : il reste identique q
 soit le canal, et se modifie en un seul endroit. Il reprend le nom du programme, le
 nombre de séances par semaine, la durée et la date de début.
 
-### Envoi automatique de SMS : écarté pour l'instant
+### Pas d'envoi automatique — décision tranchée
 
-Apps Script ne sait pas envoyer de SMS. Il faudrait une passerelle — Twilio, Vonage,
-Brevo — donc un compte, une clé d'API et quelques centimes par message. Cela
-contredirait le « pas de coût par utilisateur » du § 1, pour un gain limité tant que
-le coach relit ses messages avant de les envoyer. À reconsidérer si les relances
-deviennent quotidiennes et nombreuses.
+Deux raisons, la seconde suffisant à elle seule.
+
+Techniquement, Apps Script ne sait pas envoyer de SMS : il faudrait une passerelle
+payante, ce qui contredirait le « pas de coût par utilisateur » du § 1.
+
+Mais surtout, **le coach veut garder la main.** Il relit et envoie lui-même, y
+compris par e-mail. Le bouton « Envoyer depuis mon compte » n'est pas une
+automatisation : c'est un raccourci qui lui évite de recopier le texte, et il ne
+part que sur son clic.
+
+Deux envois existent dans tout le projet, et deux seulement :
+
+| Fonction | Destinataire | Déclencheur |
+|---|---|---|
+| `notifierMail_` | le pratiquant | le clic du coach, après relecture |
+| `rapportHebdo` | **le coach lui-même** | manuel, ou déclencheur hebdomadaire |
+
+`rapportHebdo` peut donc être automatisé sans réserve : il ne s'adresse qu'au coach.
+Aucune fonction n'écrit à un pratiquant sans action humaine.
 
 ## 9. Parti pris visuel — charte Wellness Sport Club
 
@@ -607,8 +625,9 @@ Ce qui reste, par ordre d'utilité décroissante.
 3. **Étendre l'ajustement du pratiquant** au-delà de la charge, si le besoin
    apparaît à l'usage — les répétitions, par exemple (§ 8 octies).
 4. **Activer le déclencheur hebdomadaire** sur `rapportHebdo()`, depuis l'éditeur
-   Apps Script (`Déclencheurs ▸ Ajouter`). L'envoi manuel existe déjà dans
-   Coach ▸ Réglages.
+   Apps Script (`Déclencheurs ▸ Ajouter`). Il n'écrit qu'au coach, jamais aux
+   pratiquants : l'automatiser ne contredit pas le principe du § 1. L'envoi manuel
+   existe déjà dans Coach ▸ Réglages.
 5. **Passer l'écran OAuth en Production** avant d'ouvrir aux 40 pratiquants.
    En mode Test, seuls deux comptes se connectent et leur session expire à 7 jours.
 
