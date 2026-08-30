@@ -69,6 +69,8 @@ header h2{font-size:30px;text-transform:uppercase;line-height:1}
 .cal .c.vide{background:none;border-color:transparent}
 .cal .c.today{border-color:var(--dust)}
 .cal .c.faite{background:var(--brand);border-color:var(--brand);color:var(--on-brand);font-weight:700}
+.card.clos .nom{color:var(--dust)}
+.card.clos .body{opacity:.72}
 .cal .c[aria-pressed="true"]{outline:2px solid var(--brand-ink);outline-offset:1px}
 .cal .c .pt{width:4px;height:4px;border-radius:50%;background:var(--on-brand)}
 .legende{font-size:12px;color:var(--dust);margin:12px 0 4px;display:flex;gap:14px;flex-wrap:wrap}
@@ -226,7 +228,8 @@ const API = 'https://script.google.com/macros/s/AKfycbw8wC_TmFuLzP8yTrOmX5wH5k3Y
 const CLIENT_ID = '765877661024-r5p4dhadda0i9eb9996ctb8298f7m6h8.apps.googleusercontent.com';
 
 // ── État ─────────────────────────────────────────────────────
-const S = { token:null, moi:null, jour:null, exos:[], blocs:[], seanceId:null, faits:{}, vue:'seance', timer:null };
+const S = { token:null, moi:null, jour:null, exos:[], blocs:[], seanceId:null, debut:null,
+            faits:{}, finis:[], vue:'seance', timer:null };
 const $ = s => document.querySelector(s);
 
 // ── Appels API ───────────────────────────────────────────────
@@ -396,7 +399,7 @@ async function vueSeance() {
       <span class="streak num">${S.moi.nbSeances} séance${S.moi.nbSeances > 1 ? 's' : ''}</span>
       <button class="quitter" id="quitter" title="Se déconnecter">Quitter</button>
     </header>
-    <div class="eyebrow">Programme</div>
+    <div class="eyebrow" id="avancement">Programme</div>
     <div class="days">${S.moi.jours.map(j =>
       `<button class="day" data-jour="${j}" aria-pressed="${j === S.jour}">${j}</button>`).join('')}</div>
     <div id="liste"><div class="empty">Chargement…</div></div>`;
@@ -417,7 +420,17 @@ async function vueSeance() {
         <span class="eyebrow">Bloc ${b.bloc} · superset</span>
         <span class="bloc-info">${b.series} tours · ${b.repos_s} s</span>
       </div>${cartes}</div>`;
-  }).join('');
+  }).join('') + (S.seanceId ? `<div class="barre">
+      <button class="btn plein" id="finSeance" style="flex:1">Terminer la séance</button></div>` : '');
+
+  const total = S.exos.length;
+  const clos = S.exos.filter(x => S.finis.indexOf(x.exercice_id) !== -1 ||
+    (S.faits[x.exercice_id] || []).length >= x.series).length;
+  $('#avancement').textContent = S.seanceId
+    ? `Séance en cours · ${clos}/${total} exercices` : 'Programme';
+
+  const fs = $('#finSeance');
+  if (fs) fs.onclick = modalFinSeance;
   $('#liste').querySelectorAll('.card').forEach(c => c.onclick = () => ouvrirLogger(Number(c.dataset.i)));
 }
 
@@ -428,7 +441,9 @@ async function chargerSeance(jour) {
   // saisies : un rechargement de page ne perd plus les compteurs.
   const blocs = r.blocs || [];
   S.seanceId = r.seance_id || null;
+  S.debut = r.debut || null;
   S.faits = r.faits || {};
+  S.finis = r.finis || [];
   S.exos = []; S.blocs = blocs;
   blocs.forEach((b, bi) => b.exercices.forEach((e, ei) => {
     e._b = bi; e._e = ei; e._i = S.exos.length;   // bloc, rang dans le bloc, index plat
@@ -447,16 +462,18 @@ function duree(sec) {
 /** Carte d'un exercice. series et repos_s sont hérités de son bloc. */
 function carte(e) {
   const n = (S.faits[e.exercice_id] || []).length;
+  const fini = S.finis.indexOf(e.exercice_id) !== -1;
   const cible = e.duree_s ? duree(e.duree_s) : e.reps_cible;
-  return `<button class="card" data-i="${e._i}">
+  return `<button class="card ${fini ? 'clos' : ''}" data-i="${e._i}">
     <div class="body">
       <div class="nom">${e.nom}</div>
       <div class="meta">${e.series} × ${cible}${e.charge_cible ? ' · ' + e.charge_cible + ' kg' : ''}${
-        e.dernier && e.charge_cible ? ' · dernière fois ' + e.dernier.charge + ' kg' : ''}</div>
+        fini && n < e.series ? ' · arrêté à ' + n : ''}${
+        !fini && e.dernier && e.charge_cible ? ' · dernière fois ' + e.dernier.charge + ' kg' : ''}</div>
       ${e.cadence ? `<div class="cadbloc"><span class="cadence">${e.cadence}</span>${courbeCadence(e.cadence, false)}</div>` : ''}
       ${e.charge_cible ? disques(e.charge_cible) : ''}
     </div>
-    <div class="done ${n >= e.series ? 'full' : ''}">${n}/${e.series}</div>
+    <div class="done ${fini || n >= e.series ? 'full' : ''}">${fini && n < e.series ? '✓' : n + '/' + e.series}</div>
   </button>`;
 }
 
@@ -512,7 +529,8 @@ async function ouvrirLogger(i) {
         <div class="val num" id="vCharge">${charge}</div>
         <div class="row"><button data-c="-2.5">−</button><button data-c="2.5">+</button></div></div>
     </div>
-    <button class="valider">Valider la série ${(S.faits[e.exercice_id] || []).length + 1}</button>`;
+    <button class="valider">Valider la série ${(S.faits[e.exercice_id] || []).length + 1}</button>
+    <div class="barre"><button class="btn" id="finir" style="flex:1">Terminer cet exercice</button></div>`;
 
   const maj = () => {
     // Le logger a pu être fermé ou remplacé pendant que le chrono tournait :
@@ -553,22 +571,42 @@ async function ouvrirLogger(i) {
   L.querySelectorAll('[data-c]').forEach(x => x.onclick = () => { charge = Math.max(0, charge + Number(x.dataset.c)); maj(); });
   L.querySelector('.close').onclick = () => { clearInterval(chrono); L.classList.add('hidden'); vueSeance(); };
 
+  const ouvert = x => S.finis.indexOf(x.exercice_id) === -1;
+
   /**
    * Après une série validée, deux minuteurs distincts :
-   *  - il reste des exercices dans le bloc → PAUSE (pause_s), puis on enchaîne ;
-   *  - le tour est bouclé → REPOS (repos_s), puis retour au premier du bloc.
+   *  - il reste des exercices ouverts dans le bloc → PAUSE (pause_s), on enchaîne ;
+   *  - le tour est bouclé → REPOS (repos_s), puis retour au premier encore ouvert.
+   * `clos` force la sortie de l'exercice courant : le pratiquant l'a terminé de
+   * lui-même, sans forcément avoir fait toutes ses séries.
    */
-  const suite = () => {
+  const suite = (clos) => {
     const faits = (S.faits[e.exercice_id] || []).length;
-    if (N > 1 && e._e < N - 1) {
-      return lancerMinuteur(e.pause_s, 'Pause', () => ouvrirLogger(b.exercices[e._e + 1]._i));
+    const apres = b.exercices.slice(e._e + 1).filter(ouvert);
+
+    if (N > 1 && apres.length) {
+      return lancerMinuteur(e.pause_s, 'Pause', () => ouvrirLogger(apres[0]._i));
     }
-    if (faits < b.series) {
-      return lancerMinuteur(b.repos_s, 'Repos', () => { if (N > 1) ouvrirLogger(b.exercices[0]._i); });
+    // Tour bouclé. Reste-t-il des tours à faire, sur des exercices encore ouverts ?
+    const restants = b.exercices.filter(ouvert);
+    if (!clos && faits < b.series && restants.length) {
+      return lancerMinuteur(b.repos_s, 'Repos', () => {
+        if (N > 1) ouvrirLogger(restants[0]._i);
+      });
     }
     clearInterval(chrono);
     L.classList.add('hidden');
     vueSeance();
+  };
+
+  L.querySelector('#finir').onclick = async function () {
+    this.disabled = true;
+    clearInterval(chrono); chrono = null; tourne = false;
+    try {
+      if (S.seanceId) await api('finirExercice', { seance_id:S.seanceId, exercice_id:e.exercice_id });
+      if (ouvert(e)) S.finis.push(e.exercice_id);
+      suite(true);
+    } catch (err) { toast(err.message); this.disabled = false; }
   };
 
   L.querySelector('.valider').onclick = async function () {
@@ -633,6 +671,50 @@ function courbeCadence(c, grand) {
     <polyline points="${pts.map(q => q.join(',')).join(' ')}" fill="none" stroke="var(--brand-ink)"
       stroke-width="${grand ? 2.5 : 2}" stroke-linejoin="round" stroke-linecap="round"/>
   </svg>`;
+}
+
+/**
+ * Clôt la séance. Rien n'oblige à avoir tout fait : les exercices non commencés
+ * restent simplement non commencés, la séance est enregistrée telle quelle.
+ */
+function modalFinSeance() {
+  const total = S.exos.length;
+  const clos = S.exos.filter(x => S.finis.indexOf(x.exercice_id) !== -1 ||
+    (S.faits[x.exercice_id] || []).length >= x.series).length;
+  const mins = S.debut ? Math.max(1, Math.round((Date.now() - new Date(S.debut)) / 60000)) : '';
+
+  const w = modal('Terminer la séance', `
+    <p class="consigne">${clos} exercice${clos > 1 ? 's' : ''} sur ${total}${
+      clos < total ? ' — les autres resteront non faits, c\'est sans conséquence.' : ' — séance complète.'}</p>
+    <div class="duo">
+      <div class="champ"><label>Durée (min)</label>
+        <input class="f" id="fDur" type="number" min="1" value="${mins}"></div>
+      <div class="champ"><label>Ressenti</label>
+        <select class="f" id="fRes">${['Facile', 'Correct', 'Dur', 'Très dur'].map(r =>
+          `<option ${r === 'Correct' ? 'selected' : ''}>${r}</option>`).join('')}</select></div>
+    </div>
+    <div class="champ"><label>Notes</label>
+      <textarea class="f" id="fNot" rows="3" placeholder="Douleur, sensation, matériel occupé…"></textarea></div>
+    <div class="barre"><button class="btn" id="fAnn">Continuer la séance</button>
+      <button class="btn plein" id="fOk" style="flex:1">Terminer</button></div>`);
+
+  w.querySelector('#fAnn').onclick = w.fermer;
+  w.querySelector('#fOk').onclick = async function () {
+    this.disabled = true;
+    try {
+      await api('terminer', {
+        seance_id: S.seanceId,
+        duree_min: w.querySelector('#fDur').value,
+        ressenti: w.querySelector('#fRes').value,
+        notes: w.querySelector('#fNot').value
+      });
+      w.fermer();
+      toast('Séance enregistrée');
+      S.seanceId = null; S.debut = null; S.faits = {}; S.finis = []; S.cal = null;
+      try { S.moi = await api('bootstrap'); sauverSession(); } catch (err) {}
+      vueSeance();
+    } catch (err) { toast(err.message); this.disabled = false; }
+  };
 }
 
 // ── Minuteurs : pause dans le bloc, repos de fin de tour ──────

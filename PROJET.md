@@ -79,7 +79,7 @@ côté, zone sûre respectée). Régénérables : voir § 9.
 | `ModeleLignes` | id, modele_id, jour, bloc, ordre, exercice_id, series, reps_cible, duree_s, charge_cible, cadence, pause_s, repos_s |
 | `Attributions` | id, email, modele_id, nom, date_debut, date_fin, statut, notes, cree_le |
 | `Programmes` | id, **attribution_id**, email, jour, bloc, ordre, exercice_id, series, reps_cible, duree_s, charge_cible, cadence, pause_s, repos_s |
-| `Seances` | id, email, date, jour, duree_min, ressenti, notes |
+| `Seances` | id, email, date, jour, duree_min, ressenti, notes, **exercices_finis** |
 | `Series` | id, seance_id, email, exercice_id, serie_num, reps, **duree_s**, charge, horodatage |
 
 Sept exercices d'exemple créés par `setup()` : EX001 développé couché, EX002 squat,
@@ -148,10 +148,12 @@ Toutes en POST sur l'URL `/exec`, corps `{token, action, payload}`,
 | Action | Payload | Retour |
 |---|---|---|
 | `bootstrap` | — | profil, jours, nb séances, estCoach |
-| `seance` | `{jour}` | `{seance_id, faits, blocs}` — `blocs` porte cadence, pause_s, duree_s ; `faits` les séries déjà saisies aujourd'hui |
+| `seance` | `{jour}` | `{seance_id, debut, faits, finis, blocs}` — `faits` les séries déjà saisies, `finis` les exercices clos |
 | `demarrer` | `{jour}` | `{seance_id}` |
 | `serie` | `{seance_id, exercice_id, serie_num, reps \| duree_s, charge}` | confirmation |
-| `terminer` | `{seance_id, duree_min, ressenti, notes}` | confirmation |
+| `terminer` | `{seance_id, duree_min?, ressenti, notes}` | clôt la séance ; durée déduite du début si absente |
+| `finirExercice` | `{seance_id, exercice_id}` | clôt un exercice sans exiger toutes ses séries |
+| `reprendreExercice` | `{seance_id, exercice_id}` | rouvre un exercice clos par erreur |
 | `historique` | `{exercice_id}` | 30 dernières séries |
 | `calendrier` | `{depuis?, jusqua?, email?}` | séances de la période + volume et durée |
 | `catalogue` | — | bibliothèque d'exercices complète |
@@ -298,10 +300,48 @@ Le jeton en `localStorage` est une clé de session au porteur. Il expire seul en
 heure et le bouton **Quitter** l'efface, en coupant aussi la reconnexion
 automatique de Google.
 
+### Rien n'oblige à aller au bout
+
+Une séance réelle s'interrompt : matériel occupé, douleur, temps qui manque. Trois
+sorties sont prévues, à tous les niveaux.
+
+**Terminer un exercice** sans faire toutes ses séries — bouton dans l'écran de
+saisie. Les séries déjà enregistrées sont conservées, l'exercice passe en « clos » et
+la carte affiche « arrêté à 2 ». Dans un superset, l'enchaînement saute les exercices
+clos et continue avec les autres.
+
+**Terminer la séance** à tout moment — bouton en bas de la liste, actif dès qu'une
+séance est ouverte. La durée est pré-remplie depuis l'heure de début ; ressenti et
+notes sont libres. Les exercices jamais commencés restent simplement non commencés :
+aucune notion d'échec.
+
+**Ne rien terminer du tout.** La séance reste ouverte et se reprend le jour même.
+Le lendemain, `seanceOuverte_` ne la voit plus — elle filtre sur la date — et une
+nouvelle séance démarre. L'ancienne garde sa `duree_min` vide, ce qui la distingue
+des séances closes.
+
+La colonne `exercices_finis` de `Seances` porte la liste des exercices clos, séparés
+par des virgules. C'est ce qui permet de retrouver l'état exact après un rechargement.
+
 **La séance en cours se reprend.** `getSeance_` renvoie la séance du jour si elle est
 ouverte, avec les séries déjà saisies ; `demarrerSeance_` la réutilise au lieu d'en
 créer une seconde. Auparavant les données étaient bien écrites dans le Sheet, mais
 les compteurs de l'écran repartaient de zéro après un rechargement.
+
+## 8 quinquies. Aucune migration obligatoire
+
+`feuille_()` crée l'onglet manquant depuis `SCHEMA`, et complète l'en-tête avec les
+colonnes déclarées mais absentes. `lire_()` renvoie un tableau vide sur un onglet
+inexistant.
+
+Conséquence : **ajouter une colonne ou un onglet à `SCHEMA` suffit**, le classeur se
+met à niveau au premier usage. Une version antérieure exigeait de lancer la migration
+avant de pouvoir seulement se connecter — `bootstrap_` lisait `Attributions`, absent,
+et `getDataRange()` échouait sur `null`.
+
+`Muscu ▸ Migration : aligner les colonnes` reste utile pour une chose que
+l'auto-création ne fait pas : rattacher les lignes de `Programmes` antérieures au
+modèle d'attribution à une attribution « Programme courant ».
 
 ## 9. Parti pris visuel — charte Wellness Sport Club
 

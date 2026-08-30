@@ -43,7 +43,7 @@ const SCHEMA = {
   // Programmes : les lignes RÉELLES d'une attribution, personnalisables sans
   // toucher au modèle dont elles sont issues.
   Programmes: ['id', 'attribution_id', 'email', 'jour', 'bloc', 'ordre', 'exercice_id', 'series', 'reps_cible', 'duree_s', 'charge_cible', 'cadence', 'pause_s', 'repos_s'],
-  Seances: ['id', 'email', 'date', 'jour', 'duree_min', 'ressenti', 'notes'],
+  Seances: ['id', 'email', 'date', 'jour', 'duree_min', 'ressenti', 'notes', 'exercices_finis'],
   Series: ['id', 'seance_id', 'email', 'exercice_id', 'serie_num', 'reps', 'duree_s', 'charge', 'horodatage']
 };
 
@@ -121,6 +121,8 @@ function route_(action, p, user, profil, estCoach) {
     case 'demarrer':       return demarrerSeance_(user.email, p.jour);
     case 'serie':          return logSerie_(user.email, p);
     case 'terminer':       return terminerSeance_(user.email, p);
+    case 'finirExercice':  return finirExercice_(user.email, p);
+    case 'reprendreExercice': return reprendreExercice_(user.email, p);
     case 'historique':     return historique_(user.email, p.exercice_id);
     case 'calendrier':     return calendrier_(cibleEmail_(user, p, estCoach), p);
     case 'catalogue':      return catalogue_();
@@ -195,8 +197,25 @@ function feuille_(tab) {
     sh.getRange(1, 1, 1, SCHEMA[tab].length).setValues([SCHEMA[tab]])
       .setFontWeight('bold').setBackground('#1C2027').setFontColor('#FFFFFF');
     sh.setFrozenRows(1);
+    return sh;
   }
+  if (sh && SCHEMA[tab]) ajouterColonnesManquantes_(sh, SCHEMA[tab]);
   return sh;
+}
+
+/**
+ * Complète l'en-tête d'un onglet avec les colonnes déclarées mais absentes.
+ * Sans ça, une valeur écrite dans une colonne non créée serait silencieusement
+ * perdue : `ajouter_` et `majLigne_` travaillent par nom de colonne.
+ */
+function ajouterColonnesManquantes_(sh, colonnes) {
+  const largeur = sh.getLastColumn();
+  const head = largeur ? sh.getRange(1, 1, 1, largeur).getValues()[0] : [];
+  const manquantes = colonnes.filter(function (c) { return head.indexOf(c) === -1; });
+  if (!manquantes.length) return 0;
+  sh.getRange(1, head.length + 1, 1, manquantes.length).setValues([manquantes])
+    .setFontWeight('bold').setBackground('#1C2027').setFontColor('#FFFFFF');
+  return manquantes.length;
 }
 
 function lire_(tab) {
@@ -422,6 +441,7 @@ function getSeance_(email, jour) {
   // alors que les données étaient bien enregistrées.
   const ouverte = seanceOuverte_(email, jour);
   const faits = {};
+  const finis = ouverte ? listeFinis_(ouverte) : [];
   if (ouverte) {
     series.filter(function (s) { return String(s.seance_id) === String(ouverte.id); })
       .sort(function (a, b) { return Number(a.serie_num) - Number(b.serie_num); })
@@ -433,7 +453,49 @@ function getSeance_(email, jour) {
         });
       });
   }
-  return { seance_id: ouverte ? ouverte.id : null, faits: faits, blocs: blocs };
+  return {
+    seance_id: ouverte ? ouverte.id : null,
+    debut: ouverte ? ouverte.date : null,
+    faits: faits,
+    finis: finis,
+    blocs: blocs
+  };
+}
+
+/** Exercices déjà clos dans une séance, colonne `exercices_finis` (liste séparée par des virgules). */
+function listeFinis_(seance) {
+  return String(seance.exercices_finis || '')
+    .split(',').map(function (x) { return x.trim(); }).filter(Boolean);
+}
+
+function seanceParId_(email, id) {
+  const s = lire_(TABS.SEANCES).filter(function (x) {
+    return String(x.id) === String(id) && String(x.email).toLowerCase() === email;
+  })[0];
+  if (!s) throw new Error('SEANCE_INTROUVABLE');
+  return s;
+}
+
+/**
+ * Clôt un exercice sans exiger que toutes les séries soient faites : le pratiquant
+ * décide qu'il en a terminé. Les séries déjà saisies sont conservées.
+ */
+function finirExercice_(email, p) {
+  if (!p.seance_id || !p.exercice_id) throw new Error('PARAMS_REQUIS');
+  const s = seanceParId_(email, p.seance_id);
+  const finis = listeFinis_(s);
+  if (finis.indexOf(String(p.exercice_id)) === -1) finis.push(String(p.exercice_id));
+  majLigne_(TABS.SEANCES, 'id', p.seance_id, { exercices_finis: finis.join(',') });
+  return { finis: finis };
+}
+
+/** Rouvre un exercice clos par erreur. */
+function reprendreExercice_(email, p) {
+  if (!p.seance_id || !p.exercice_id) throw new Error('PARAMS_REQUIS');
+  const s = seanceParId_(email, p.seance_id);
+  const finis = listeFinis_(s).filter(function (x) { return x !== String(p.exercice_id); });
+  majLigne_(TABS.SEANCES, 'id', p.seance_id, { exercices_finis: finis.join(',') });
+  return { finis: finis };
 }
 
 /** Numéro de bloc. Sans colonne « bloc », chaque ligne forme son propre bloc. */
@@ -506,13 +568,27 @@ function logSerie_(email, p) {
   return { enregistre: true };
 }
 
+/**
+ * Clôt la séance. Une séance peut être terminée à tout moment, y compris avec des
+ * exercices jamais commencés : c'est le pratiquant qui décide quand il s'arrête.
+ * Sans `duree_min`, la durée est déduite de l'heure de début.
+ */
 function terminerSeance_(email, p) {
+  if (!p.seance_id) throw new Error('SEANCE_MANQUANTE');
+  const s = seanceParId_(email, p.seance_id);
+
+  let duree = Number(p.duree_min) || 0;
+  if (!duree && s.date) {
+    duree = Math.max(1, Math.round((Date.now() - new Date(s.date).getTime()) / 60000));
+    if (duree > 300) duree = 0;   // séance oubliée ouverte : mieux vaut vide qu'absurde
+  }
+
   majLigne_(TABS.SEANCES, 'id', p.seance_id, {
-    duree_min: Number(p.duree_min) || '',
+    duree_min: duree || '',
     ressenti: p.ressenti || '',
     notes: p.notes || ''
   });
-  return { termine: true };
+  return { termine: true, duree_min: duree };
 }
 
 function historique_(email, exerciceId) {
@@ -1076,14 +1152,11 @@ function migrerSchema() {
       }
       let head = sh.getRange(1, 1, 1, sh.getLastColumn()).getValues()[0];
 
-      const manquantes = SCHEMA[nom].filter(function (c) { return head.indexOf(c) === -1; });
-      manquantes.forEach(function (col) {
-        const c = head.length + 1;
-        sh.getRange(1, c).setValue(col)
-          .setFontWeight('bold').setBackground('#1C2027').setFontColor('#FFFFFF');
-        head = head.concat([col]);
-      });
-      if (manquantes.length) rapport.push(nom + ' : + ' + manquantes.join(', '));
+      const ajoutees = ajouterColonnesManquantes_(sh, SCHEMA[nom]);
+      if (ajoutees) {
+        head = sh.getRange(1, 1, 1, sh.getLastColumn()).getValues()[0];
+        rapport.push(nom + ' : ' + ajoutees + ' colonne(s) ajoutée(s)');
+      }
 
       // Reprise de « bloc » depuis « ordre »
       const n = sh.getLastRow() - 1;
