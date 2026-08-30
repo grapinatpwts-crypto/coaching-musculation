@@ -53,6 +53,12 @@ header{display:flex;align-items:center;justify-content:space-between;gap:10px;ma
 header h2{flex:1}
 header h2{font-size:30px;text-transform:uppercase;line-height:1}
 .streak{font-size:13px;color:var(--dust);font-variant-numeric:tabular-nums}
+#reseau{position:fixed;left:0;right:0;bottom:calc(53px + env(safe-area-inset-bottom));
+  background:#2A2A2A;border-top:1px solid var(--edge);color:var(--chalk);font-size:12.5px;
+  padding:10px 16px;display:flex;align-items:center;gap:9px;z-index:15;cursor:pointer}
+#reseau .pastille{width:7px;height:7px;border-radius:50%;background:var(--brand-ink);
+  flex:0 0 auto;animation:pulse 1.8s ease-in-out infinite}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.35}}
 .quitter{font-size:12px;font-weight:600;color:var(--dust);border:1px solid var(--edge);
   border-radius:999px;padding:7px 12px;background:var(--plate);white-space:nowrap}
 
@@ -131,6 +137,7 @@ header h2{font-size:30px;text-transform:uppercase;line-height:1}
 .cadbloc{display:flex;align-items:center;gap:10px;margin-top:8px}
 .cad{display:block;overflow:visible}
 .cad.grand{margin-top:10px;max-width:100%;height:auto}
+.prog{display:block;width:100%;height:auto;max-width:340px;margin:10px 0 4px}
 
 /* Sélecteur de jour */
 .days{display:flex;gap:8px;overflow-x:auto;padding-bottom:14px;margin-bottom:6px;scrollbar-width:none}
@@ -237,12 +244,19 @@ const $ = s => document.querySelector(s);
 
 // ── Appels API ───────────────────────────────────────────────
 async function api(action, payload = {}) {
-  const r = await fetch(API, {
-    method:'POST',
-    headers:{'Content-Type':'text/plain;charset=utf-8'},   // évite le préflight CORS
-    body:JSON.stringify({ token:S.token, action, payload })
-  });
-  const j = await r.json();
+  let j;
+  try {
+    const r = await fetch(API, {
+      method:'POST',
+      headers:{'Content-Type':'text/plain;charset=utf-8'},   // évite le préflight CORS
+      body:JSON.stringify({ token:S.token, action, payload })
+    });
+    j = await r.json();
+  } catch (e) {
+    // Réseau absent, ou réponse illisible (portail captif) : traité comme une panne,
+    // jamais comme une erreur métier — l'appelant peut différer l'action.
+    throw new Error('RESEAU');
+  }
   if (!j.ok) {
     if (/TOKEN/.test(j.error)) return reconnexion();
     throw new Error(j.error);
@@ -256,6 +270,159 @@ function toast(msg) {
   document.body.appendChild(t);
   setTimeout(() => t.remove(), 2600);
 }
+
+// ── Hors ligne ───────────────────────────────────────────────
+// Une salle en sous-sol coupe le réseau. Deux mécanismes : les lectures sont
+// servies depuis un cache local, les écritures sont mises en file et rejouées
+// dès le retour du réseau. Rien n'est perdu, rien ne bloque la séance.
+
+const CLE_FILE  = 'muscu.file';
+const CLE_CACHE = 'muscu.cache';
+const CLE_MAP   = 'muscu.map';
+
+/** Actions rejouables sans risque : elles décrivent un fait, pas un état global. */
+const DIFFERABLES = ['demarrer', 'serie', 'finirExercice', 'reprendreExercice', 'terminer'];
+
+const lireJSON = (cle, defaut) => {
+  try { return JSON.parse(localStorage.getItem(cle)) ?? defaut; } catch (e) { return defaut; }
+};
+const ecrireJSON = (cle, val) => {
+  try { localStorage.setItem(cle, JSON.stringify(val)); } catch (e) {}
+};
+
+let file = lireJSON(CLE_FILE, []);
+let mapSeances = lireJSON(CLE_MAP, {});   // identifiant local → identifiant serveur
+let vidageEnCours = false;
+
+const enLigne = () => navigator.onLine !== false;
+const estReseau = err => err && err.message === 'RESEAU';
+
+/** Cache des lectures, une entrée par action et par clé. */
+function cache(cle, valeur) {
+  const c = lireJSON(CLE_CACHE, {});
+  if (valeur === undefined) return c[cle];
+  c[cle] = { v: valeur, ts: Date.now() };
+  ecrireJSON(CLE_CACHE, c);
+}
+
+/**
+ * Lecture tolérante : le réseau d'abord, le cache en secours.
+ * `frais` à false signale à l'appelant qu'il regarde une copie.
+ */
+async function lire(action, payload, cleCache) {
+  try {
+    const d = await api(action, payload);
+    cache(cleCache, d);
+    S.horsLigne = false;
+    return { d, frais: true };
+  } catch (err) {
+    if (!estReseau(err)) throw err;
+    const c = cache(cleCache);
+    S.horsLigne = true;
+    majBandeau();
+    if (!c) throw new Error('HORS_LIGNE_SANS_CACHE');
+    return { d: c.v, frais: false };
+  }
+}
+
+/**
+ * Écriture tolérante : on tente, et si le réseau manque on met en file.
+ * L'appelant reçoit une réponse immédiate et la séance continue.
+ */
+async function ecrire(action, payload) {
+  if (DIFFERABLES.indexOf(action) === -1) return api(action, payload);
+  if (!file.length && enLigne()) {
+    try {
+      const d = await api(action, payload);
+      S.horsLigne = false; majBandeau();
+      return d;
+    } catch (err) {
+      if (!estReseau(err)) throw err;
+    }
+  }
+  file.push({ action, payload, ts: Date.now() });
+  ecrireJSON(CLE_FILE, file);
+  S.horsLigne = true;
+  majBandeau();
+  return { differe: true };
+}
+
+/** Identifiant provisoire quand la séance n'a pas pu être créée côté serveur. */
+function seanceLocale() {
+  return 'LOC-' + Date.now().toString(36).toUpperCase();
+}
+
+/**
+ * Rejoue la file dans l'ordre. Une séance créée hors ligne porte un identifiant
+ * local : on la crée pour de bon au premier passage, puis on substitue partout.
+ */
+async function viderFile() {
+  if (vidageEnCours || !file.length || !enLigne() || !S.token) return;
+  vidageEnCours = true;
+  const avant = file.length;
+
+  try {
+    while (file.length) {
+      const e = file[0];
+      const p = Object.assign({}, e.payload);
+
+      if (p.seance_id && mapSeances[p.seance_id]) p.seance_id = mapSeances[p.seance_id];
+
+      if (e.action === 'demarrer') {
+        const r = await api('demarrer', { jour: p.jour });
+        if (e.local) {
+          mapSeances[e.local] = r.seance_id;
+          ecrireJSON(CLE_MAP, mapSeances);
+          if (S.seanceId === e.local) S.seanceId = r.seance_id;
+        }
+      } else if (String(p.seance_id || '').indexOf('LOC-') === 0) {
+        // La séance n'a jamais été créée : on la crée maintenant.
+        const r = await api('demarrer', { jour: p.jour || S.jour });
+        mapSeances[p.seance_id] = r.seance_id;
+        ecrireJSON(CLE_MAP, mapSeances);
+        if (S.seanceId === p.seance_id) S.seanceId = r.seance_id;
+        p.seance_id = r.seance_id;
+        await api(e.action, p);
+      } else {
+        await api(e.action, p);
+      }
+
+      file.shift();
+      ecrireJSON(CLE_FILE, file);
+      majBandeau();
+    }
+    S.horsLigne = false;
+    majBandeau();
+    if (avant) {
+      toast(avant + (avant > 1 ? ' actions enregistrées' : ' action enregistrée'));
+      if (S.vue === 'seance') vueSeance();
+    }
+  } catch (err) {
+    // Réseau encore absent ou serveur en erreur : on retentera.
+  }
+  vidageEnCours = false;
+}
+
+/** Bandeau discret : état du réseau et nombre d'actions en attente. */
+function majBandeau() {
+  let b = $('#reseau');
+  if (!b) {
+    b = document.createElement('div');
+    b.id = 'reseau';
+    document.body.appendChild(b);
+    b.onclick = viderFile;
+  }
+  if (!file.length && !S.horsLigne) { b.classList.add('hidden'); return; }
+  b.classList.remove('hidden');
+  b.className = file.length ? 'attente' : 'attente vide';
+  b.innerHTML = file.length
+    ? `<span class="pastille"></span>${file.length} en attente · sera envoyé au retour du réseau`
+    : `<span class="pastille"></span>Hors ligne`;
+}
+
+window.addEventListener('online', viderFile);
+window.addEventListener('offline', () => { S.horsLigne = true; majBandeau(); });
+setInterval(viderFile, 20000);
 
 // ── Connexion Google et session ──────────────────────────────
 const CLE_SESSION = 'muscu.session';
@@ -340,6 +507,8 @@ function ouvrirApp(moi) {
   $('#nav').classList.remove('hidden');
   if (moi.estCoach) document.querySelector('[data-vue="coach"]').classList.remove('hidden');
   S.jour = S.jour || moi.jours[0] || null;
+  majBandeau();
+  viderFile();
   rendre();
 }
 
@@ -441,7 +610,7 @@ async function vueSeance() {
     this.disabled = true;
     const id = this.dataset.rep;
     try {
-      if (S.seanceId) await api('reprendreExercice', { seance_id:S.seanceId, exercice_id:id });
+      if (S.seanceId) await ecrire('reprendreExercice', { seance_id:S.seanceId, exercice_id:id, jour:S.jour });
       S.finis = S.finis.filter(x => x !== id);
       vueSeance();
     } catch (err) { toast(err.message); this.disabled = false; }
@@ -450,7 +619,8 @@ async function vueSeance() {
 
 /** Charge la séance en blocs et remet à plat S.exos, index utilisé par le logger. */
 async function chargerSeance(jour) {
-  const r = await api('seance', { jour });
+  const { d: r, frais } = await lire('seance', { jour }, 'seance:' + jour);
+  if (!frais) majBandeau();
   // Le serveur renvoie la séance du jour si elle est ouverte, avec les séries déjà
   // saisies : un rechargement de page ne perd plus les compteurs.
   const blocs = r.blocs || [];
@@ -510,6 +680,49 @@ function carte(e) {
   ${ferme}`;
 }
 
+const arrondi = n => Math.round(n * 10) / 10;
+
+/**
+ * Une valeur par séance : la charge la plus lourde du jour, du plus ancien au plus
+ * récent. L'historique arrive du serveur en ordre décroissant.
+ */
+function seriesParSeance(h) {
+  const parJour = {};
+  h.forEach(x => {
+    const k = cleJour(new Date(x.date));
+    parJour[k] = Math.max(parJour[k] || 0, Number(x.charge) || 0);
+  });
+  return Object.keys(parJour).sort().map(k => ({ jour: k, kg: parJour[k] }));
+}
+
+/**
+ * Courbe de progression : une séance en abscisse, la charge en ordonnée.
+ * L'échelle part de 90 % du minimum pour que la pente reste lisible même quand
+ * les charges varient peu — un aplatissement à zéro ne dirait rien.
+ */
+function courbeProgression(pts) {
+  if (pts.length < 2) return '';
+  const W = 300, H = 64, m = 6;
+  const kg = pts.map(p => p.kg);
+  const bas = Math.min(...kg) * 0.9;
+  const haut = Math.max(...kg);
+  const ec = haut - bas || 1;
+  const x = i => m + (W - 2 * m) * (i / (pts.length - 1));
+  const y = v => H - m - (H - 2 * m) * ((v - bas) / ec);
+
+  const ligne = pts.map((p, i) => `${arrondi(x(i))},${arrondi(y(p.kg))}`).join(' ');
+  const aire = `${m},${H - m} ${ligne} ${W - m},${H - m}`;
+  const dernier = pts[pts.length - 1];
+
+  return `<svg class="prog" viewBox="0 0 ${W} ${H}" width="${W}" height="${H}" role="img"
+      aria-label="Progression sur ${pts.length} séances, de ${kg[0]} à ${dernier.kg} kg">
+    <polygon points="${aire}" fill="var(--brand)" opacity=".14"/>
+    <polyline points="${ligne}" fill="none" stroke="var(--brand-ink)" stroke-width="2"
+      stroke-linejoin="round" stroke-linecap="round"/>
+    <circle cx="${arrondi(x(pts.length - 1))}" cy="${arrondi(y(dernier.kg))}" r="3.5" fill="var(--brand-ink)"/>
+  </svg>`;
+}
+
 /** Décompose une charge en disques olympiques colorés (barre de 20 kg). */
 function disques(kg) {
   const parSide = (Number(kg) - (S.moi.barKg || 20)) / 2;
@@ -527,7 +740,18 @@ function disques(kg) {
 async function ouvrirLogger(i) {
   const e = S.exos[i];
   const b = S.blocs[e._b];
-  if (!S.seanceId) S.seanceId = (await api('demarrer', { jour:S.jour })).seance_id;
+  if (!S.seanceId) {
+    try {
+      S.seanceId = (await api('demarrer', { jour:S.jour })).seance_id;
+    } catch (err) {
+      if (!estReseau(err)) throw err;
+      // Pas de réseau : identifiant provisoire, la séance sera créée au rejeu.
+      S.seanceId = seanceLocale();
+      file.push({ action:'demarrer', payload:{ jour:S.jour }, local:S.seanceId, ts:Date.now() });
+      ecrireJSON(CLE_FILE, file);
+      S.horsLigne = true; majBandeau();
+    }
+  }
 
   // Exercice au temps : duree_s renseigné. Un nombre = durée à tenir (décompte),
   // 'max' = jusqu'à l'échec (le chrono monte).
@@ -636,7 +860,7 @@ async function ouvrirLogger(i) {
     this.disabled = true;
     clearInterval(chrono); chrono = null; tourne = false;
     try {
-      if (S.seanceId) await api('finirExercice', { seance_id:S.seanceId, exercice_id:e.exercice_id });
+      if (S.seanceId) await ecrire('finirExercice', { seance_id:S.seanceId, exercice_id:e.exercice_id, jour:S.jour });
       if (ouvert(e)) S.finis.push(e.exercice_id);
       suite(true);
     } catch (err) { toast(err.message); this.disabled = false; }
@@ -649,7 +873,7 @@ async function ouvrirLogger(i) {
       const num = (S.faits[e.exercice_id] || []).length + 1;
       const p = { seance_id:S.seanceId, exercice_id:e.exercice_id, serie_num:num, charge };
       if (auTemps) p.duree_s = ecoule; else p.reps = reps;
-      await api('serie', p);
+      await ecrire('serie', Object.assign({ jour:S.jour }, p));
       (S.faits[e.exercice_id] = S.faits[e.exercice_id] || [])
         .push(auTemps ? { duree_s:ecoule, charge } : { reps, charge });
       if (auTemps) { ecoule = 0; const g = L.querySelector('#go'); if (g) g.textContent = 'Démarrer'; }
@@ -735,8 +959,9 @@ function modalFinSeance() {
   w.querySelector('#fOk').onclick = async function () {
     this.disabled = true;
     try {
-      await api('terminer', {
+      await ecrire('terminer', {
         seance_id: S.seanceId,
+        jour: S.jour,
         duree_min: w.querySelector('#fDur').value,
         ressenti: w.querySelector('#fRes').value,
         notes: w.querySelector('#fNot').value
@@ -795,15 +1020,23 @@ async function vueProgres() {
   if (!S.exos.length) { $('#liste').innerHTML = `<div class="empty">Enregistrez une première séance pour voir vos courbes.</div>`; return; }
 
   const blocs = await Promise.all(S.exos.map(async e => {
-    const h = await api('historique', { exercice_id:e.exercice_id });
+    let h;
+    try { h = (await lire('historique', { exercice_id:e.exercice_id }, 'hist:' + e.exercice_id)).d; }
+    catch (err) { return ''; }
     if (!h.length) return '';
+
     const max = Math.max(...h.map(x => x.charge));
+    const pts = seriesParSeance(h);
+    const evol = pts.length > 1 ? pts[pts.length - 1].kg - pts[0].kg : 0;
+
     return `<div class="card" style="display:block">
       <div class="nom">${e.nom}</div>
-      <div class="meta">Record ${max} kg · ${h.length} séries enregistrées</div>
+      <div class="meta">Record ${max} kg · ${h.length} série${h.length > 1 ? 's' : ''} enregistrée${h.length > 1 ? 's' : ''}${
+        evol ? ` · <span style="color:var(--brand-ink)">${evol > 0 ? '+' : ''}${arrondi(evol)} kg</span> depuis le début` : ''}</div>
+      ${courbeProgression(pts)}
       ${disques(max)}
       <div class="sets">${h.slice(0, 6).map(x =>
-        `<span class="set">${x.reps} × ${x.charge} kg</span>`).join('')}</div>
+        `<span class="set">${x.duree_s ? duree(x.duree_s) : x.reps + ' × ' + x.charge + ' kg'}</span>`).join('')}</div>
     </div>`;
   }));
   $('#liste').innerHTML = blocs.join('') || `<div class="empty">Rien à afficher pour l'instant.</div>`;

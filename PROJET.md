@@ -373,6 +373,43 @@ L'écran **Coach ▸ un athlète ▸ Maxis** liste les exercices, ceux du progra
 d'abord, avec leur 1RM et sa source. Une valeur saisie peut être effacée pour
 revenir à l'estimation.
 
+## 8 sexies. Hors ligne
+
+Une salle en sous-sol coupe le réseau, et c'est précisément là que la saisie a lieu.
+Deux mécanismes, indépendants.
+
+**Les lectures sont mises en cache.** `lire()` tente le réseau, et sert la dernière
+copie connue en cas d'échec. L'app s'ouvre et affiche le programme du jour sans
+connexion.
+
+**Les écritures sont mises en file.** `ecrire()` tente l'envoi ; sans réseau, l'action
+est empilée dans `localStorage` et la séance continue sans blocage. La file est
+rejouée dans l'ordre au retour du réseau, à l'ouverture de l'app, et toutes les
+20 secondes tant qu'elle n'est pas vide. Un bandeau indique le nombre d'actions en
+attente.
+
+Seules cinq actions sont différables — `demarrer`, `serie`, `finirExercice`,
+`reprendreExercice`, `terminer`. Elles décrivent un fait daté, pas un état global :
+les rejouer plus tard reste juste. Rien de ce que compose le coach n'est différé.
+
+**Le cas de la séance créée hors ligne.** `demarrer` ne peut pas renvoyer
+d'identifiant serveur : l'app en fabrique un provisoire, `LOC-…`, et les séries s'y
+rattachent. Au rejeu, la séance est créée pour de bon et l'identifiant est substitué
+partout, y compris dans l'état courant. Aucune ligne ne part avec un `LOC-`.
+
+Vérifié sous Node, hors navigateur : séance démarrée hors ligne, deux séries, une
+clôture d'exercice, rechargement, retour du réseau — quatre actions rejouées dans
+l'ordre sur le bon identifiant.
+
+## 8 septies. Courbes de progression
+
+L'écran Progrès trace, par exercice, la charge la plus lourde de chaque séance, du
+plus ancien au plus récent. `courbeProgression()` dans `index.html`, SVG inline.
+
+L'échelle part de **90 % du minimum**, pas de zéro : sur des charges qui passent de
+50 à 60 kg, une échelle absolue écraserait la pente et ne dirait rien. L'écart depuis
+la première séance est affiché à côté du record.
+
 ## 9. Parti pris visuel — charte Wellness Sport Club
 
 L'app reprend l'identité de **Wellness Sport Club** (`wellness-sportclub.fr`),
@@ -434,26 +471,25 @@ Ces couleurs sont normatives, pas décoratives : elles ne suivent pas la charte.
 
 ## 10. Prochaines étapes
 
-1. ~~Programme de test~~ — fait, `Muscu ▸ Charger le programme de test`
-2. ~~Les trois icônes~~ — faites, générées depuis `favicon.ico`
-3. Lancer `Muscu ▸ Migration : aligner les colonnes` sur le Sheet, puis
-   `Recharger le programme de test (remplace)` pour voir superset, cadence et gainage
-4. Valider une série de bout en bout depuis le téléphone
-5. Installer sur téléphone (Safari sur iOS, Chrome sur Android) et juger l'ergonomie réelle
-6. Saisir le catalogue d'exercices réel du coach
-7. Activer le déclencheur hebdomadaire sur `rapportHebdo()`
-8. Saisir le vrai catalogue du coach depuis la Bibliothèque (§ 8 bis)
-9. ~~Programmes réutilisables et affectables~~ — fait (§ 8 ter)
-10. Laisser le pratiquant ajuster certaines valeurs de son programme
-11. `% RM` et schémas top set / back-off (§ 13)
+Ce qui reste, par ordre d'utilité décroissante.
+
+1. **Saisir le vrai catalogue du coach** depuis Coach ▸ Bibliothèque. Les sept
+   exercices d'exemple ne servent qu'aux tests.
+2. **Installer sur téléphone** et juger l'ergonomie réelle, téléphone en main
+   entre deux séries. Safari sur iOS, Chrome sur Android.
+3. **Laisser le pratiquant ajuster certaines valeurs** de son programme — décidé
+   comme un chantier à part, la question étant lesquelles et jusqu'où.
+4. **Activer le déclencheur hebdomadaire** sur `rapportHebdo()`, depuis l'éditeur
+   Apps Script (`Déclencheurs ▸ Ajouter`). L'envoi manuel existe déjà dans
+   Coach ▸ Réglages.
+5. **Passer l'écran OAuth en Production** avant d'ouvrir aux 40 pratiquants.
+   En mode Test, seuls deux comptes se connectent et leur session expire à 7 jours.
 
 ## 11. Idées d'évolution non implémentées
 
-- File d'attente locale pour la saisie hors ligne (aujourd'hui, une série validée sans réseau est perdue)
-- Interface coach en écriture pour composer les programmes depuis l'app
-- Graphiques de progression par exercice
 - Notification au coach lors d'un record battu
 - Export PDF du bilan mensuel via `DocumentApp`
+- Comparaison entre pratiquants suivant le même modèle
 - Archivage annuel : le Sheet reste confortable jusqu'à ~50 000 lignes de séries
 
 ## 12. Outillage local — clasp
