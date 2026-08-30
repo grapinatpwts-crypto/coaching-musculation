@@ -917,6 +917,7 @@ async function vueCoach() {
         <button data-o="athletes" aria-pressed="${c.onglet === 'athletes'}">Athlètes</button>
         <button data-o="modeles" aria-pressed="${c.onglet === 'modeles'}">Modèles</button>
         <button data-o="biblio" aria-pressed="${c.onglet === 'biblio'}">Bibliothèque</button>
+        <button data-o="reglages" aria-pressed="${c.onglet === 'reglages'}">Réglages</button>
       </div>
       <div id="zone"><div class="empty">Chargement…</div></div>`;
     app.querySelectorAll('.sous button').forEach(b => b.onclick = () => {
@@ -924,6 +925,7 @@ async function vueCoach() {
     });
     if (c.onglet === 'biblio') return vueBibliotheque();
     if (c.onglet === 'modeles') return vueModeles();
+    if (c.onglet === 'reglages') return vueReglages();
     return listeAthletes();
   }
 
@@ -1205,6 +1207,60 @@ function modalLigne(bi, ei) {
     if (!dernier) e.pause_s = Number(m.querySelector('#lPau').value) || 0;
     m.fermer(); peindreEditeur();
   };
+}
+
+/**
+ * Maintenance depuis l'app. Ces opérations existent aussi dans le menu Muscu du
+ * Sheet, mais ce menu n'existe pas dans Sheets mobile : le coach doit pouvoir les
+ * lancer depuis son téléphone.
+ */
+function vueReglages() {
+  const ops = [
+    { op:'migrer', nom:'Aligner les colonnes',
+      quoi:'Crée les onglets et colonnes manquants, et rattache les anciennes lignes de programme à une attribution.',
+      sur:true },
+    { op:'jeuEssai', nom:'Charger le programme de test',
+      quoi:'Pose un programme d\'exemple sur les comptes de test. Ignore un compte qui en a déjà un.',
+      sur:true },
+    { op:'jeuEssaiReset', nom:'Recharger le programme de test',
+      quoi:'Efface les lignes de programme des seuls comptes de test, puis les repose.',
+      sur:false },
+    { op:'rapport', nom:'Envoyer le rapport hebdomadaire',
+      quoi:'Envoie au coach la liste des pratiquants sans séance depuis 10 jours.',
+      sur:true }
+  ];
+
+  $('#zone').innerHTML = `
+    <p class="consigne">Les mêmes opérations que le menu <strong>Muscu</strong> du classeur,
+      accessibles ici parce que ce menu n'existe pas dans Sheets sur téléphone.</p>
+    <div style="margin-top:16px">${ops.map(o => `
+      <div class="card" style="display:block">
+        <div class="nom">${o.nom}</div>
+        <div class="meta" style="margin-top:4px;line-height:1.45">${o.quoi}</div>
+        <div class="barre">
+          <button class="btn ${o.sur ? '' : 'danger'}" data-op="${o.op}" data-sur="${o.sur}" style="flex:1">
+            ${o.sur ? 'Lancer' : 'Lancer — remplace des données'}</button>
+        </div>
+      </div>`).join('')}</div>
+    <div id="resultat"></div>`;
+
+  $('#zone').querySelectorAll('[data-op]').forEach(b => b.onclick = async function () {
+    if (this.dataset.sur !== 'true' && !confirm('Cette opération remplace des données. Continuer ?')) return;
+    const libelle = this.textContent;
+    this.disabled = true; this.textContent = 'En cours…';
+    try {
+      const r = await api('maintenance', { op: this.dataset.op });
+      $('#resultat').innerHTML = `<div class="card" style="display:block;margin-top:14px">
+        <div class="eyebrow">Résultat</div>
+        <p class="consigne" style="margin-top:8px;white-space:pre-wrap">${r.message || 'Terminé.'}</p></div>`;
+      toast('Opération terminée');
+    } catch (err) {
+      $('#resultat').innerHTML = `<div class="card" style="display:block;margin-top:14px">
+        <div class="eyebrow" style="color:var(--brand-ink)">Échec</div>
+        <p class="consigne" style="margin-top:8px">${err.message}</p></div>`;
+    }
+    this.disabled = false; this.textContent = libelle;
+  });
 }
 
 // ── Modèles génériques ───────────────────────────────────────

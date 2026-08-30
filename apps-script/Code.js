@@ -143,6 +143,9 @@ function route_(action, p, user, profil, estCoach) {
     case 'attribuer':      return guardCoach_(estCoach, function () { return attribuer_(p); });
     case 'attributionMaj': return guardCoach_(estCoach, function () { return attributionMaj_(p); });
     case 'attributionSuppr': return guardCoach_(estCoach, function () { return attributionSuppr_(p.id); });
+    // Maintenance : les mêmes fonctions que le menu du Sheet, joignables depuis l'app.
+    // Le menu n'existe pas dans Sheets mobile, le coach doit pouvoir s'en passer.
+    case 'maintenance':    return guardCoach_(estCoach, function () { return maintenance_(p.op); });
     default: throw new Error('ACTION_INCONNUE');
   }
 }
@@ -1233,6 +1236,17 @@ function migrerAttributions_() {
     return 'Attributions : ' + neuves.length + ' créée(s), ' + n + ' ligne(s) rattachée(s)';
   } finally {
     lock.releaseLock();
+  }
+}
+
+/** Expose les opérations du menu Muscu à l'app, pour le coach uniquement. */
+function maintenance_(op) {
+  switch (op) {
+    case 'migrer':       return { message: migrerSchema() };
+    case 'jeuEssai':     return { message: programmeTest() };
+    case 'jeuEssaiReset':return { message: rechargerProgrammeTest() };
+    case 'rapport':      rapportHebdo(); return { message: 'Rapport envoyé si des pratiquants sont à relancer.' };
+    default: throw new Error('OPERATION_INCONNUE');
   }
 }
 
