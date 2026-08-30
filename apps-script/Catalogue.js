@@ -481,7 +481,7 @@ function creerExemple_() {
  */
 const PROGRAMMES_TYPES = [
 {
-  nom: '5×5 débutant', categorie: 'Force', difficulte: 'Débutant',
+  nom: '5×5 débutant', source: 'https://stronglifts.com/5x5/', categorie: 'Force', difficulte: 'Débutant',
   duree_semaines: 12, statut: 'Actif',
   description: "D'après StrongLifts. Trois séances par semaine en alternant A et B, cinq séries de cinq sur les mouvements de base. On ajoute 2,5 kg à chaque séance tant que les cinq séries passent. Le plus court chemin pour un débutant.",
   jours: [
@@ -500,7 +500,7 @@ const PROGRAMMES_TYPES = [
   ]
 },
 {
-  nom: 'Force 3 jours', categorie: 'Force', difficulte: 'Débutant',
+  nom: 'Force 3 jours', source: 'https://startingstrength.com/get-started/programs', categorie: 'Force', difficulte: 'Débutant',
   duree_semaines: 12, statut: 'Actif',
   description: "D'après Starting Strength de Mark Rippetoe. Trois séries de cinq, très peu d'exercices, progression à chaque séance. Encore plus dépouillé que le 5×5 : on apprend les mouvements avant de chercher le volume.",
   jours: [
@@ -519,7 +519,7 @@ const PROGRAMMES_TYPES = [
   ]
 },
 {
-  nom: 'Push Pull Legs', categorie: 'Hypertrophie', difficulte: 'Intermédiaire',
+  nom: 'Push Pull Legs', source: 'https://thefitness.wiki/reddit-archive/a-linear-progression-based-ppl-program-for-beginners/', categorie: 'Hypertrophie', difficulte: 'Intermédiaire',
   duree_semaines: 8, statut: 'Actif',
   description: "Trois séances : ce qui pousse, ce qui tire, les jambes. Découpage classique qui laisse 48 h à chaque groupe. Se double facilement en six séances quand le temps le permet.",
   jours: [
@@ -575,7 +575,7 @@ const PROGRAMMES_TYPES = [
   ]
 },
 {
-  nom: 'Full body débutant', categorie: 'Remise en forme', difficulte: 'Débutant',
+  nom: 'Full body débutant', source: 'https://thefitness.wiki/routines/r-fitness-basic-beginner-routine/', categorie: 'Remise en forme', difficulte: 'Débutant',
   duree_semaines: 8, statut: 'Actif',
   description: "Tout le corps à chaque séance, trois fois par semaine, sur machines et poids libres légers. Pensé pour quelqu'un qui n'a jamais mis les pieds en salle : peu de charge, beaucoup de répétitions, on installe le geste.",
   jours: [
@@ -597,7 +597,7 @@ const PROGRAMMES_TYPES = [
   ]
 },
 {
-  nom: 'Cycle 5/3/1', categorie: 'Force', difficulte: 'Avancé',
+  nom: 'Cycle 5/3/1', source: 'https://thefitness.wiki/routines/5-3-1-for-beginners/', categorie: 'Force', difficulte: 'Avancé',
   duree_semaines: 4, statut: 'Actif',
   description: "D'après la méthode 5/3/1 de Jim Wendler. Un mouvement lourd par séance, en pourcentages d'un max minoré à 90 %. Semaine 1 en 5, semaine 2 en 3, semaine 3 en 5/3/1, semaine 4 allégée. Ce modèle décrit la première semaine ; le max doit être renseigné dans l'onglet Maxis.",
   jours: [
@@ -643,7 +643,7 @@ const PROGRAMMES_TYPES = [
   ]
 },
 {
-  nom: 'Madcow 5×5', categorie: 'Force', difficulte: 'Intermédiaire',
+  nom: 'Madcow 5×5', source: 'https://stronglifts.com/madcow-5x5/', categorie: 'Force', difficulte: 'Intermédiaire',
   duree_semaines: 12, statut: 'Actif',
   description: "La suite logique du 5×5 débutant, quand ajouter du poids à chaque séance ne passe plus. Les cinq séries montent en charge au lieu d'être toutes égales, et la progression se joue à la semaine.",
   jours: [
@@ -698,7 +698,7 @@ const PROGRAMMES_TYPES = [
   ]
 },
 {
-  nom: 'Sans matériel', categorie: 'Remise en forme', difficulte: 'Débutant',
+  nom: 'Sans matériel', source: 'https://www.reddit.com/r/bodyweightfitness/wiki/kb/recommended_routine/', categorie: 'Remise en forme', difficulte: 'Débutant',
   duree_semaines: 6, statut: 'Actif',
   description: "Uniquement du poids de corps, à faire chez soi ou en déplacement. Trois circuits par semaine, le volume monte en ajoutant des tours plutôt que de la charge. Utile pour tenir pendant les vacances.",
   jours: [
@@ -747,7 +747,8 @@ function importerProgrammes() {
 
     const r = modeleSave_({
       nom: p.nom, categorie: p.categorie, difficulte: p.difficulte,
-      duree_semaines: p.duree_semaines, statut: p.statut, description: p.description
+      duree_semaines: p.duree_semaines, statut: p.statut, description: p.description,
+      source: p.source || '', video: p.video || ''
     });
 
     p.jours.forEach(function (j) {

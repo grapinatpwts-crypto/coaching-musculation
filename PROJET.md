@@ -80,7 +80,7 @@ côté, zone sûre respectée). Régénérables : voir § 9.
 | `Pratiquants` | email, nom, **statut**, **telephone**, date_inscription, objectif, **notes**, actif |
 | `Exercices` | id, nom, **nom_en**, groupe, equipement, consigne, photo, video |
 | `Ajustements` | id, email, attribution_id, exercice_id, charge, note, maj_le |
-| `Modeles` | id, nom, categorie, difficulte, description, duree_semaines, statut, cree_le |
+| `Modeles` | id, nom, categorie, difficulte, description, duree_semaines, statut, **source**, **video**, cree_le |
 | `ModeleLignes` | id, modele_id, jour, bloc, ordre, exercice_id, series, reps_cible, duree_s, charge_cible, **pct_rm**, cadence, pause_s, repos_s |
 | `Attributions` | id, email, modele_id, nom, date_debut, date_fin, statut, **paye**, notes, cree_le |
 | `Maxis` | id, email, exercice_id, rm_kg, date, source |
@@ -584,6 +584,31 @@ les charges fixes sont laissées à zéro quand elles dépendent trop de la pers
 
 L'import est relançable : un modèle portant déjà le même nom est laissé intact, le
 coach ayant pu l'adapter.
+
+### Source et vidéo
+
+Un modèle porte deux liens facultatifs : `source`, la page qui documente la méthode,
+et `video`. La fiche affiche un bouton **Source ↗** et, si une vidéo est renseignée,
+un **lecteur intégré** — YouTube et Vimeo sont reconnus et joués sur place, toute
+autre adresse devient un simple lien. Intégrer une URL quelconque dans une iframe
+exposerait l'app à ce que sert la page ; le cadrage aux deux plateformes est délibéré.
+
+Sept des dix programmes portent une source, **vérifiée en HTTP avant publication** :
+
+| Programme | Source |
+|---|---|
+| 5×5 débutant, Madcow 5×5 | `stronglifts.com` |
+| Force 3 jours | `startingstrength.com` |
+| Push Pull Legs, Full body débutant, Cycle 5/3/1 | `thefitness.wiki` |
+| Sans matériel | wiki r/bodyweightfitness |
+
+Haut/Bas, Texas Method et Split 5 jours n'en portent pas : ce sont des découpages
+génériques sans page canonique.
+
+**Aucune vidéo n'est renseignée.** Une adresse YouTube ne se devine pas, et je n'en
+ai pas trouvé qui fasse autorité pour ces méthodes ; inventer un identifiant aurait
+donné un lecteur affichant n'importe quoi. Le champ existe et le lecteur fonctionne :
+il suffit de coller une adresse.
 
 ## 9. Parti pris visuel — charte Wellness Sport Club
 

@@ -50,7 +50,7 @@ const SCHEMA = {
   Pratiquants: ['email', 'nom', 'statut', 'telephone', 'date_inscription', 'objectif', 'notes', 'actif'],
   Exercices: ['id', 'nom', 'nom_en', 'groupe', 'equipement', 'consigne', 'photo', 'video'],
   // Modèles : programmes génériques, sans pratiquant. Le coach les compose une fois.
-  Modeles: ['id', 'nom', 'categorie', 'difficulte', 'description', 'duree_semaines', 'statut', 'cree_le'],
+  Modeles: ['id', 'nom', 'categorie', 'difficulte', 'description', 'duree_semaines', 'statut', 'source', 'video', 'cree_le'],
   ModeleLignes: ['id', 'modele_id', 'jour', 'bloc', 'ordre', 'exercice_id', 'series', 'reps_cible', 'duree_s', 'charge_cible', 'pct_rm', 'cadence', 'pause_s', 'repos_s'],
   // Maxis : le 1RM connu d'un pratiquant sur un exercice. Sert à traduire un
   // pourcentage en kilos. Sans entrée ici, le 1RM est estimé depuis l'historique.
@@ -965,7 +965,7 @@ function modeles_() {
       return {
         id: m.id, nom: m.nom, categorie: m.categorie || '', difficulte: m.difficulte || '',
         description: m.description || '', duree_semaines: Number(m.duree_semaines) || 0,
-        statut: m.statut || 'Brouillon',
+        statut: m.statut || 'Brouillon', source: m.source || '', video: m.video || '',
         nbJours: Object.keys(jours).length, nbExercices: mien.length
       };
     })
@@ -984,7 +984,7 @@ function modele_(id) {
   return {
     id: m.id, nom: m.nom, categorie: m.categorie || '', difficulte: m.difficulte || '',
     description: m.description || '', duree_semaines: Number(m.duree_semaines) || 0,
-    statut: m.statut || 'Brouillon',
+    statut: m.statut || 'Brouillon', source: m.source || '', video: m.video || '',
     jours: grouperEnJours_(lignes, noms)
   };
 }
@@ -997,6 +997,8 @@ function modeleSave_(p) {
     categorie: String(p.categorie || '').trim(),
     difficulte: String(p.difficulte || '').trim(),
     description: String(p.description || '').trim(),
+    source: String(p.source || '').trim(),
+    video: String(p.video || '').trim(),
     duree_semaines: Number(p.duree_semaines) || 0,
     statut: String(p.statut || 'Brouillon').trim()
   };

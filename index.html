@@ -162,6 +162,9 @@ header h2{font-size:30px;text-transform:uppercase;line-height:1}
 .prog{display:block;width:100%;height:auto;max-width:340px;margin:10px 0 4px}
 .vignette{width:52px;height:52px;object-fit:cover;border-radius:9px;background:#2A2A2A;flex:0 0 auto}
 .vo{font-size:12.5px;font-weight:400;color:var(--dust)}
+.video{position:relative;width:100%;aspect-ratio:16/9;margin:14px 0 4px;
+  border-radius:10px;overflow:hidden;background:#000}
+.video iframe{position:absolute;inset:0;width:100%;height:100%;border:0}
 .lien{text-decoration:none;color:var(--brand-ink);display:inline-block}
 .lien:focus-visible{outline:2px solid var(--brand-ink);outline-offset:2px;border-radius:5px}
 .apercu{width:100%;max-width:280px;border-radius:10px;background:#2A2A2A;margin-bottom:10px}
@@ -1973,6 +1976,8 @@ function peindreCategorie() {
                 m.nbJours + ' jour' + (m.nbJours > 1 ? 's' : ''),
                 m.nbExercices + ' exercices'].filter(Boolean).join(' · ')}</div>
             </div>
+            ${m.video ? '<span class="poignee lien" title="Vidéo">▶</span>' : ''}
+            ${m.source ? '<span class="poignee lien" title="Source documentée">↗</span>' : ''}
             <span class="tag ${m.statut === 'Brouillon' ? 'warn' : ''}">${m.statut}</span>
           </div>`).join('')}
       </details>`).join('') || `<div class="empty">Aucun modèle dans cette catégorie.</div>`}</div>`;
@@ -1983,9 +1988,26 @@ function peindreCategorie() {
     l.onclick = () => { S.coach.modele = l.dataset.md; S.ed = null; vueCoach(); });
 }
 
+/**
+ * Encart vidéo. YouTube et Vimeo sont intégrés dans un lecteur ; toute autre
+ * adresse devient un simple lien — intégrer n'importe quelle URL dans une iframe
+ * exposerait l'app à ce que sert la page.
+ */
+function lecteur(url) {
+  if (!url) return '';
+  const yt = /(?:youtube\.com\/(?:watch\?v=|embed\/|shorts\/)|youtu\.be\/)([\w-]{11})/.exec(url);
+  const vi = /vimeo\.com\/(?:video\/)?(\d+)/.exec(url);
+  const src = yt ? `https://www.youtube-nocookie.com/embed/${yt[1]}`
+            : vi ? `https://player.vimeo.com/video/${vi[1]}` : null;
+  if (!src) return `<div class="barre"><a class="btn contact" href="${url}" target="_blank" rel="noopener">Voir la vidéo ↗</a></div>`;
+  return `<div class="video"><iframe src="${src}" title="Vidéo du programme"
+    loading="lazy" allowfullscreen referrerpolicy="strict-origin-when-cross-origin"></iframe></div>`;
+}
+
 function modalModele(m) {
   const x = m || { id:'', nom:'', categorie:S.coach.categorie === SANS_CAT ? '' : (S.coach.categorie || ''),
-                   difficulte:'', description:'', duree_semaines:'', statut:'Brouillon' };
+                   difficulte:'', description:'', duree_semaines:'', statut:'Brouillon',
+                   source:'', video:'' };
   const cats = [...new Set((S.modeles || []).map(y => (y.categorie || '').trim()).filter(Boolean))].sort();
 
   const w = modal(m ? 'Modifier le modèle' : 'Nouveau modèle', `
@@ -2009,6 +2031,10 @@ function modalModele(m) {
     <p class="consigne">Catégorie et difficulté sont libres : tapez ce que vous voulez,
       les valeurs déjà utilisées sont proposées.</p>
     <div class="champ"><label>Description</label><textarea class="f" id="kDes" rows="3">${x.description}</textarea></div>
+    <div class="champ"><label>Page source</label>
+      <input class="f" id="kSrc" value="${x.source || ''}" placeholder="https://…"></div>
+    <div class="champ"><label>Vidéo</label>
+      <input class="f" id="kVid" value="${x.video || ''}" placeholder="https://youtu.be/…"></div>
     <div class="barre"><button class="btn" id="kAnn">Annuler</button>
       <button class="btn plein" id="kOk" style="flex:1">Enregistrer</button></div>
     ${m ? '<div class="barre"><button class="btn danger" id="kDel">Supprimer le modèle</button></div>' : ''}`);
@@ -2024,7 +2050,9 @@ function modalModele(m) {
         difficulte: w.querySelector('#kDif').value,
         duree_semaines: w.querySelector('#kDur').value,
         statut: w.querySelector('#kSta').value,
-        description: w.querySelector('#kDes').value
+        description: w.querySelector('#kDes').value,
+        source: w.querySelector('#kSrc').value,
+        video: w.querySelector('#kVid').value
       });
       w.fermer(); toast('Modèle enregistré');
       S.coach.modele = x.id || r.id; S.ed = null; vueCoach();
@@ -2059,7 +2087,11 @@ async function vueModele() {
       <div class="meta">${[m.categorie, m.difficulte,
         m.duree_semaines ? m.duree_semaines + ' semaines' : '', m.statut].filter(Boolean).join(' · ')}</div>
       ${m.description ? `<p class="consigne" style="margin-top:8px">${m.description}</p>` : ''}
-      <div class="barre"><button class="btn" id="editMeta">Modifier la fiche</button></div>
+      ${lecteur(m.video)}
+      <div class="barre">
+        <button class="btn" id="editMeta">Modifier la fiche</button>
+        ${m.source ? `<a class="btn contact" href="${m.source}" target="_blank" rel="noopener">Source ↗</a>` : ''}
+      </div>
     </div>
     <div class="days" id="jours">
       ${jours.map(j => `<button class="day" data-j="${j}" aria-pressed="${S.ed && S.ed.jour === j}">${j}</button>`).join('')}
