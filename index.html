@@ -71,6 +71,9 @@ header h2{font-size:30px;text-transform:uppercase;line-height:1}
 .cal .c.faite{background:var(--brand);border-color:var(--brand);color:var(--on-brand);font-weight:700}
 .card.clos .nom{color:var(--dust)}
 .card.clos .body{opacity:.72}
+.card.clos{display:flex;align-items:center;gap:12px}
+.card.clos .body{flex:1;min-width:0;cursor:pointer}
+.reprendre{font-size:17px;line-height:1;flex:0 0 auto}
 .cal .c[aria-pressed="true"]{outline:2px solid var(--brand-ink);outline-offset:1px}
 .cal .c .pt{width:4px;height:4px;border-radius:50%;background:var(--on-brand)}
 .legende{font-size:12px;color:var(--dust);margin:12px 0 4px;display:flex;gap:14px;flex-wrap:wrap}
@@ -431,7 +434,18 @@ async function vueSeance() {
 
   const fs = $('#finSeance');
   if (fs) fs.onclick = modalFinSeance;
-  $('#liste').querySelectorAll('.card').forEach(c => c.onclick = () => ouvrirLogger(Number(c.dataset.i)));
+  $('#liste').querySelectorAll('[data-i]').forEach(c =>
+    c.onclick = () => ouvrirLogger(Number(c.dataset.i)));
+  $('#liste').querySelectorAll('[data-rep]').forEach(b => b.onclick = async function (ev) {
+    ev.stopPropagation();
+    this.disabled = true;
+    const id = this.dataset.rep;
+    try {
+      if (S.seanceId) await api('reprendreExercice', { seance_id:S.seanceId, exercice_id:id });
+      S.finis = S.finis.filter(x => x !== id);
+      vueSeance();
+    } catch (err) { toast(err.message); this.disabled = false; }
+  });
 }
 
 /** Charge la séance en blocs et remet à plat S.exos, index utilisé par le logger. */
@@ -464,8 +478,11 @@ function carte(e) {
   const n = (S.faits[e.exercice_id] || []).length;
   const fini = S.finis.indexOf(e.exercice_id) !== -1;
   const cible = e.duree_s ? duree(e.duree_s) : e.reps_cible;
-  return `<button class="card ${fini ? 'clos' : ''}" data-i="${e._i}">
-    <div class="body">
+  // Un exercice clos garde une carte cliquable, plus un bouton pour le rouvrir.
+  // D'où une <div> avec deux zones : imbriquer un bouton dans un bouton est invalide.
+  const [ouvre, ferme] = fini ? ['<div class="card clos">', '</div>'] : [`<button class="card" data-i="${e._i}">`, '</button>'];
+  return `${ouvre}
+    <div class="body" ${fini ? `data-i="${e._i}"` : ''}>
       <div class="nom">${e.nom}</div>
       <div class="meta">${e.series} × ${cible}${e.charge_cible ? ' · ' + e.charge_cible + ' kg' : ''}${
         fini && n < e.series ? ' · arrêté à ' + n : ''}${
@@ -473,8 +490,11 @@ function carte(e) {
       ${e.cadence ? `<div class="cadbloc"><span class="cadence">${e.cadence}</span>${courbeCadence(e.cadence, false)}</div>` : ''}
       ${e.charge_cible ? disques(e.charge_cible) : ''}
     </div>
-    <div class="done ${fini || n >= e.series ? 'full' : ''}">${fini && n < e.series ? '✓' : n + '/' + e.series}</div>
-  </button>`;
+    ${fini
+      ? `<button class="done full reprendre" data-rep="${e.exercice_id}"
+           title="Reprendre cet exercice" aria-label="Reprendre ${e.nom}">↺</button>`
+      : `<div class="done ${n >= e.series ? 'full' : ''}">${n}/${e.series}</div>`}
+  ${ferme}`;
 }
 
 /** Décompose une charge en disques olympiques colorés (barre de 20 kg). */
