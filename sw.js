@@ -4,9 +4,9 @@
  * toujours refléter les données réelles du Google Sheet.
  * Incrémentez CACHE à chaque mise en ligne pour forcer la mise à jour.
  */
-const CACHE = 'coaching-fitness-v1';
+const CACHE = 'coaching-fitness-v2';
 const SHELL = ['./', './index.html', './manifest.json', './icon-192.png', './icon-512.png',
-               './assets/logo-wellness-dark.png'];
+               './assets/monogramme-w.png'];
 
 self.addEventListener('install', e => {
   e.waitUntil(caches.open(CACHE).then(c => c.addAll(SHELL)).then(() => self.skipWaiting()));

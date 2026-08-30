@@ -412,6 +412,7 @@ function bootstrap_(user, profil, estCoach) {
     nom: profil ? profil.nom : user.nom,
     objectif: profil ? profil.objectif : '',
     estCoach: estCoach,
+    coach: CONFIG.COACH_NOM,
     jours: jours.sort(triJours_),
     nbSeances: seances.length,
     derniereSeance: seances.length ? seances[seances.length - 1].date : null,

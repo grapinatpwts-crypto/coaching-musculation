@@ -44,13 +44,16 @@ button{font-family:inherit;font-size:16px;border:0;cursor:pointer;color:inherit;
 /* Connexion */
 #login{min-height:100dvh;display:flex;flex-direction:column;justify-content:center;align-items:center;gap:28px;padding:32px;text-align:center}
 #login h1{font-size:clamp(52px,17vw,84px);line-height:.88;text-transform:uppercase}
-#marque{width:min(210px,52vw);height:auto}
+#marque{width:min(112px,26vw);height:auto}
 #login h1 span{display:block;color:var(--brand-ink)}
 #login p{color:var(--dust);max-width:32ch;margin:0;line-height:1.5}
 
 /* En-tête */
 header{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:22px;flex-wrap:wrap}
 header h2{flex:1}
+.titre-bloc{flex:1;min-width:0;display:flex;flex-direction:column;gap:1px}
+.titre-bloc h2{flex:none}
+.signe{font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:var(--dust);font-weight:600}
 header h2{font-size:30px;text-transform:uppercase;line-height:1}
 .streak{font-size:13px;color:var(--dust);font-variant-numeric:tabular-nums}
 #reseau{position:fixed;left:0;right:0;bottom:calc(53px + env(safe-area-inset-bottom));
@@ -243,7 +246,7 @@ header h2{font-size:30px;text-transform:uppercase;line-height:1}
 <body>
 
 <section id="login">
-  <img id="marque" src="assets/logo-wellness-dark.png" alt="Wellness Sport Club" width="300" height="86">
+  <img id="marque" src="assets/monogramme-w.png" alt="" width="400" height="400">
   <h1>Coaching<span>Fitness</span></h1>
   <p>Connectez-vous avec le compte Google que votre coach a inscrit.</p>
   <div id="gbtn"></div>
@@ -618,7 +621,10 @@ async function vueSeance() {
   }
   app.innerHTML = `
     <header>
-      <h2>${S.moi.nom.split(' ')[0] || 'Salut'}</h2>
+      <div class="titre-bloc">
+        <h2>${S.moi.nom.split(' ')[0] || 'Salut'}</h2>
+        ${S.moi.coach ? `<span class="signe">coaché par ${S.moi.coach}</span>` : ''}
+      </div>
       <span class="streak num">${S.moi.nbSeances} séance${S.moi.nbSeances > 1 ? 's' : ''}</span>
       <button class="quitter" id="quitter" title="Se déconnecter">Quitter</button>
     </header>
@@ -1247,7 +1253,11 @@ async function vueCoach() {
   if (!c.email) {
     const titres = { athletes:'Athlètes', modeles:'Modèles', biblio:'Bibliothèque', reglages:'Réglages' };
     app.innerHTML = `
-      <header><h2>${titres[c.onglet] || 'Coach'}</h2>
+      <header>
+        <div class="titre-bloc">
+          <h2>${titres[c.onglet] || 'Coach'}</h2>
+          ${S.moi.coach ? `<span class="signe">${S.moi.coach}</span>` : ''}
+        </div>
         <button class="quitter" id="quitter" title="Se déconnecter">Quitter</button></header>
       <div id="zone"><div class="empty">Chargement…</div></div>`;
     if (c.onglet === 'biblio') return vueBibliotheque();
