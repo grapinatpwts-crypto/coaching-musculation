@@ -29,6 +29,7 @@ const TABS = {
   ATTRIBUTIONS: 'Attributions',
   MAXIS: 'Maxis',
   AJUSTEMENTS: 'Ajustements',
+  IMPORT: 'Import',
   PROGRAMMES: 'Programmes',
   SEANCES: 'Seances',
   SERIES: 'Series'
@@ -61,6 +62,10 @@ const SCHEMA = {
   // Ajustements : la charge que le pratiquant se fixe lui-même, exercice par
   // exercice. Elle prime sur la charge du coach et sur le calcul en % du max.
   Ajustements: ['id', 'email', 'attribution_id', 'exercice_id', 'charge', 'note', 'maj_le'],
+  // Import : zone de dépôt. On y colle un programme composé dans le tableur, les
+  // exercices désignés par leur NOM. Rien n'y est conservé, c'est un sas.
+  Import: ['jour', 'bloc', 'ordre', 'exercice', 'series', 'reps_cible', 'duree_s',
+           'charge_cible', 'pct_rm', 'cadence', 'pause_s', 'repos_s'],
   // Programmes : les lignes RÉELLES d'une attribution, personnalisables sans
   // toucher au modèle dont elles sont issues.
   Programmes: ['id', 'attribution_id', 'email', 'jour', 'bloc', 'ordre', 'exercice_id', 'series', 'reps_cible', 'duree_s', 'charge_cible', 'pct_rm', 'cadence', 'pause_s', 'repos_s'],
@@ -182,7 +187,7 @@ function route_(action, p, user, profil, estCoach) {
     case 'maxis':          return maxis_(cibleEmail_(user, p, estCoach));
     case 'maxiSave':       return guardCoach_(estCoach, function () { return maxiSave_(p); });
     case 'maxiSuppr':      return guardCoach_(estCoach, function () { return maxiSuppr_(p); });
-    case 'maintenance':    return guardCoach_(estCoach, function () { return maintenance_(p.op); });
+    case 'maintenance':    return guardCoach_(estCoach, function () { return maintenance_(p.op, p.fiche); });
     default: throw new Error('ACTION_INCONNUE');
   }
 }
@@ -1714,8 +1719,74 @@ function migrerAttributions_() {
   }
 }
 
+/**
+ * Transforme l'onglet Import en modèle. Les exercices sont désignés par leur nom :
+ * le coach compose dans un tableur sans jamais manipuler d'identifiant.
+ * `series` et `repos_s` se lisent sur la première ligne du bloc, comme dans l'app.
+ * Rien n'est créé si un seul nom est introuvable : mieux vaut refuser que produire
+ * un programme troué.
+ */
+function importerFeuille_(p) {
+  const lignes = lire_(TABS.IMPORT).filter(function (l) {
+    return String(l.jour || '').trim() && String(l.exercice || '').trim();
+  });
+  if (!lignes.length) throw new Error('FEUILLE_VIDE');
+
+  const noms = {};
+  lire_(TABS.EXERCICES).forEach(function (e) {
+    if (e.nom) noms[String(e.nom).trim().toLowerCase()] = String(e.id);
+  });
+
+  const inconnus = [];
+  lignes.forEach(function (l) {
+    if (!noms[String(l.exercice).trim().toLowerCase()]) inconnus.push(String(l.exercice).trim());
+  });
+  if (inconnus.length) {
+    throw new Error('EXERCICES_INCONNUS: ' + [...new Set(inconnus)].join(', '));
+  }
+
+  const r = modeleSave_({
+    nom: p.nom, categorie: p.categorie, difficulte: p.difficulte,
+    duree_semaines: p.duree_semaines, statut: p.statut || 'Brouillon',
+    description: p.description, source: p.source, video: p.video
+  });
+
+  // Regroupement jour → bloc, en respectant l'ordre de la feuille.
+  const jours = [];
+  const parJour = {};
+  lignes.forEach(function (l) {
+    const j = String(l.jour).trim();
+    if (!parJour[j]) { parJour[j] = { jour: j, blocs: [], _n: {} }; jours.push(parJour[j]); }
+    const num = Number(l.bloc) || 1;
+    if (!parJour[j]._n[num]) {
+      parJour[j]._n[num] = { series: Number(l.series) || 3, repos_s: Number(l.repos_s) || 90, exercices: [] };
+      parJour[j].blocs.push(parJour[j]._n[num]);
+    }
+    parJour[j]._n[num].exercices.push({
+      exercice_id: noms[String(l.exercice).trim().toLowerCase()],
+      reps_cible: repsTexte_(l.reps_cible),
+      duree_s: l.duree_s === '' || l.duree_s === undefined ? '' : l.duree_s,
+      charge_cible: Number(l.charge_cible) || 0,
+      pct_rm: Number(String(l.pct_rm).replace('%', '')) || 0,
+      cadence: String(l.cadence || ''),
+      pause_s: Number(l.pause_s) || 0
+    });
+  });
+
+  let total = 0;
+  jours.forEach(function (j) {
+    modeleJourSave_({ modele_id: r.id, jour: j.jour, blocs: j.blocs });
+    j.blocs.forEach(function (b) { total += b.exercices.length; });
+  });
+
+  return 'Modèle « ' + p.nom + ' » créé : ' + jours.length + ' jour(s), ' + total +
+         ' ligne(s). L\'onglet Import peut être vidé.';
+}
+
 /** Expose les opérations du menu du Sheet à l'app, pour le coach uniquement. */
-function maintenance_(op) {
+function maintenance_(op, p) {
+  // La plupart des opérations n'ont pas de paramètre ; l'import de feuille, si.
+  if (op === 'feuille') return { message: importerFeuille_(p || {}) };
   switch (op) {
     case 'migrer':       return { message: migrerSchema() };
     case 'jeuEssai':     return { message: programmeTest() };

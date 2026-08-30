@@ -448,7 +448,7 @@ des valeurs du coach.
 
 ## 8 nonies. Bibliothèque de départ
 
-`apps-script/Catalogue.js` contient **97 exercices en français, illustrés**, versés
+`apps-script/Catalogue.js` contient **167 exercices en français**, versés
 dans l'onglet `Exercices` par `Coach ▸ Réglages ▸ Importer le catalogue de départ`.
 
 Répartition : Jambes 16, Dos 15, Pectoraux 12, Abdominaux 10, Épaules 9, Triceps 9,
@@ -609,6 +609,38 @@ génériques sans page canonique.
 ai pas trouvé qui fasse autorité pour ces méthodes ; inventer un identifiant aurait
 donné un lecteur affichant n'importe quoi. Le champ existe et le lecteur fonctionne :
 il suffit de coller une adresse.
+
+## 8 quaterdecies. Contenus achetés : la règle
+
+Le dépôt GitHub est **public**. Le Google Sheet est **privé**. Cette différence
+décide de tout.
+
+| Contenu | Où il va |
+|---|---|
+| Catalogue d'exercices, méthodes publiquement documentées | dépôt, comme aujourd'hui |
+| Contenus achetés, programmes écrits par le coach | **Sheet uniquement** |
+
+Un nom d'exercice n'appartient à personne : « traction d'omoplates », « dips
+négatifs », « squat archer » sont le vocabulaire de la discipline. Le catalogue les
+reprend librement. Un **agencement de séries, répétitions et progressions**, lui, est
+le produit vendu : il n'a rien à faire dans un dépôt public, et sa diffusion à
+40 pratiquants est une question de licence que le coach doit poser à l'auteur.
+
+L'usage personnel — remettre dans son propre suivi un programme qu'on a acheté —
+ne pose pas ce problème.
+
+### L'onglet Import
+
+Pour verser un programme sans passer par le dépôt : un onglet **Import** du classeur
+sert de sas. On y colle un tableau où **les exercices sont désignés par leur nom**,
+puis `Coach ▸ Réglages ▸ Importer la feuille` le transforme en modèle.
+
+Rien n'est créé si un seul nom est introuvable — la fonction renvoie la liste des
+noms en défaut. Mieux vaut refuser que produire un programme troué.
+
+Le fichier `modele-import.xlsx`, à la racine, sert de gabarit : une notice, la fiche
+du modèle, la grille à remplir, et la liste des exercices disponibles en référence.
+**Il ne contient aucun contenu acheté**, seulement la structure.
 
 ## 9. Parti pris visuel — charte Wellness Sport Club
 

@@ -1854,6 +1854,9 @@ function vueReglages() {
     { op:'catalogue', nom:'Importer le catalogue de départ',
       quoi:'Verse 97 exercices en français, illustrés, issus d\'une base du domaine public. Un exercice dont le nom existe déjà est ignoré : vos fiches ne sont pas touchées.',
       sur:true },
+    { op:'feuille', nom:'Importer la feuille',
+      quoi:'Transforme l\'onglet Import du classeur en modèle. On y colle un programme composé dans le tableur, les exercices désignés par leur nom — aucun identifiant à manipuler.',
+      sur:true, fiche:true },
     { op:'programmes', nom:'Importer dix programmes types',
       quoi:'Verse dix méthodes largement documentées — 5×5, Push Pull Legs, Haut/Bas, 5/3/1, Texas Method, split 5 jours, sans matériel… — comme modèles réutilisables. Un modèle portant déjà le même nom est laissé intact.',
       sur:true },
@@ -1873,13 +1876,15 @@ function vueReglages() {
         <div class="nom">${o.nom}</div>
         <div class="meta" style="margin-top:4px;line-height:1.45">${o.quoi}</div>
         <div class="barre">
-          <button class="btn ${o.sur ? '' : 'danger'}" data-op="${o.op}" data-sur="${o.sur}" style="flex:1">
+          <button class="btn ${o.sur ? '' : 'danger'}" data-op="${o.op}" data-sur="${o.sur}"
+            data-fiche="${o.fiche ? 'true' : 'false'}" style="flex:1">
             ${o.sur ? 'Lancer' : 'Lancer — remplace des données'}</button>
         </div>
       </div>`).join('')}</div>
     <div id="resultat"></div>`;
 
   $('#zone').querySelectorAll('[data-op]').forEach(b => b.onclick = async function () {
+    if (this.dataset.fiche === 'true') return modalImportFeuille();
     if (this.dataset.sur !== 'true' && !confirm('Cette opération remplace des données. Continuer ?')) return;
     const libelle = this.textContent;
     this.disabled = true; this.textContent = 'En cours…';
@@ -1896,6 +1901,57 @@ function vueReglages() {
     }
     this.disabled = false; this.textContent = libelle;
   });
+}
+
+/**
+ * L'import de feuille a besoin de l'en-tête du modèle : la feuille ne porte que
+ * les lignes d'exercices. On demande le reste ici plutôt que d'ajouter un second
+ * onglet au classeur.
+ */
+function modalImportFeuille() {
+  const w = modal('Importer la feuille', `
+    <p class="consigne">Les lignes viennent de l'onglet <strong>Import</strong> du classeur.
+      Renseignez ici l'en-tête du modèle.</p>
+    <div class="champ"><label>Nom</label><input class="f" id="iwNom" placeholder="Force 2 — Eric Flag"></div>
+    <div class="duo">
+      <div class="champ"><label>Catégorie</label><input class="f" id="iwCat" placeholder="Street workout"></div>
+      <div class="champ"><label>Difficulté</label><input class="f" id="iwDif" placeholder="Intermédiaire"></div>
+    </div>
+    <div class="duo">
+      <div class="champ"><label>Durée (semaines)</label><input class="f" id="iwDur" type="number" min="0"></div>
+      <div class="champ"><label>Statut</label>
+        <select class="f" id="iwSta">${['Brouillon','Actif','Archivé'].map(x =>
+          `<option ${x === 'Brouillon' ? 'selected' : ''}>${x}</option>`).join('')}</select></div>
+    </div>
+    <div class="champ"><label>Description</label><textarea class="f" id="iwDes" rows="3"></textarea></div>
+    <div class="barre"><button class="btn" id="iwAnn">Annuler</button>
+      <button class="btn plein" id="iwOk" style="flex:1">Importer</button></div>`);
+
+  w.querySelector('#iwAnn').onclick = w.fermer;
+  w.querySelector('#iwOk').onclick = async function () {
+    const nom = w.querySelector('#iwNom').value.trim();
+    if (!nom) return toast('Donnez un nom au modèle');
+    this.disabled = true; this.textContent = 'Import…';
+    try {
+      const r = await api('maintenance', { op:'feuille', fiche: {
+        nom: nom,
+        categorie: w.querySelector('#iwCat').value,
+        difficulte: w.querySelector('#iwDif').value,
+        duree_semaines: w.querySelector('#iwDur').value,
+        statut: w.querySelector('#iwSta').value,
+        description: w.querySelector('#iwDes').value
+      }});
+      w.fermer(); toast('Modèle importé');
+      $('#resultat').innerHTML = `<div class="card" style="display:block;margin-top:14px">
+        <div class="eyebrow">Résultat</div>
+        <p class="consigne" style="margin-top:8px;white-space:pre-wrap">${r.message}</p></div>`;
+    } catch (err) {
+      const m = /^EXERCICES_INCONNUS: (.+)$/.exec(err.message);
+      toast(m ? 'Noms introuvables : ' + m[1]
+          : err.message === 'FEUILLE_VIDE' ? "L'onglet Import est vide" : err.message);
+      this.disabled = false; this.textContent = 'Importer';
+    }
+  };
 }
 
 // ── Modèles génériques ───────────────────────────────────────
