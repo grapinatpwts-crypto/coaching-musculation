@@ -243,3 +243,110 @@ function importerCatalogue() {
   Logger.log(msg);
   return msg;
 }
+
+/**
+ * Jeu d'essai réaliste pour le coach : un modèle complet, attribué à un
+ * pratiquant avec trois semaines d'ancienneté pour que l'avancement soit visible.
+ * Les exercices sont retrouvés par leur NOM, pas par leur identifiant : le jeu
+ * fonctionne quels que soient les EXnnn attribués à l'import.
+ */
+const EXEMPLE = {
+  modele: {
+    nom: 'Prise de masse — Haut / Bas',
+    categorie: 'Hypertrophie',
+    difficulte: 'Intermédiaire',
+    duree_semaines: 8,
+    statut: 'Actif',
+    description: 'Deux séances par semaine, haut puis bas du corps. Charges en pourcentage du max sur les mouvements lourds, supersets sur le volume.'
+  },
+  jours: [
+    ['Lundi — Haut du corps', [
+      { series: 4, repos_s: 150, exercices: [
+        ['Développé couché', '8-10', '', 0, 75, '2-0-3-1', 0] ]},
+      { series: 3, repos_s: 120, exercices: [
+        ['Rowing barre buste penché', '10', '', 0, 70, '2-0-2-0', 30],
+        ['Développé militaire debout', '10', '', 0, 65, '2-0-2-0', 0] ]},
+      { series: 3, repos_s: 75, exercices: [
+        ['Curl barre', '12', '', 25, 0, '2-0-2-0', 20],
+        ['Extension à la poulie haute', '12', '', 25, 0, '2-0-2-0', 0] ]}
+    ]],
+    ['Jeudi — Bas du corps', [
+      { series: 5, repos_s: 180, exercices: [
+        ['Squat barre', '5', '', 0, 80, '3-1-1-0', 0] ]},
+      { series: 3, repos_s: 150, exercices: [
+        ['Soulevé de terre roumain', '8', '', 0, 65, '3-0-1-0', 30],
+        ['Gainage face', '', 45, 0, 0, '', 0] ]},
+      { series: 4, repos_s: 60, exercices: [
+        ['Mollets debout', '15', '', 60, 0, '1-1-2-1', 0] ]}
+    ]]
+  ]
+};
+
+/** Crée le modèle d'exemple et l'attribue au compte de test pratiquant. */
+function creerExemple_() {
+  const rapport = [];
+
+  const noms = {};
+  const indexer = function () {
+    lire_(TABS.EXERCICES).forEach(function (e) {
+      if (e.nom) noms[String(e.nom).trim().toLowerCase()] = String(e.id);
+    });
+  };
+  indexer();
+  if (Object.keys(noms).length < 20) { rapport.push(importerCatalogue()); indexer(); }
+
+  let modele = lire_(TABS.MODELES).filter(function (m) {
+    return String(m.nom) === EXEMPLE.modele.nom;
+  })[0];
+
+  if (!modele) {
+    const r = modeleSave_(EXEMPLE.modele);
+    modele = { id: r.id };
+    rapport.push('Modèle « ' + EXEMPLE.modele.nom + ' » créé');
+
+    EXEMPLE.jours.forEach(function (j) {
+      const blocs = j[1].map(function (b) {
+        return {
+          series: b.series, repos_s: b.repos_s,
+          exercices: b.exercices.map(function (e) {
+            const id = noms[e[0].toLowerCase()];
+            if (!id) throw new Error('EXERCICE_ABSENT_' + e[0]);
+            return {
+              exercice_id: id, reps_cible: e[1], duree_s: e[2],
+              charge_cible: e[3], pct_rm: e[4], cadence: e[5], pause_s: e[6]
+            };
+          })
+        };
+      });
+      modeleJourSave_({ modele_id: modele.id, jour: j[0], blocs: blocs });
+    });
+    rapport.push(EXEMPLE.jours.length + ' jours composés');
+  } else {
+    rapport.push('Modèle déjà présent, laissé tel quel');
+  }
+
+  const email = 'guillaume.rapinat@gmail.com';
+  if (!findPratiquant_(email)) {
+    pratiquantCreer_({ email: email, nom: 'Guillaume Rapinat', telephone: '+33786855433',
+                       objectif: 'Être musclé et sec pour mes 40 ans' });
+    rapport.push('Pratiquant inscrit');
+  }
+  pratiquantSave_({ email: email, statut: ETATS.ACTIF });
+
+  const deja = lire_(TABS.ATTRIBUTIONS).filter(function (a) {
+    return String(a.email).toLowerCase() === email && String(a.modele_id) === String(modele.id);
+  })[0];
+  if (!deja) {
+    const r = attribuer_({
+      email: email, modele_id: modele.id,
+      date_debut: new Date(Date.now() - 21 * 86400000).toISOString()
+    });
+    rapport.push('Programme attribué à Guillaume, ' + r.lignes + ' lignes, démarré il y a 3 semaines');
+  } else {
+    rapport.push('Programme déjà attribué');
+  }
+
+  const msg = rapport.join('\n');
+  Logger.log(msg);
+  return msg;
+}

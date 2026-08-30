@@ -76,9 +76,8 @@ header h2{font-size:30px;text-transform:uppercase;line-height:1}
 .cal .c.today{border-color:var(--dust)}
 .cal .c.faite{background:var(--brand);border-color:var(--brand);color:var(--on-brand);font-weight:700}
 .card.clos .nom{color:var(--dust)}
-.card.clos .body{opacity:.72}
 .card.clos{display:flex;align-items:center;gap:12px}
-.card.clos .body{flex:1;min-width:0;cursor:pointer}
+.card.clos .body{opacity:.72;flex:1;min-width:0;cursor:pointer}
 .reprendre{font-size:17px;line-height:1;flex:0 0 auto}
 .cal .c[aria-pressed="true"]{outline:2px solid var(--brand-ink);outline-offset:1px}
 .cal .c .pt{width:4px;height:4px;border-radius:50%;background:var(--on-brand)}
@@ -143,6 +142,30 @@ header h2{font-size:30px;text-transform:uppercase;line-height:1}
 .illu{width:100%;max-width:300px;border-radius:12px;background:#2A2A2A;margin:2px 0 12px;display:block}
 .perso{font-size:13px;color:var(--brand-ink);font-weight:600;background:none;border:0;
   padding:8px 2px;text-align:left;text-decoration:underline;text-underline-offset:3px}
+/* Accueil coach : une carte par athlète, statut et avancement lisibles d'un coup */
+.ath-tete{display:flex;align-items:center;gap:10px;margin-bottom:5px}
+.ath-tete strong{font-size:17px;flex:1;min-width:0}
+.chip{font-size:11px;font-weight:700;letter-spacing:.06em;padding:4px 9px;border-radius:999px;
+  white-space:nowrap;text-transform:uppercase}
+.chip.nouveau{background:rgba(224,169,79,.16);color:#E0A94F}
+.chip.actif{background:rgba(111,191,142,.15);color:#6FBF8E}
+.chip.inactif{background:#2A2A2A;color:var(--dust)}
+.chip.archive{background:none;border:1px dashed var(--edge);color:var(--dust)}
+.jauge{height:6px;border-radius:3px;background:#2A2A2A;overflow:hidden;margin:9px 0 7px}
+.jauge i{display:block;height:100%;background:var(--brand);border-radius:3px;
+  transition:width .4s ease-out}
+.meta.bas{font-size:12.5px}
+.impaye{color:#E0A94F;font-weight:600}
+.alerte{background:rgba(224,169,79,.13);color:#E0A94F;border-radius:10px;padding:11px 14px;
+  font-size:13.5px;font-weight:600;margin-bottom:14px}
+.contacts{display:flex;gap:9px;flex-wrap:wrap;margin-top:14px}
+.contact{flex:1;min-width:96px;text-align:center;line-height:44px;padding:0;
+  text-decoration:none;color:var(--chalk)}
+.paye{display:inline-flex;align-items:center;gap:8px;margin-top:9px;font-size:13.5px;
+  color:var(--dust);cursor:pointer}
+.paye input{width:20px;height:20px;accent-color:var(--brand)}
+.card .quoi{color:var(--dust);font-size:15px;line-height:1.5}
+
 .origine{display:flex;flex-direction:column;gap:2px;margin-top:12px;min-height:24px}
 .origine .dit{font-size:12.5px;color:var(--dust)}
 
@@ -202,8 +225,8 @@ header h2{font-size:30px;text-transform:uppercase;line-height:1}
 #repos button{font-weight:700;font-size:14px;text-decoration:underline}
 
 /* Coach */
-.athlete{display:flex;justify-content:space-between;align-items:center;gap:12px;padding:15px 16px;
-  background:var(--plate);border:1px solid var(--edge);border-radius:var(--r);margin-bottom:10px;width:100%;text-align:left}
+.athlete{display:block;text-align:left;width:100%;padding:15px 16px;
+  background:var(--plate);border:1px solid var(--edge);border-radius:var(--r);margin-bottom:10px}
 .tag{font-size:12px;font-weight:700;padding:5px 9px;border-radius:999px;background:#2A2A2A;color:var(--dust);white-space:nowrap}
 .tag.warn{background:rgba(211,47,47,.16);color:#FF7A7A}
 .nav{position:fixed;bottom:0;left:0;right:0;background:rgba(20,23,28,.94);backdrop-filter:blur(8px);
@@ -228,12 +251,7 @@ header h2{font-size:30px;text-transform:uppercase;line-height:1}
 
 <main id="app" class="wrap hidden"></main>
 
-<nav id="nav" class="nav hidden">
-  <button data-vue="seance" aria-pressed="true">Séance</button>
-  <button data-vue="calendrier">Calendrier</button>
-  <button data-vue="progres">Progrès</button>
-  <button data-vue="coach" class="hidden">Coach</button>
-</nav>
+<nav id="nav" class="nav hidden"></nav>
 
 <div id="logger" class="hidden"></div>
 <div id="repos" class="hidden"></div>
@@ -507,12 +525,25 @@ async function onGoogle(res) {
   ouvrirApp(S.moi);
 }
 
+/**
+ * Le coach ne suit pas de programme dans l'app : sa navigation est celle d'un
+ * poste de travail, pas celle d'un pratiquant. On la construit selon le rôle.
+ */
+function construireNav(estCoach) {
+  const onglets = estCoach
+    ? [['athletes','Athlètes'], ['modeles','Modèles'], ['biblio','Bibliothèque'], ['reglages','Réglages']]
+    : [['seance','Séance'], ['calendrier','Calendrier'], ['progres','Progrès']];
+  if (!onglets.some(o => o[0] === S.vue)) S.vue = onglets[0][0];
+  $('#nav').innerHTML = onglets.map(([v, t]) =>
+    `<button data-vue="${v}" aria-pressed="${v === S.vue}">${t}</button>`).join('');
+}
+
 function ouvrirApp(moi) {
   S.moi = moi;
   $('#login').classList.add('hidden');
   $('#app').classList.remove('hidden');
   $('#nav').classList.remove('hidden');
-  if (moi.estCoach) document.querySelector('[data-vue="coach"]').classList.remove('hidden');
+  construireNav(moi.estCoach);
   S.jour = S.jour || moi.jours[0] || null;
   majBandeau();
   viderFile();
@@ -557,12 +588,22 @@ $('#nav').addEventListener('click', e => {
   rendre();
 });
 
+const VUES_COACH = ['athletes', 'modeles', 'biblio', 'reglages'];
+
 async function rendre() {
   $('#logger').classList.add('hidden');   // l'overlay ne doit pas survivre à un changement de vue
+  if (VUES_COACH.indexOf(S.vue) !== -1) {
+    S.coach = S.coach || { onglet:'athletes', email:null, nom:'', sous:'fiche', modele:null };
+    // Changer d'onglet principal quitte la fiche ou le modèle en cours.
+    if (S.coach.onglet !== S.vue) {
+      S.coach.onglet = S.vue; S.coach.email = null; S.coach.modele = null;
+      S.attSel = null; S.ed = null; S.cal = null;
+    }
+    return vueCoach();
+  }
   if (S.vue === 'seance') return vueSeance();
   if (S.vue === 'calendrier') return vueCalendrier();
   if (S.vue === 'progres') return vueProgres();
-  if (S.vue === 'coach') return vueCoach();
 }
 
 // ── Vue séance ───────────────────────────────────────────────
@@ -1201,19 +1242,11 @@ async function vueCoach() {
   }
 
   if (!c.email) {
+    const titres = { athletes:'Athlètes', modeles:'Modèles', biblio:'Bibliothèque', reglages:'Réglages' };
     app.innerHTML = `
-      <header><h2>Coach</h2>
+      <header><h2>${titres[c.onglet] || 'Coach'}</h2>
         <button class="quitter" id="quitter" title="Se déconnecter">Quitter</button></header>
-      <div class="sous">
-        <button data-o="athletes" aria-pressed="${c.onglet === 'athletes'}">Athlètes</button>
-        <button data-o="modeles" aria-pressed="${c.onglet === 'modeles'}">Modèles</button>
-        <button data-o="biblio" aria-pressed="${c.onglet === 'biblio'}">Bibliothèque</button>
-        <button data-o="reglages" aria-pressed="${c.onglet === 'reglages'}">Réglages</button>
-      </div>
       <div id="zone"><div class="empty">Chargement…</div></div>`;
-    app.querySelectorAll('.sous button').forEach(b => b.onclick = () => {
-      c.onglet = b.dataset.o; vueCoach();
-    });
     if (c.onglet === 'biblio') return vueBibliotheque();
     if (c.onglet === 'modeles') return vueModeles();
     if (c.onglet === 'reglages') return vueReglages();
@@ -1223,6 +1256,7 @@ async function vueCoach() {
   app.innerHTML = `
     <header><h2>${c.nom}</h2><button class="close" id="retour">← Athlètes</button></header>
     <div class="sous">
+      <button data-s="fiche" aria-pressed="${c.sous === 'fiche'}">Fiche</button>
       <button data-s="programme" aria-pressed="${c.sous === 'programme'}">Programme</button>
       <button data-s="maxis" aria-pressed="${c.sous === 'maxis'}">Maxis</button>
       <button data-s="calendrier" aria-pressed="${c.sous === 'calendrier'}">Calendrier</button>
@@ -1235,6 +1269,7 @@ async function vueCoach() {
     c.sous = b.dataset.s; vueCoach();
   });
 
+  if (c.sous === 'fiche') return vueFiche();
   if (c.sous === 'programme') return vueProgramme();
   if (c.sous === 'maxis') return vueMaxis();
   if (c.sous === 'calendrier') {
@@ -1248,23 +1283,187 @@ async function vueCoach() {
   return vueHistoriqueAthlete();
 }
 
+// ── Accueil du coach : ses athlètes ──────────────────────────
+const ETATS = ['Nouveau', 'Actif', 'Inactif', 'Archivé'];
+
+/** Téléphone en format international, seuls les chiffres et le +. */
+function tel(n) {
+  const t = String(n || '').replace(/[^\d+]/g, '');
+  if (!t) return '';
+  if (t.indexOf('+') === 0) return t;
+  if (t.indexOf('0') === 0) return '+33' + t.slice(1);   // numéro français saisi en 0…
+  return '+' + t;
+}
+
 async function listeAthletes() {
   const list = await api('coachAthletes');
-  $('#zone').innerHTML = list.map(a => `
-    <button class="athlete" data-email="${a.email}" data-nom="${a.nom}">
-      <span><strong>${a.nom}</strong><br><span class="meta" style="color:var(--dust);font-size:13px">${a.nbSeances} séances</span></span>
-      <span class="tag ${a.joursDepuis === null || a.joursDepuis >= 10 ? 'warn' : ''}">
-        ${a.joursDepuis === null ? 'jamais venu' : 'il y a ' + a.joursDepuis + ' j'}</span>
-    </button>`).join('') ||
-    `<div class="empty">Aucun pratiquant inscrit.<br>Ajoutez-les dans l'onglet Pratiquants du Sheet.</div>`;
+  S.athletes = list;
 
-  $('#zone').querySelectorAll('.athlete').forEach(b => b.onclick = () => {
+  const nouveaux = list.filter(a => a.statut === 'Nouveau').length;
+
+  $('#zone').innerHTML = `
+    ${nouveaux ? `<div class="alerte">${nouveaux} pratiquant${nouveaux > 1 ? 's' : ''} sans programme${nouveaux > 1 ? '' : ''}</div>` : ''}
+    <div class="barre" style="margin-top:0">
+      <button class="btn plein" id="inscrire" style="flex:1">＋ Inscrire un pratiquant</button></div>
+    <div style="margin-top:16px">${list.map(carteAthlete).join('') ||
+      `<div class="empty">Aucun pratiquant inscrit.</div>`}</div>`;
+
+  $('#inscrire').onclick = modalInscrire;
+  $('#zone').querySelectorAll('[data-email]').forEach(b => b.onclick = () => {
     S.coach.email = b.dataset.email;
     S.coach.nom = b.dataset.nom;
-    S.coach.sous = 'programme';
+    S.coach.sous = 'fiche';
     S.cal = null; S.attSel = null; S.ed = null;
     vueCoach();
   });
+}
+
+function carteAthlete(a) {
+  const p = a.progression;
+  const part = p ? Math.round(p.part * 100) : 0;
+  const vu = a.joursDepuis === null ? 'jamais venu'
+    : a.joursDepuis === 0 ? "vu aujourd'hui" : `vu il y a ${a.joursDepuis} j`;
+
+  return `<button class="athlete" data-email="${a.email}" data-nom="${a.nom}">
+    <div class="ath-tete">
+      <strong>${a.nom}</strong>
+      <span class="chip ${a.statut.toLowerCase().replace('é','e')}">${a.statut}</span>
+    </div>
+    ${a.programme
+      ? `<div class="meta">${a.programme.nom}${p && p.duree_semaines
+            ? ` · semaine ${Math.min(p.semaine, p.duree_semaines)} sur ${p.duree_semaines}` : ''}</div>
+         <div class="jauge" role="img" aria-label="${part} % du programme réalisé">
+           <i style="width:${part}%"></i></div>
+         <div class="meta bas">${p ? `${p.faites} séance${p.faites > 1 ? 's' : ''} sur ${p.attendues} attendue${p.attendues > 1 ? 's' : ''}` : ''} · ${vu}${
+           a.programme.paye ? '' : ' · <span class="impaye">à encaisser</span>'}</div>`
+      : `<div class="meta">Aucun programme attribué · ${vu}</div>`}
+  </button>`;
+}
+
+function modalInscrire() {
+  const w = modal('Inscrire un pratiquant', `
+    <div class="champ"><label>Adresse Google</label>
+      <input class="f" id="iMail" type="email" placeholder="prenom.nom@gmail.com"></div>
+    <div class="champ"><label>Nom</label><input class="f" id="iNom" placeholder="Prénom Nom"></div>
+    <div class="champ"><label>Téléphone</label><input class="f" id="iTel" type="tel" placeholder="06 12 34 56 78"></div>
+    <div class="champ"><label>Objectif</label><input class="f" id="iObj" placeholder="Prise de masse, remise en forme…"></div>
+    <p class="consigne">Il doit se connecter avec cette adresse Google. Il démarre au statut
+      <strong>Nouveau</strong> : inscrit, mais sans programme.</p>
+    <div class="barre"><button class="btn" id="iAnn">Annuler</button>
+      <button class="btn plein" id="iOk" style="flex:1">Inscrire</button></div>`);
+  w.querySelector('#iAnn').onclick = w.fermer;
+  w.querySelector('#iOk').onclick = async function () {
+    this.disabled = true;
+    try {
+      await api('pratiquantCreer', {
+        email: w.querySelector('#iMail').value,
+        nom: w.querySelector('#iNom').value,
+        telephone: w.querySelector('#iTel').value,
+        objectif: w.querySelector('#iObj').value
+      });
+      w.fermer(); toast('Pratiquant inscrit'); listeAthletes();
+    } catch (err) {
+      toast(err.message === 'EMAIL_INVALIDE' ? 'Adresse invalide'
+          : err.message === 'DEJA_INSCRIT' ? 'Ce compte est déjà inscrit' : err.message);
+      this.disabled = false;
+    }
+  };
+}
+
+// ── Fiche d'un pratiquant ────────────────────────────────────
+async function vueFiche() {
+  const f = await api('pratiquant', { email: S.coach.email });
+  S.fiche = f;
+  const t = tel(f.telephone);
+  const enCours = f.attributions.filter(a => a.statut === 'En cours');
+
+  $('#zone').innerHTML = `
+    <div class="card" style="display:block">
+      <div class="entete" style="margin-bottom:12px">
+        <span class="chip ${f.statut.toLowerCase().replace('é','e')}">${f.statut}</span>
+        <span class="meta" style="flex:1;text-align:right">${f.nbSeances} séance${f.nbSeances > 1 ? 's' : ''} · ${f.nbSeries} séries</span>
+      </div>
+      ${f.objectif ? `<p class="quoi"><span class="eyebrow">Objectif</span><br>${f.objectif}</p>` : ''}
+      <div class="contacts">
+        ${t ? `<a class="btn contact" href="https://wa.me/${t.replace('+','')}" target="_blank" rel="noopener">WhatsApp</a>` : ''}
+        ${t ? `<a class="btn contact" href="tel:${t}">Appeler</a>` : ''}
+        <a class="btn contact" href="mailto:${f.email}">E-mail</a>
+      </div>
+      ${!t ? `<p class="meta" style="margin-top:8px">Ajoutez un téléphone pour WhatsApp et l'appel direct.</p>` : ''}
+      <div class="barre"><button class="btn" id="editFiche" style="flex:1">Modifier la fiche</button></div>
+    </div>
+
+    <div class="eyebrow" style="margin:22px 0 10px">Statut</div>
+    <div class="sous">${ETATS.map(e =>
+      `<button data-etat="${e}" aria-pressed="${e === f.statut}">${e}</button>`).join('')}</div>
+    <p class="consigne">${{
+      'Nouveau': "Inscrit, pas encore de programme démarré.",
+      'Actif': "Accès complet à l'application.",
+      'Inactif': "Accès en lecture seule : il consulte, il ne saisit plus.",
+      'Archivé': "Plus aucun accès. Ses données restent conservées."
+    }[f.statut]}</p>
+
+    <div class="eyebrow" style="margin:22px 0 10px">Programmes donnés · ${f.attributions.length}</div>
+    ${f.attributions.map(a => `
+      <div class="ligne" style="align-items:flex-start">
+        <div class="g">
+          <div class="nom">${a.nom}</div>
+          <div class="meta">${a.statut}${a.date_debut ? ' · depuis le ' + new Date(a.date_debut).toLocaleDateString('fr-FR') : ''}${
+            a.date_fin ? ' · fini le ' + new Date(a.date_fin).toLocaleDateString('fr-FR') : ''} · ${a.nbExercices} exercices</div>
+          <label class="paye"><input type="checkbox" data-paye="${a.id}" ${a.paye ? 'checked' : ''}>
+            <span>${a.paye ? 'Payé' : 'Non payé'}</span></label>
+        </div>
+        <button class="poignee" data-voir="${a.id}" aria-label="Voir ce programme">›</button>
+      </div>`).join('') || `<div class="empty" style="padding:18px 0">Aucun programme donné.</div>`}
+
+    ${f.notes ? `<div class="eyebrow" style="margin:22px 0 8px">Notes</div>
+      <p class="consigne">${f.notes}</p>` : ''}`;
+
+  $('#editFiche').onclick = () => modalFiche(f);
+  $('#zone').querySelectorAll('[data-etat]').forEach(b => b.onclick = async function () {
+    if (this.getAttribute('aria-pressed') === 'true') return;
+    try {
+      await api('pratiquantSave', { email: f.email, statut: this.dataset.etat });
+      toast('Statut : ' + this.dataset.etat);
+      vueFiche();
+    } catch (err) { toast(err.message); }
+  });
+  $('#zone').querySelectorAll('[data-paye]').forEach(c => c.onchange = async function () {
+    try {
+      await api('attributionMaj', { id: this.dataset.paye, paye: this.checked });
+      this.parentNode.querySelector('span').textContent = this.checked ? 'Payé' : 'Non payé';
+      toast(this.checked ? 'Marqué payé' : 'Marqué non payé');
+    } catch (err) { toast(err.message); this.checked = !this.checked; }
+  });
+  $('#zone').querySelectorAll('[data-voir]').forEach(b => b.onclick = () => {
+    S.attSel = b.dataset.voir; S.ed = null; S.coach.sous = 'programme'; vueCoach();
+  });
+}
+
+function modalFiche(f) {
+  const w = modal('Modifier la fiche', `
+    <div class="champ"><label>Nom</label><input class="f" id="fNom" value="${f.nom}"></div>
+    <div class="champ"><label>Téléphone</label><input class="f" id="fTel" type="tel" value="${f.telephone}" placeholder="06 12 34 56 78"></div>
+    <div class="champ"><label>Objectif</label><input class="f" id="fObj" value="${f.objectif}"></div>
+    <div class="champ"><label>Notes</label><textarea class="f" id="fNot" rows="4" placeholder="Blessures, contraintes, remarques…">${f.notes}</textarea></div>
+    <div class="barre"><button class="btn" id="fAnn2">Annuler</button>
+      <button class="btn plein" id="fOk2" style="flex:1">Enregistrer</button></div>`);
+  w.querySelector('#fAnn2').onclick = w.fermer;
+  w.querySelector('#fOk2').onclick = async function () {
+    this.disabled = true;
+    try {
+      await api('pratiquantSave', {
+        email: f.email,
+        nom: w.querySelector('#fNom').value,
+        telephone: w.querySelector('#fTel').value,
+        objectif: w.querySelector('#fObj').value,
+        notes: w.querySelector('#fNot').value
+      });
+      w.fermer(); toast('Fiche enregistrée');
+      S.coach.nom = w.querySelector('#fNom').value;
+      vueCoach();
+    } catch (err) { toast(err.message); this.disabled = false; }
+  };
 }
 
 async function vueHistoriqueAthlete() {
@@ -1528,6 +1727,9 @@ function vueReglages() {
       sur:false },
     { op:'catalogue', nom:'Importer le catalogue de départ',
       quoi:'Verse 97 exercices en français, illustrés, issus d\'une base du domaine public. Un exercice dont le nom existe déjà est ignoré : vos fiches ne sont pas touchées.',
+      sur:true },
+    { op:'exemple', nom:'Créer le programme d\'exemple',
+      quoi:'Compose un modèle « Prise de masse — Haut / Bas » sur 8 semaines et l\'attribue au compte de test, démarré il y a trois semaines pour que l\'avancement soit visible. Importe le catalogue s\'il manque.',
       sur:true },
     { op:'rapport', nom:'Envoyer le rapport hebdomadaire',
       quoi:'Envoie au coach la liste des pratiquants sans séance depuis 10 jours.',

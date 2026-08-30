@@ -33,8 +33,17 @@ const TABS = {
 /** Statuts d'une attribution. Un seul « En cours » par pratiquant à la fois. */
 const STATUTS = { COURS: 'En cours', TERMINE: 'Terminé', ARCHIVE: 'Archivé' };
 
+/** Statuts d'un pratiquant, du plus ouvert au plus fermé. */
+const ETATS = { NOUVEAU: 'Nouveau', ACTIF: 'Actif', INACTIF: 'Inactif', ARCHIVE: 'Archivé' };
+
+/** Actions qui écrivent pour le compte d'un pratiquant : refusées si Inactif. */
+const ECRITURES_PRATIQUANT = ['demarrer', 'serie', 'terminer', 'finirExercice',
+                              'reprendreExercice', 'ajuster'];
+
 const SCHEMA = {
-  Pratiquants: ['email', 'nom', 'actif', 'date_inscription', 'objectif'],
+  // statut : Nouveau (inscrit, pas encore de programme démarré), Actif,
+  // Inactif (accès en lecture seule), Archivé (plus d'accès, données conservées).
+  Pratiquants: ['email', 'nom', 'statut', 'telephone', 'date_inscription', 'objectif', 'notes', 'actif'],
   Exercices: ['id', 'nom', 'groupe', 'equipement', 'consigne', 'photo', 'video'],
   // Modèles : programmes génériques, sans pratiquant. Le coach les compose une fois.
   Modeles: ['id', 'nom', 'categorie', 'difficulte', 'description', 'duree_semaines', 'statut', 'cree_le'],
@@ -44,7 +53,7 @@ const SCHEMA = {
   Maxis: ['id', 'email', 'exercice_id', 'rm_kg', 'date', 'source'],
   // Attribution : un modèle donné à un pratiquant à une date. Le même modèle peut
   // être attribué plusieurs fois au même pratiquant au fil du temps.
-  Attributions: ['id', 'email', 'modele_id', 'nom', 'date_debut', 'date_fin', 'statut', 'notes', 'cree_le'],
+  Attributions: ['id', 'email', 'modele_id', 'nom', 'date_debut', 'date_fin', 'statut', 'paye', 'notes', 'cree_le'],
   // Ajustements : la charge que le pratiquant se fixe lui-même, exercice par
   // exercice. Elle prime sur la charge du coach et sur le calcul en % du max.
   Ajustements: ['id', 'email', 'attribution_id', 'exercice_id', 'charge', 'note', 'maj_le'],
@@ -112,6 +121,15 @@ function doPost(e) {
     const profil = findPratiquant_(user.email);
     const estCoach = user.email === CONFIG.COACH_EMAIL.toLowerCase();
     if (!profil && !estCoach) throw new Error('NON_INSCRIT');
+
+    // Un compte archivé n'accède plus à rien ; un compte inactif garde la lecture.
+    if (!estCoach && profil) {
+      const etat = String(profil.statut || ETATS.ACTIF);
+      if (etat === ETATS.ARCHIVE) throw new Error('COMPTE_ARCHIVE');
+      if (etat === ETATS.INACTIF && ECRITURES_PRATIQUANT.indexOf(req.action) !== -1) {
+        throw new Error('COMPTE_INACTIF');
+      }
+    }
     out = { ok: true, data: route_(req.action, req.payload || {}, user, profil, estCoach) };
   } catch (err) {
     out = { ok: false, error: String(err && err.message ? err.message : err) };
@@ -134,6 +152,9 @@ function route_(action, p, user, profil, estCoach) {
     case 'calendrier':     return calendrier_(cibleEmail_(user, p, estCoach), p);
     case 'catalogue':      return catalogue_();
     case 'coachAthletes':  return guardCoach_(estCoach, coachAthletes_);
+    case 'pratiquant':     return guardCoach_(estCoach, function () { return pratiquant_(p.email); });
+    case 'pratiquantSave': return guardCoach_(estCoach, function () { return pratiquantSave_(p); });
+    case 'pratiquantCreer':return guardCoach_(estCoach, function () { return pratiquantCreer_(p); });
     case 'coachDetail':    return guardCoach_(estCoach, function () { return coachDetail_(p.email); });
     case 'exerciceSave':   return guardCoach_(estCoach, function () { return exerciceSave_(p); });
     case 'exerciceSuppr':  return guardCoach_(estCoach, function () { return exerciceSuppr_(p.id); });
@@ -202,6 +223,20 @@ function verifyToken_(idToken) {
  * L'app ne doit jamais dépendre d'une migration pour démarrer : un onglet
  * déclaré mais absent est créé vide, pas une erreur.
  */
+/**
+ * Colonnes que le Sheet ne doit surtout pas interpréter : « 8-10 » deviendrait
+ * le 8 octobre, « 1-0-3-1 » une date elle aussi. On les force en texte brut.
+ */
+const COLONNES_TEXTE = ['reps_cible', 'cadence', 'duree_s', 'pct_rm'];
+
+function forcerTexte_(sh, head) {
+  const n = Math.max(sh.getMaxRows() - 1, 1);
+  COLONNES_TEXTE.forEach(function (c) {
+    const i = head.indexOf(c);
+    if (i !== -1) sh.getRange(2, i + 1, n, 1).setNumberFormat('@');
+  });
+}
+
 function feuille_(tab) {
   const ss = SpreadsheetApp.getActive();
   let sh = ss.getSheetByName(tab);
@@ -210,10 +245,24 @@ function feuille_(tab) {
     sh.getRange(1, 1, 1, SCHEMA[tab].length).setValues([SCHEMA[tab]])
       .setFontWeight('bold').setBackground('#1C2027').setFontColor('#FFFFFF');
     sh.setFrozenRows(1);
+    forcerTexte_(sh, SCHEMA[tab]);
     return sh;
   }
-  if (sh && SCHEMA[tab]) ajouterColonnesManquantes_(sh, SCHEMA[tab]);
+  if (sh && SCHEMA[tab]) {
+    if (ajouterColonnesManquantes_(sh, SCHEMA[tab])) {
+      forcerTexte_(sh, sh.getRange(1, 1, 1, sh.getLastColumn()).getValues()[0]);
+    }
+  }
   return sh;
+}
+
+/**
+ * Répare une valeur que le Sheet a transformée en date malgré tout.
+ * « 8-10 » relu en Date du 8 octobre redevient « 8-10 ».
+ */
+function repsTexte_(v) {
+  if (v instanceof Date) return v.getDate() + '-' + (v.getMonth() + 1);
+  return v === undefined || v === null ? '' : String(v);
 }
 
 /**
@@ -332,7 +381,7 @@ function cibleEmail_(user, p, estCoach) {
 function findPratiquant_(email) {
   const list = lire_(TABS.PRATIQUANTS);
   for (let i = 0; i < list.length; i++) {
-    if (String(list[i].email).toLowerCase() === email && list[i].actif !== false) return list[i];
+    if (String(list[i].email).toLowerCase() === email) return list[i];
   }
   return null;
 }
@@ -629,7 +678,7 @@ function ligneExercice_(l, bloc, exercices, series, maxis, ajustes) {
     bloc: bloc.bloc,
     series: bloc.series,
     repos_s: bloc.repos_s,
-    reps_cible: l.reps_cible,
+    reps_cible: repsTexte_(l.reps_cible),
     // duree_s renseigné => exercice au temps, reps_cible est ignoré.
     // Valeur numérique = durée à tenir ; 'max' = jusqu'à l'échec, chrono qui monte.
     duree_s: l.duree_s === '' || l.duree_s === undefined ? null : l.duree_s,
@@ -727,26 +776,6 @@ function historique_(email, exerciceId) {
 // ─────────────────────────────────────────────────────────────
 // 7. LOGIQUE MÉTIER — coach
 // ─────────────────────────────────────────────────────────────
-function coachAthletes_() {
-  const seances = lire_(TABS.SEANCES);
-  return lire_(TABS.PRATIQUANTS)
-    .filter(function (p) {
-      return p.actif !== false && String(p.email).toLowerCase() !== CONFIG.COACH_EMAIL.toLowerCase();
-    })
-    .map(function (p) {
-      const s = seances.filter(function (x) {
-        return String(x.email).toLowerCase() === String(p.email).toLowerCase();
-      });
-      const derniere = s.length ? s[s.length - 1].date : null;
-      return {
-        email: p.email, nom: p.nom, objectif: p.objectif,
-        nbSeances: s.length, derniere: derniere,
-        joursDepuis: derniere ? Math.floor((Date.now() - new Date(derniere)) / 86400000) : null
-      };
-    })
-    .sort(function (a, b) { return (b.joursDepuis === null ? 999 : b.joursDepuis) - (a.joursDepuis === null ? 999 : a.joursDepuis); });
-}
-
 function coachDetail_(email) {
   const cible = String(email).toLowerCase();
   const exercices = {};
@@ -873,7 +902,7 @@ function grouperEnJours_(lignes, noms) {
     parJour[j]._n[num].exercices.push({
       exercice_id: l.exercice_id,
       nom: noms[l.exercice_id] || l.exercice_id,
-      reps_cible: l.reps_cible === undefined ? '' : String(l.reps_cible),
+      reps_cible: repsTexte_(l.reps_cible),
       duree_s: l.duree_s === '' || l.duree_s === undefined ? '' : l.duree_s,
       charge_cible: Number(l.charge_cible) || 0,
       pct_rm: Number(String(l.pct_rm).replace('%', '')) || 0,
@@ -1024,6 +1053,7 @@ function attributions_(email) {
         id: a.id, email: a.email, modele_id: a.modele_id || '', nom: a.nom,
         date_debut: a.date_debut, date_fin: a.date_fin || '',
         statut: a.statut || STATUTS.COURS, notes: a.notes || '',
+        paye: a.paye === true || a.paye === 'VRAI',
         nbJours: Object.keys(jours).length, nbExercices: mien.length
       };
     })
@@ -1090,6 +1120,7 @@ function attributionMaj_(p) {
   ['nom', 'statut', 'notes'].forEach(function (k) {
     if (p[k] !== undefined) patch[k] = String(p[k]);
   });
+  if (p.paye !== undefined) patch.paye = (p.paye === true || p.paye === 'true');
   if (p.date_fin !== undefined) patch.date_fin = p.date_fin ? new Date(p.date_fin) : '';
   if (p.date_debut !== undefined) patch.date_debut = new Date(p.date_debut);
   if (!majLigne_(TABS.ATTRIBUTIONS, 'id', p.id, patch)) throw new Error('ATTRIBUTION_INTROUVABLE');
@@ -1275,6 +1306,174 @@ function calendrier_(email, p) {
 }
 
 // ─────────────────────────────────────────────────────────────
+// 7 quinquies. LE POSTE DU COACH — fiches, suivi, administratif
+// ─────────────────────────────────────────────────────────────
+
+/**
+ * Avancement d'un pratiquant dans son programme.
+ * Deux mesures, qui ne disent pas la même chose :
+ *  - le temps écoulé, semaine N sur la durée prévue du modèle ;
+ *  - l'assiduité, séances faites sur séances attendues.
+ * C'est la seconde qui alimente la barre : un programme peut être à sa moitié
+ * dans le calendrier et n'avoir vu personne.
+ */
+function progression_(att, lignes, seances) {
+  if (!att) return null;
+
+  const jours = {};
+  lignes.forEach(function (l) { if (l.jour) jours[l.jour] = true; });
+  const parSemaine = Object.keys(jours).length;
+
+  const debut = att.date_debut ? new Date(att.date_debut) : null;
+  const fin = att.date_fin ? new Date(att.date_fin) : new Date();
+  const joursEcoules = debut ? Math.max(0, Math.floor((fin - debut) / 86400000)) : 0;
+  const semaineCourante = debut ? Math.floor(joursEcoules / 7) + 1 : 0;
+
+  const duree = Number(att.duree_semaines) || 0;
+  const faites = seances.filter(function (s) {
+    return !debut || new Date(s.date) >= debut;
+  }).length;
+
+  // Sans durée déclarée au modèle, on compare à ce qui aurait dû être fait
+  // depuis le début plutôt qu'à un objectif inconnu.
+  const semainesRef = duree || Math.max(1, semaineCourante);
+  const attendues = parSemaine * semainesRef;
+
+  return {
+    parSemaine: parSemaine,
+    semaine: semaineCourante,
+    duree_semaines: duree,
+    faites: faites,
+    attendues: attendues,
+    part: attendues ? Math.min(1, faites / attendues) : 0
+  };
+}
+
+/** Liste d'accueil du coach : un athlète, son programme, son avancement. */
+function coachAthletes_() {
+  const seances = lire_(TABS.SEANCES);
+  const lignes = lire_(TABS.PROGRAMMES);
+  const atts = lire_(TABS.ATTRIBUTIONS);
+  const modeles = {};
+  lire_(TABS.MODELES).forEach(function (m) { modeles[String(m.id)] = m; });
+
+  return lire_(TABS.PRATIQUANTS)
+    .filter(function (p) {
+      return p.email && String(p.email).toLowerCase() !== CONFIG.COACH_EMAIL.toLowerCase();
+    })
+    .map(function (p) {
+      const email = String(p.email).toLowerCase();
+      const mesSeances = seances.filter(function (x) {
+        return String(x.email).toLowerCase() === email;
+      });
+      const derniere = mesSeances.length ? mesSeances[mesSeances.length - 1].date : null;
+
+      const active = atts.filter(function (a) {
+        return String(a.email).toLowerCase() === email && String(a.statut) === STATUTS.COURS;
+      }).sort(function (a, b) { return new Date(b.date_debut) - new Date(a.date_debut); })[0];
+
+      let prog = null;
+      if (active) {
+        const mod = modeles[String(active.modele_id)];
+        active.duree_semaines = mod ? mod.duree_semaines : 0;
+        prog = progression_(active,
+          lignes.filter(function (l) { return String(l.attribution_id) === String(active.id); }),
+          mesSeances);
+      }
+
+      // Un pratiquant sans statut explicite est réputé Nouveau tant qu'il n'a
+      // pas de programme, Actif dès qu'il en a un.
+      const etat = String(p.statut || (active ? ETATS.ACTIF : ETATS.NOUVEAU));
+
+      return {
+        email: p.email, nom: p.nom || email.split('@')[0],
+        statut: etat, telephone: p.telephone || '', objectif: p.objectif || '',
+        nbSeances: mesSeances.length, derniere: derniere,
+        joursDepuis: derniere ? Math.floor((Date.now() - new Date(derniere)) / 86400000) : null,
+        programme: active ? {
+          id: active.id, nom: active.nom, paye: active.paye === true || active.paye === 'VRAI',
+          date_debut: active.date_debut, modele_id: active.modele_id || ''
+        } : null,
+        progression: prog
+      };
+    })
+    .sort(function (a, b) {
+      const rang = { Nouveau: 0, Actif: 1, Inactif: 2, Archivé: 3 };
+      const d = (rang[a.statut] || 1) - (rang[b.statut] || 1);
+      if (d !== 0) return d;
+      return (b.joursDepuis === null ? 9999 : b.joursDepuis) - (a.joursDepuis === null ? 9999 : a.joursDepuis);
+    });
+}
+
+/** Fiche complète d'un pratiquant : identité, statut, historique des programmes. */
+function pratiquant_(email) {
+  const cible = String(email || '').toLowerCase();
+  if (!cible) throw new Error('EMAIL_REQUIS');
+  const p = lire_(TABS.PRATIQUANTS).filter(function (x) {
+    return String(x.email).toLowerCase() === cible;
+  })[0];
+  if (!p) throw new Error('PRATIQUANT_INCONNU');
+
+  const seances = lire_(TABS.SEANCES).filter(function (s) {
+    return String(s.email).toLowerCase() === cible;
+  });
+  const series = lire_(TABS.SERIES).filter(function (s) {
+    return String(s.email).toLowerCase() === cible;
+  });
+  const derniere = seances.length ? seances[seances.length - 1].date : null;
+
+  return {
+    email: p.email,
+    nom: p.nom || cible.split('@')[0],
+    statut: String(p.statut || ETATS.ACTIF),
+    telephone: p.telephone || '',
+    objectif: p.objectif || '',
+    notes: p.notes || '',
+    date_inscription: p.date_inscription || '',
+    nbSeances: seances.length,
+    nbSeries: series.length,
+    derniere: derniere,
+    joursDepuis: derniere ? Math.floor((Date.now() - new Date(derniere)) / 86400000) : null,
+    attributions: attributions_(cible)
+  };
+}
+
+/** Le coach met à jour la fiche : statut, téléphone, objectif, notes. */
+function pratiquantSave_(p) {
+  const email = String(p.email || '').toLowerCase();
+  if (!email) throw new Error('EMAIL_REQUIS');
+  const patch = {};
+  ['nom', 'telephone', 'objectif', 'notes'].forEach(function (k) {
+    if (p[k] !== undefined) patch[k] = String(p[k]);
+  });
+  if (p.statut !== undefined) {
+    const e = String(p.statut);
+    if ([ETATS.NOUVEAU, ETATS.ACTIF, ETATS.INACTIF, ETATS.ARCHIVE].indexOf(e) === -1) {
+      throw new Error('STATUT_INCONNU');
+    }
+    patch.statut = e;
+    // `actif` reste renseigné pour rester lisible directement dans le Sheet.
+    patch.actif = (e !== ETATS.ARCHIVE);
+  }
+  if (!majLigne_(TABS.PRATIQUANTS, 'email', email, patch)) throw new Error('PRATIQUANT_INCONNU');
+  return { maj: true };
+}
+
+/** Inscrit un pratiquant. Il démarre au statut Nouveau, sans programme. */
+function pratiquantCreer_(p) {
+  const email = String(p.email || '').trim().toLowerCase();
+  if (!email || email.indexOf('@') === -1) throw new Error('EMAIL_INVALIDE');
+  if (findPratiquant_(email)) throw new Error('DEJA_INSCRIT');
+  ajouter_(TABS.PRATIQUANTS, {
+    email: email, nom: String(p.nom || '').trim() || email.split('@')[0],
+    statut: ETATS.NOUVEAU, telephone: String(p.telephone || ''),
+    date_inscription: new Date(), objectif: String(p.objectif || ''),
+    notes: '', actif: true
+  });
+  return { email: email };
+}
+
+// ─────────────────────────────────────────────────────────────
 // 8. AUTOMATISATIONS CÔTÉ COACH (menu dans le Sheet)
 // ─────────────────────────────────────────────────────────────
 function onOpen() {
@@ -1431,6 +1630,7 @@ function maintenance_(op) {
     case 'jeuEssaiReset':return { message: rechargerProgrammeTest() };
     case 'rapport':      rapportHebdo(); return { message: 'Rapport envoyé si des pratiquants sont à relancer.' };
     case 'catalogue':    return { message: importerCatalogue() };
+    case 'exemple':      return { message: creerExemple_() };
     default: throw new Error('OPERATION_INCONNUE');
   }
 }

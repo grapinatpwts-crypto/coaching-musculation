@@ -73,12 +73,12 @@ côté, zone sûre respectée). Régénérables : voir § 9.
 
 | Onglet | Colonnes |
 |---|---|
-| `Pratiquants` | email, nom, actif, date_inscription, objectif |
+| `Pratiquants` | email, nom, **statut**, **telephone**, date_inscription, objectif, **notes**, actif |
 | `Exercices` | id, nom, groupe, equipement, consigne, **photo**, video |
 | `Ajustements` | id, email, attribution_id, exercice_id, charge, note, maj_le |
 | `Modeles` | id, nom, categorie, difficulte, description, duree_semaines, statut, cree_le |
 | `ModeleLignes` | id, modele_id, jour, bloc, ordre, exercice_id, series, reps_cible, duree_s, charge_cible, **pct_rm**, cadence, pause_s, repos_s |
-| `Attributions` | id, email, modele_id, nom, date_debut, date_fin, statut, notes, cree_le |
+| `Attributions` | id, email, modele_id, nom, date_debut, date_fin, statut, **paye**, notes, cree_le |
 | `Maxis` | id, email, exercice_id, rm_kg, date, source |
 | `Programmes` | id, **attribution_id**, email, jour, bloc, ordre, exercice_id, series, reps_cible, duree_s, charge_cible, **pct_rm**, cadence, pause_s, repos_s |
 | `Seances` | id, email, date, jour, duree_min, ressenti, notes, **exercices_finis** |
@@ -460,6 +460,48 @@ L'import est **relançable** : un exercice dont le nom existe déjà est ignoré
 fiches saisies par le coach ne sont jamais touchées, et les identifiants continuent
 la numérotation existante.
 
+## 8 decies. Statuts des pratiquants
+
+| Statut | Ce que ça veut dire | Accès à l'app |
+|---|---|---|
+| **Nouveau** | inscrit, aucun programme démarré | complet |
+| **Actif** | en cours de suivi | complet |
+| **Inactif** | pause, arrêt temporaire | **lecture seule** — il consulte, il ne saisit plus |
+| **Archivé** | terminé | **aucun** — les données restent conservées |
+
+Le contrôle est fait dans `doPost`, avant tout routage : un compte archivé reçoit
+`COMPTE_ARCHIVE`, un compte inactif reçoit `COMPTE_INACTIF` sur les six actions qui
+écrivent (`ECRITURES_PRATIQUANT`). La lecture reste ouverte à un inactif — couper
+l'accès à son propre historique n'aurait servi personne.
+
+Rien n'est jamais supprimé : archiver, c'est fermer la porte, pas effacer.
+
+## 8 undecies. Le poste de travail du coach
+
+Le coach ne suit pas de programme dans l'app. Sa barre de navigation est donc
+différente de celle d'un pratiquant : **Athlètes · Modèles · Bibliothèque ·
+Réglages**, construite selon le rôle par `construireNav()`. Il n'a plus d'écran
+Séance ni Progrès pour lui-même.
+
+**L'accueil liste ses athlètes**, triés par statut puis par ancienneté de la dernière
+séance — les nouveaux d'abord, les silencieux ensuite. Chaque carte porte le statut,
+le programme en cours, une barre d'avancement et un rappel « à encaisser » si le
+programme n'est pas payé.
+
+**Deux mesures d'avancement**, qui ne disent pas la même chose. Le temps écoulé donne
+« semaine 4 sur 8 ». L'assiduité donne « 6 séances sur 16 attendues », et c'est elle
+qui alimente la barre : un programme peut être à sa moitié dans le calendrier sans
+que personne ne soit venu. Sans durée déclarée au modèle, la référence devient ce qui
+aurait dû être fait depuis le début.
+
+**La fiche du pratiquant** ouvre sur l'identité, l'objectif et trois boutons de
+contact — WhatsApp, appel, e-mail — construits depuis le téléphone normalisé au
+format international. Puis le statut, modifiable d'un appui, et l'historique des
+programmes donnés avec pour chacun une case **payé / non payé**.
+
+C'est le début du volet administratif : le suivi de paiement est volontairement
+minimal — une case, pas une facturation.
+
 ## 9. Parti pris visuel — charte Wellness Sport Club
 
 L'app reprend l'identité de **Wellness Sport Club** (`wellness-sportclub.fr`),
@@ -523,8 +565,8 @@ Ces couleurs sont normatives, pas décoratives : elles ne suivent pas la charte.
 
 Ce qui reste, par ordre d'utilité décroissante.
 
-1. **Importer la bibliothèque** depuis Coach ▸ Réglages, puis la compléter des
-   exercices propres au coach et de ses propres consignes (§ 8 nonies).
+1. **Importer la bibliothèque**, puis **créer le programme d'exemple**, depuis
+   Coach ▸ Réglages. Compléter ensuite des exercices propres au coach (§ 8 nonies).
 2. **Installer sur téléphone** et juger l'ergonomie réelle, téléphone en main
    entre deux séries. Safari sur iOS, Chrome sur Android.
 3. **Étendre l'ajustement du pratiquant** au-delà de la charge, si le besoin
