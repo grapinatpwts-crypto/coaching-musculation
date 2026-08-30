@@ -1,5 +1,5 @@
 /**
- * CATALOGUE DE DÉPART — 167 exercices en français.
+ * CATALOGUE DE DÉPART — 171 exercices en français.
  *
  * Deux ensembles : les mouvements de salle, illustrés depuis free-exercise-db, et
  * le vocabulaire du poids de corps et du street workout, dont beaucoup n'ont pas
@@ -522,6 +522,19 @@ const CATALOGUE_DEPART = [
    ""],
   ["Skin the cat", "Dos", "Poids de corps", "",
    "Suspendu, on passe les jambes entre les bras jusqu'à l'inversion complète. Échauffer longuement les épaules.",
+   ""],
+
+  ["Fente sur Smith machine", "Jambes", "Machine", "",
+   "Barre guidée sur les épaules, un pied devant. La machine tient l'équilibre, on se concentre sur la descente.",
+   ""],
+  ["Soulevé de terre roumain aux haltères", "Fessiers", "Haltère", "",
+   "Jambes quasi tendues, bassin qui recule, haltères le long des cuisses. Plus d'amplitude qu'à la barre.",
+   ""],
+  ["Zercher squat", "Jambes", "Barre", "",
+   "Barre calée au creux des coudes, contre le buste. Très gainage, buste forcément vertical.",
+   ""],
+  ["Hip thrust à la machine", "Fessiers", "Machine", "",
+   "Même geste qu'à la barre, sans avoir à caler le banc ni la barre. Montée jusqu'à l'alignement.",
    ""],
 ];
 

@@ -7,3 +7,8 @@ node_modules/
 creds.json
 client_secret*.json
 *-creds.json
+
+# Contenus privés : programmes du coach, sources achetées.
+# Le dépôt est public, ces fichiers restent sur le poste et dans le Sheet.
+programme-*.xlsx
+*-prive.xlsx
