@@ -161,6 +161,7 @@ header h2{font-size:30px;text-transform:uppercase;line-height:1}
 .contacts{display:flex;gap:9px;flex-wrap:wrap;margin-top:14px}
 .contact{flex:1;min-width:96px;text-align:center;line-height:44px;padding:0;
   text-decoration:none;color:var(--chalk)}
+.contact.inerte{opacity:.4;pointer-events:none}
 .paye{display:inline-flex;align-items:center;gap:8px;margin-top:9px;font-size:13.5px;
   color:var(--dust);cursor:pointer}
 .paye input{width:20px;height:20px;accent-color:var(--brand)}
@@ -1413,6 +1414,7 @@ async function vueFiche() {
           <label class="paye"><input type="checkbox" data-paye="${a.id}" ${a.paye ? 'checked' : ''}>
             <span>${a.paye ? 'Payé' : 'Non payé'}</span></label>
         </div>
+        <button class="poignee" data-prevenir="${a.id}" aria-label="Prévenir">✉</button>
         <button class="poignee" data-voir="${a.id}" aria-label="Voir ce programme">›</button>
       </div>`).join('') || `<div class="empty" style="padding:18px 0">Aucun programme donné.</div>`}
 
@@ -1435,9 +1437,75 @@ async function vueFiche() {
       toast(this.checked ? 'Marqué payé' : 'Marqué non payé');
     } catch (err) { toast(err.message); this.checked = !this.checked; }
   });
+  $('#zone').querySelectorAll('[data-prevenir]').forEach(b =>
+    b.onclick = () => modalNotifier(b.dataset.prevenir, f.email));
   $('#zone').querySelectorAll('[data-voir]').forEach(b => b.onclick = () => {
     S.attSel = b.dataset.voir; S.ed = null; S.coach.sous = 'programme'; vueCoach();
   });
+}
+
+/**
+ * Prévenir un pratiquant qu'un programme lui est assigné.
+ * Le texte est composé côté serveur puis modifiable ici. Trois canaux passent par
+ * le téléphone — WhatsApp, SMS, client mail — et n'engagent aucun service tiers.
+ * Le quatrième part directement du compte Google du coach.
+ */
+async function modalNotifier(attributionId, email) {
+  let m;
+  try {
+    m = await api('messageType', { email: email, attribution_id: attributionId });
+  } catch (err) {
+    return toast(err.message === 'AUCUN_PROGRAMME' ? 'Aucun programme à annoncer' : err.message);
+  }
+
+  const t = tel(m.telephone);
+  const w = modal('Prévenir ' + (m.nom || '').split(' ')[0], `
+    <div class="champ"><label>Objet — pour l'e-mail</label>
+      <input class="f" id="nObj" value="${m.objet}"></div>
+    <div class="champ"><label>Message</label>
+      <textarea class="f" id="nMsg" rows="10">${m.message}</textarea></div>
+    <div class="eyebrow" style="margin:4px 0 8px">Ouvrir sur le téléphone</div>
+    <div class="contacts">
+      <a class="btn contact ${t ? '' : 'inerte'}" id="nWa" target="_blank" rel="noopener">WhatsApp</a>
+      <a class="btn contact ${t ? '' : 'inerte'}" id="nSms">SMS</a>
+      <a class="btn contact" id="nMail">Client mail</a>
+    </div>
+    ${t ? '' : `<p class="meta" style="margin-top:8px">Sans téléphone renseigné, seul l'e-mail est possible.</p>`}
+    <div class="eyebrow" style="margin:18px 0 8px">Ou envoyer maintenant</div>
+    <div class="barre" style="margin-top:0">
+      <button class="btn plein" id="nEnvoi" style="flex:1">Envoyer l'e-mail depuis mon compte</button></div>
+    <p class="consigne">Part de ${S.moi.email}, avec votre nom en expéditeur.</p>
+    <div class="barre"><button class="btn" id="nAnn" style="flex:1">Fermer</button></div>`);
+
+  // Les liens sont reconstruits à chaque frappe : le texte modifié doit suivre.
+  const maj = () => {
+    const txt = w.querySelector('#nMsg').value;
+    const obj = w.querySelector('#nObj').value;
+    if (t) {
+      w.querySelector('#nWa').href = `https://wa.me/${t.replace('+','')}?text=${encodeURIComponent(txt)}`;
+      // « ?& » : Android attend ?body=, iOS attend &body=. Cette forme convient aux deux.
+      w.querySelector('#nSms').href = `sms:${t}?&body=${encodeURIComponent(txt)}`;
+    }
+    w.querySelector('#nMail').href =
+      `mailto:${m.email}?subject=${encodeURIComponent(obj)}&body=${encodeURIComponent(txt)}`;
+  };
+  w.querySelector('#nMsg').oninput = maj;
+  w.querySelector('#nObj').oninput = maj;
+  maj();
+
+  w.querySelector('#nAnn').onclick = w.fermer;
+  w.querySelector('#nEnvoi').onclick = async function () {
+    this.disabled = true; this.textContent = 'Envoi…';
+    try {
+      const r = await api('notifierMail', {
+        email: m.email, objet: w.querySelector('#nObj').value, message: w.querySelector('#nMsg').value
+      });
+      w.fermer();
+      toast('E-mail envoyé' + (r.restant !== undefined ? ` · ${r.restant} restants aujourd'hui` : ''));
+    } catch (err) {
+      toast(err.message); this.disabled = false; this.textContent = "Envoyer l'e-mail depuis mon compte";
+    }
+  };
 }
 
 function modalFiche(f) {
@@ -1984,6 +2052,7 @@ async function vueProgramme() {
       att.modele_id ? ' · issu d\'un modèle' : ' · sur mesure'}</div>
     <div class="barre" style="margin-top:0">
       <button class="btn plein" id="donner">Donner un programme</button>
+      <button class="btn" id="prevenir">Prévenir</button>
       ${att.statut === 'En cours' ? '<button class="btn" id="clore">Clore</button>' : ''}
       <button class="btn danger" id="supprAtt">Supprimer</button>
     </div>
@@ -1995,6 +2064,7 @@ async function vueProgramme() {
 
   $('#selAtt').onchange = e => { S.attSel = e.target.value; S.ed = null; vueProgramme(); };
   $('#donner').onclick = modalAttribuer;
+  $('#prevenir').onclick = () => modalNotifier(S.attSel, S.coach.email);
   $('#addJour').onclick = modalNouveauJour;
   $('#zone').querySelectorAll('.day[data-j]').forEach(b =>
     b.onclick = () => { chargerJour(b.dataset.j); vueProgramme(); });
@@ -2049,7 +2119,9 @@ async function modalAttribuer() {
       });
       w.fermer();
       toast(r.lignes ? `${r.nom} attribué, ${r.lignes} lignes copiées` : `${r.nom} attribué`);
-      S.attSel = r.id; S.ed = null; vueProgramme();
+      S.attSel = r.id; S.ed = null;
+      await vueProgramme();
+      modalNotifier(r.id, S.coach.email);   // enchaîner : un programme donné s'annonce
     } catch (err) { toast(err.message); this.disabled = false; }
   };
 }

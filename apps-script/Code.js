@@ -13,6 +13,10 @@ const CONFIG = {
   CLIENT_ID: '765877661024-r5p4dhadda0i9eb9996ctb8298f7m6h8.apps.googleusercontent.com',
   // Email Google du coach : accès à la vue coach
   COACH_EMAIL: 'grapinat.pwts@gmail.com',
+  // Nom affiché du coach, signature des messages envoyés aux pratiquants
+  COACH_NOM: 'Votre coach',
+  // Adresse publique de l'app, glissée dans les messages de notification
+  APP_URL: 'https://grapinatpwts-crypto.github.io/coaching-musculation/',
   // Poids de la barre olympique, pour l'affichage des disques
   BAR_KG: 20
 };
@@ -155,6 +159,8 @@ function route_(action, p, user, profil, estCoach) {
     case 'pratiquant':     return guardCoach_(estCoach, function () { return pratiquant_(p.email); });
     case 'pratiquantSave': return guardCoach_(estCoach, function () { return pratiquantSave_(p); });
     case 'pratiquantCreer':return guardCoach_(estCoach, function () { return pratiquantCreer_(p); });
+    case 'messageType':    return guardCoach_(estCoach, function () { return messageType_(p); });
+    case 'notifierMail':   return guardCoach_(estCoach, function () { return notifierMail_(p); });
     case 'coachDetail':    return guardCoach_(estCoach, function () { return coachDetail_(p.email); });
     case 'exerciceSave':   return guardCoach_(estCoach, function () { return exerciceSave_(p); });
     case 'exerciceSuppr':  return guardCoach_(estCoach, function () { return exerciceSuppr_(p.id); });
@@ -1436,6 +1442,88 @@ function pratiquant_(email) {
     joursDepuis: derniere ? Math.floor((Date.now() - new Date(derniere)) / 86400000) : null,
     attributions: attributions_(cible)
   };
+}
+
+/**
+ * Message pré-écrit annonçant un programme. Composé côté serveur pour que le
+ * texte reste le même quel que soit le canal choisi, et pour qu'il soit modifiable
+ * en un seul endroit.
+ */
+function messageType_(p) {
+  const email = String(p.email || '').toLowerCase();
+  if (!email) throw new Error('EMAIL_REQUIS');
+
+  const fiche = lire_(TABS.PRATIQUANTS).filter(function (x) {
+    return String(x.email).toLowerCase() === email;
+  })[0];
+  if (!fiche) throw new Error('PRATIQUANT_INCONNU');
+
+  const att = p.attribution_id
+    ? lire_(TABS.ATTRIBUTIONS).filter(function (a) { return String(a.id) === String(p.attribution_id); })[0]
+    : attributionActive_(email);
+  if (!att) throw new Error('AUCUN_PROGRAMME');
+
+  const lignes = lire_(TABS.PROGRAMMES).filter(function (l) {
+    return String(l.attribution_id) === String(att.id);
+  });
+  const jours = {};
+  lignes.forEach(function (l) { if (l.jour) jours[l.jour] = true; });
+  const nbJours = Object.keys(jours).length;
+
+  const mod = att.modele_id
+    ? lire_(TABS.MODELES).filter(function (m) { return String(m.id) === String(att.modele_id); })[0]
+    : null;
+  const semaines = mod ? Number(mod.duree_semaines) || 0 : 0;
+
+  const prenom = String(fiche.nom || '').split(' ')[0] || 'Salut';
+  const debut = att.date_debut
+    ? Utilities.formatDate(new Date(att.date_debut), CONFIG.TZ || 'Europe/Paris', 'dd/MM/yyyy')
+    : '';
+
+  const corps = [
+    'Salut ' + prenom + ',',
+    '',
+    'Ton nouveau programme est prêt : « ' + att.nom + ' ».',
+    nbJours + ' séance' + (nbJours > 1 ? 's' : '') + ' par semaine' +
+      (semaines ? ', sur ' + semaines + ' semaines' : '') +
+      (debut ? ', à partir du ' + debut : '') + '.',
+    '',
+    'Tu le retrouves dans l\'app :',
+    CONFIG.APP_URL,
+    '',
+    'Dis-moi si quelque chose n\'est pas clair.',
+    CONFIG.COACH_NOM
+  ].join('\n');
+
+  return {
+    email: fiche.email,
+    nom: fiche.nom,
+    telephone: fiche.telephone || '',
+    objet: 'Ton nouveau programme : ' + att.nom,
+    message: corps
+  };
+}
+
+/**
+ * Envoie le message par e-mail depuis le compte du coach. Les autres canaux
+ * (WhatsApp, SMS) passent par le téléphone : ils ouvrent l'application adéquate
+ * avec le texte pré-rempli, sans service tiers ni coût.
+ */
+function notifierMail_(p) {
+  const dest = String(p.email || '').toLowerCase();
+  const message = String(p.message || '').trim();
+  if (!dest) throw new Error('EMAIL_REQUIS');
+  if (!message) throw new Error('MESSAGE_VIDE');
+  if (!findPratiquant_(dest)) throw new Error('PRATIQUANT_INCONNU');
+
+  MailApp.sendEmail({
+    to: dest,
+    subject: String(p.objet || 'Ton programme'),
+    body: message,
+    name: CONFIG.COACH_NOM,
+    replyTo: CONFIG.COACH_EMAIL
+  });
+  return { envoye: true, restant: MailApp.getRemainingDailyQuota() };
 }
 
 /** Le coach met à jour la fiche : statut, téléphone, objectif, notes. */

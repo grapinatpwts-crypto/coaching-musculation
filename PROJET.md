@@ -502,6 +502,41 @@ programmes donnés avec pour chacun une case **payé / non payé**.
 C'est le début du volet administratif : le suivi de paiement est volontairement
 minimal — une case, pas une facturation.
 
+## 8 duodecies. Prévenir un pratiquant
+
+Un programme attribué doit être annoncé. Le bouton **Prévenir** — sur la fiche à
+côté de chaque programme, dans l'onglet Programme, et proposé automatiquement juste
+après une attribution — ouvre un message pré-écrit, modifiable, et laisse le coach
+choisir son canal.
+
+| Canal | Comment | Coût |
+|---|---|---|
+| WhatsApp | `https://wa.me/<numéro>?text=…` | aucun |
+| SMS | `sms:<numéro>?&body=…` | le forfait du coach |
+| Client mail | `mailto:?subject=&body=` | aucun |
+| E-mail direct | `MailApp` depuis le compte du coach | aucun, quota Google |
+
+Les trois premiers ouvrent l'application du téléphone avec le texte pré-rempli :
+rien ne transite par un service tiers, le coach relit et envoie lui-même. La forme
+`sms:numéro?&body=` est celle qui convient à la fois à Android, qui attend `?body=`,
+et à iOS, qui attend `&body=`.
+
+Le quatrième part directement du compte Google du coach, avec son nom en expéditeur
+et son adresse en réponse. Utile depuis un PC, où les liens `sms:` ne mènent nulle
+part. Le quota Google restant est rappelé après l'envoi.
+
+Le texte est composé **côté serveur** (`messageType_`) : il reste identique quel que
+soit le canal, et se modifie en un seul endroit. Il reprend le nom du programme, le
+nombre de séances par semaine, la durée et la date de début.
+
+### Envoi automatique de SMS : écarté pour l'instant
+
+Apps Script ne sait pas envoyer de SMS. Il faudrait une passerelle — Twilio, Vonage,
+Brevo — donc un compte, une clé d'API et quelques centimes par message. Cela
+contredirait le « pas de coût par utilisateur » du § 1, pour un gain limité tant que
+le coach relit ses messages avant de les envoyer. À reconsidérer si les relances
+deviennent quotidiennes et nombreuses.
+
 ## 9. Parti pris visuel — charte Wellness Sport Club
 
 L'app reprend l'identité de **Wellness Sport Club** (`wellness-sportclub.fr`),
