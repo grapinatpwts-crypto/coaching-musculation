@@ -74,7 +74,7 @@ côté, zone sûre respectée). Régénérables : voir § 9.
 | Onglet | Colonnes |
 |---|---|
 | `Pratiquants` | email, nom, actif, date_inscription, objectif |
-| `Exercices` | id, nom, groupe, consigne |
+| `Exercices` | id, nom, groupe, **equipement**, consigne, **video** |
 | `Programmes` | id, email, jour, **bloc**, ordre, exercice_id, series, reps_cible, **duree_s**, charge_cible, **cadence**, **pause_s**, repos_s |
 | `Seances` | id, email, date, jour, duree_min, ressenti, notes |
 | `Series` | id, seance_id, email, exercice_id, serie_num, reps, **duree_s**, charge, horodatage |
@@ -150,8 +150,19 @@ Toutes en POST sur l'URL `/exec`, corps `{token, action, payload}`,
 | `serie` | `{seance_id, exercice_id, serie_num, reps \| duree_s, charge}` | confirmation |
 | `terminer` | `{seance_id, duree_min, ressenti, notes}` | confirmation |
 | `historique` | `{exercice_id}` | 30 dernières séries |
+| `calendrier` | `{depuis?, jusqua?, email?}` | séances de la période + volume et durée |
+| `catalogue` | — | bibliothèque d'exercices complète |
 | `coachAthletes` | — | liste des pratiquants + jours d'inactivité |
 | `coachDetail` | `{email}` | 15 dernières séances détaillées |
+| `exerciceSave` | `{id?, nom, groupe, equipement, consigne, video}` | crée ou met à jour ; sans `id` c'est une création |
+| `exerciceSuppr` | `{id}` | refuse si l'exercice est employé dans un programme |
+| `programme` | `{email}` | programme complet groupé par jour puis par bloc |
+| `programmeSave` | `{email, jour, blocs}` | réécrit **un seul jour** |
+| `programmeJour` | `{email, jour}` | supprime un jour entier |
+
+Les cinq dernières sont réservées au coach (`guardCoach_`). `calendrier` accepte un
+`email` **uniquement** si l'appelant est le coach : pour tout le monde d'autre, la
+cible est l'email du token (`cibleEmail_`), jamais un paramètre client.
 
 ## 7. Sécurité en place
 
@@ -188,6 +199,39 @@ Tester dans un navigateur.
 
 **En mode Test, la liste des utilisateurs tests ne doit pas être vide**, sinon
 personne ne peut se connecter, pas même le propriétaire du projet.
+
+## 8 bis. Le poste de travail du coach
+
+Trois écrans, sous l'onglet **Coach**.
+
+**Bibliothèque.** Le catalogue d'exercices, groupé par groupe musculaire, avec
+recherche. Chaque fiche porte nom, groupe, équipement, consigne d'exécution et lien
+vidéo. Création et modification depuis l'app ; les identifiants `EXnnn` sont attribués
+automatiquement à la suite du plus grand existant. **La suppression est refusée si
+l'exercice figure encore dans un programme** — le message dit combien de lignes
+l'emploient, plutôt que de casser un programme en silence.
+
+**Programme.** Un pratiquant, un jour, des blocs. Le nombre de tours et le repos se
+saisissent sur l'en-tête du bloc ; chaque exercice ouvre une fiche où l'on règle
+répétitions *ou* durée, charge, cadence et pause. La cadence s'y prévisualise en
+courbe, en direct. L'ordre des exercices se change avec la flèche.
+
+L'enregistrement **réécrit un jour entier** : les lignes existantes de ce couple
+(email, jour) sont supprimées puis remplacées, les autres jours et les autres
+pratiquants ne bougent pas. Les numéros de bloc et d'ordre sont renumérotés à
+l'écriture — l'éditeur n'a pas à les tenir à jour.
+
+**Calendrier.** Le même composant sert au pratiquant pour lui-même et au coach par
+pratiquant : grille mensuelle, jours travaillés en rouge, bilan du mois (séances,
+volume, minutes), détail au clic sur un jour. Les séances sont chargées une fois sur
+douze mois, la navigation entre mois ne recharge rien.
+
+### Ce qui n'est pas fait
+
+Le programme reste attaché à un email. Composer le même programme pour douze
+personnes, c'est encore douze saisies. Le modèle `Programme` réutilisable et affecté
+du § 13 reste le prochain chantier — c'est lui qui ferait passer l'outil à l'échelle
+des 40 pratiquants.
 
 ## 9. Parti pris visuel — charte Wellness Sport Club
 
@@ -258,7 +302,8 @@ Ces couleurs sont normatives, pas décoratives : elles ne suivent pas la charte.
 5. Installer sur téléphone (Safari sur iOS, Chrome sur Android) et juger l'ergonomie réelle
 6. Saisir le catalogue d'exercices réel du coach
 7. Activer le déclencheur hebdomadaire sur `rapportHebdo()`
-8. Décider si on reprend le modèle AppSheet complet (§ 13)
+8. Saisir le vrai catalogue du coach depuis la Bibliothèque (§ 8 bis)
+9. Programmes réutilisables et affectables : le chantier qui fait passer à l'échelle (§ 13)
 
 ## 11. Idées d'évolution non implémentées
 

@@ -27,7 +27,7 @@ const TABS = {
 
 const SCHEMA = {
   Pratiquants: ['email', 'nom', 'actif', 'date_inscription', 'objectif'],
-  Exercices: ['id', 'nom', 'groupe', 'consigne'],
+  Exercices: ['id', 'nom', 'groupe', 'equipement', 'consigne', 'video'],
   Programmes: ['id', 'email', 'jour', 'bloc', 'ordre', 'exercice_id', 'series', 'reps_cible', 'duree_s', 'charge_cible', 'cadence', 'pause_s', 'repos_s'],
   Seances: ['id', 'email', 'date', 'jour', 'duree_min', 'ressenti', 'notes'],
   Series: ['id', 'seance_id', 'email', 'exercice_id', 'serie_num', 'reps', 'duree_s', 'charge', 'horodatage']
@@ -108,8 +108,15 @@ function route_(action, p, user, profil, estCoach) {
     case 'serie':          return logSerie_(user.email, p);
     case 'terminer':       return terminerSeance_(user.email, p);
     case 'historique':     return historique_(user.email, p.exercice_id);
+    case 'calendrier':     return calendrier_(cibleEmail_(user, p, estCoach), p);
+    case 'catalogue':      return catalogue_();
     case 'coachAthletes':  return guardCoach_(estCoach, coachAthletes_);
     case 'coachDetail':    return guardCoach_(estCoach, function () { return coachDetail_(p.email); });
+    case 'exerciceSave':   return guardCoach_(estCoach, function () { return exerciceSave_(p); });
+    case 'exerciceSuppr':  return guardCoach_(estCoach, function () { return exerciceSuppr_(p.id); });
+    case 'programme':      return guardCoach_(estCoach, function () { return programme_(p.email); });
+    case 'programmeSave':  return guardCoach_(estCoach, function () { return programmeSave_(p); });
+    case 'programmeJour':  return guardCoach_(estCoach, function () { return programmeJourSuppr_(p); });
     default: throw new Error('ACTION_INCONNUE');
   }
 }
@@ -175,6 +182,24 @@ function ajouter_(tab, obj) {
   }
 }
 
+/** Ajoute plusieurs lignes d'un coup : un seul verrou, une seule écriture. */
+function ajouterPlusieurs_(tab, objs) {
+  if (!objs || !objs.length) return 0;
+  const lock = LockService.getScriptLock();
+  lock.waitLock(20000);
+  try {
+    const sh = SpreadsheetApp.getActive().getSheetByName(tab);
+    const head = sh.getRange(1, 1, 1, sh.getLastColumn()).getValues()[0];
+    const rangs = objs.map(function (o) {
+      return head.map(function (h) { return o[h] !== undefined ? o[h] : ''; });
+    });
+    sh.getRange(sh.getLastRow() + 1, 1, rangs.length, head.length).setValues(rangs);
+    return rangs.length;
+  } finally {
+    lock.releaseLock();
+  }
+}
+
 function majLigne_(tab, cleCol, cleVal, patch) {
   const lock = LockService.getScriptLock();
   lock.waitLock(20000);
@@ -195,6 +220,38 @@ function majLigne_(tab, cleCol, cleVal, patch) {
   } finally {
     lock.releaseLock();
   }
+}
+
+/**
+ * Supprime les lignes d'un onglet qui satisfont un prédicat, en remontant pour
+ * que les index restent valides. Renvoie le nombre de lignes supprimées.
+ */
+function supprimerLignes_(tab, predicat) {
+  const lock = LockService.getScriptLock();
+  lock.waitLock(20000);
+  try {
+    const sh = SpreadsheetApp.getActive().getSheetByName(tab);
+    const vals = sh.getDataRange().getValues();
+    const head = vals[0];
+    let n = 0;
+    for (let r = vals.length - 1; r >= 1; r--) {
+      const o = {};
+      head.forEach(function (h, i) { o[h] = vals[r][i]; });
+      if (predicat(o)) { sh.deleteRow(r + 1); n++; }
+    }
+    return n;
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+/**
+ * Email sur lequel porte une lecture : le sien, ou celui d'un pratiquant si
+ * c'est le coach qui demande. Jamais un paramètre client pour un non-coach.
+ */
+function cibleEmail_(user, p, estCoach) {
+  if (estCoach && p.email) return String(p.email).toLowerCase();
+  return user.email;
 }
 
 function findPratiquant_(email) {
@@ -429,6 +486,220 @@ function coachDetail_(email) {
           })
       };
     });
+}
+
+// ─────────────────────────────────────────────────────────────
+// 7 bis. BIBLIOTHÈQUE D'EXERCICES — édition par le coach
+// ─────────────────────────────────────────────────────────────
+
+/** Catalogue complet, trié par groupe puis par nom. Lisible par tous. */
+function catalogue_() {
+  return lire_(TABS.EXERCICES)
+    .filter(function (e) { return e.id !== '' && e.id !== null; })
+    .map(function (e) {
+      return {
+        id: e.id, nom: e.nom, groupe: e.groupe || '',
+        equipement: e.equipement || '', consigne: e.consigne || '', video: e.video || ''
+      };
+    })
+    .sort(function (a, b) {
+      const g = String(a.groupe).localeCompare(String(b.groupe), 'fr');
+      return g !== 0 ? g : String(a.nom).localeCompare(String(b.nom), 'fr');
+    });
+}
+
+/** Identifiant EXnnn suivant, en repartant du plus grand existant. */
+function idExerciceSuivant_() {
+  let max = 0;
+  lire_(TABS.EXERCICES).forEach(function (e) {
+    const m = /^EX(\d+)$/.exec(String(e.id));
+    if (m && Number(m[1]) > max) max = Number(m[1]);
+  });
+  return 'EX' + String(max + 1).padStart(3, '0');
+}
+
+/** Crée ou met à jour un exercice. Sans `id`, c'est une création. */
+function exerciceSave_(p) {
+  const nom = String(p.nom || '').trim();
+  if (!nom) throw new Error('NOM_REQUIS');
+
+  const champs = {
+    nom: nom,
+    groupe: String(p.groupe || '').trim(),
+    equipement: String(p.equipement || '').trim(),
+    consigne: String(p.consigne || '').trim(),
+    video: String(p.video || '').trim()
+  };
+
+  if (p.id) {
+    if (!majLigne_(TABS.EXERCICES, 'id', p.id, champs)) throw new Error('EXERCICE_INTROUVABLE');
+    return { id: p.id, cree: false };
+  }
+  const id = idExerciceSuivant_();
+  champs.id = id;
+  ajouter_(TABS.EXERCICES, champs);
+  return { id: id, cree: true };
+}
+
+/** Refuse la suppression d'un exercice encore employé dans un programme. */
+function exerciceSuppr_(id) {
+  if (!id) throw new Error('ID_REQUIS');
+  const usages = lire_(TABS.PROGRAMMES).filter(function (l) {
+    return String(l.exercice_id) === String(id);
+  }).length;
+  if (usages) throw new Error('EXERCICE_UTILISE_' + usages);
+
+  const n = supprimerLignes_(TABS.EXERCICES, function (e) { return String(e.id) === String(id); });
+  if (!n) throw new Error('EXERCICE_INTROUVABLE');
+  return { supprime: true };
+}
+
+// ─────────────────────────────────────────────────────────────
+// 7 ter. PROGRAMMATION — le coach compose depuis l'app
+// ─────────────────────────────────────────────────────────────
+
+/**
+ * Programme complet d'un pratiquant, groupé par jour puis par bloc.
+ * Même forme que getSeance_ mais sans les perfs passées : c'est une vue d'édition.
+ */
+function programme_(email) {
+  const cible = String(email || '').toLowerCase();
+  if (!cible) throw new Error('EMAIL_REQUIS');
+
+  const noms = {};
+  lire_(TABS.EXERCICES).forEach(function (e) { noms[e.id] = e.nom; });
+
+  const lignes = lire_(TABS.PROGRAMMES)
+    .filter(function (l) { return String(l.email).toLowerCase() === cible; })
+    .sort(function (a, b) {
+      const j = triJours_(a.jour, b.jour);
+      if (j !== 0) return j;
+      const d = numBloc_(a) - numBloc_(b);
+      return d !== 0 ? d : Number(a.ordre) - Number(b.ordre);
+    });
+
+  const jours = [];
+  const parJour = {};
+  lignes.forEach(function (l) {
+    const j = String(l.jour);
+    if (!parJour[j]) { parJour[j] = { jour: j, blocs: [], _n: {} }; jours.push(parJour[j]); }
+    const num = numBloc_(l);
+    if (!parJour[j]._n[num]) {
+      parJour[j]._n[num] = {
+        bloc: num, series: Number(l.series) || 3, repos_s: Number(l.repos_s) || 90, exercices: []
+      };
+      parJour[j].blocs.push(parJour[j]._n[num]);
+    }
+    parJour[j]._n[num].exercices.push({
+      exercice_id: l.exercice_id,
+      nom: noms[l.exercice_id] || l.exercice_id,
+      reps_cible: l.reps_cible === undefined ? '' : String(l.reps_cible),
+      duree_s: l.duree_s === '' || l.duree_s === undefined ? '' : l.duree_s,
+      charge_cible: Number(l.charge_cible) || 0,
+      cadence: l.cadence || '',
+      pause_s: Number(l.pause_s) || 0
+    });
+  });
+  jours.forEach(function (j) { delete j._n; });
+  return { email: cible, jours: jours };
+}
+
+/**
+ * Réécrit UN jour du programme d'un pratiquant : les lignes existantes de ce
+ * couple (email, jour) sont supprimées puis remplacées. Les autres jours et les
+ * autres pratiquants ne sont pas touchés.
+ * p : {email, jour, blocs:[{series, repos_s, exercices:[{exercice_id, reps_cible,
+ *      duree_s, charge_cible, cadence, pause_s}]}]}
+ */
+function programmeSave_(p) {
+  const email = String(p.email || '').toLowerCase();
+  const jour = String(p.jour || '').trim();
+  if (!email) throw new Error('EMAIL_REQUIS');
+  if (!jour) throw new Error('JOUR_REQUIS');
+  if (!findPratiquant_(email)) throw new Error('PRATIQUANT_INCONNU');
+  const blocs = p.blocs || [];
+  if (!blocs.length) throw new Error('PROGRAMME_VIDE');
+
+  const connus = {};
+  lire_(TABS.EXERCICES).forEach(function (e) { connus[String(e.id)] = true; });
+
+  const rangs = [];
+  blocs.forEach(function (b, bi) {
+    (b.exercices || []).forEach(function (e, ei) {
+      if (!connus[String(e.exercice_id)]) throw new Error('EXERCICE_INCONNU_' + e.exercice_id);
+      rangs.push({
+        id: uid_('PR'), email: email, jour: jour,
+        bloc: bi + 1, ordre: ei + 1,
+        exercice_id: e.exercice_id,
+        series: Number(b.series) || 3,
+        reps_cible: e.reps_cible === undefined ? '' : e.reps_cible,
+        duree_s: e.duree_s === undefined ? '' : e.duree_s,
+        charge_cible: Number(e.charge_cible) || 0,
+        cadence: e.cadence || '',
+        pause_s: Number(e.pause_s) || 0,
+        repos_s: Number(b.repos_s) || 90
+      });
+    });
+  });
+  if (!rangs.length) throw new Error('PROGRAMME_VIDE');
+
+  supprimerLignes_(TABS.PROGRAMMES, function (l) {
+    return String(l.email).toLowerCase() === email && String(l.jour) === jour;
+  });
+  ajouterPlusieurs_(TABS.PROGRAMMES, rangs);
+  return { lignes: rangs.length };
+}
+
+/** Supprime un jour entier du programme d'un pratiquant. */
+function programmeJourSuppr_(p) {
+  const email = String(p.email || '').toLowerCase();
+  const jour = String(p.jour || '').trim();
+  if (!email || !jour) throw new Error('PARAMS_REQUIS');
+  const n = supprimerLignes_(TABS.PROGRAMMES, function (l) {
+    return String(l.email).toLowerCase() === email && String(l.jour) === jour;
+  });
+  return { supprimees: n };
+}
+
+// ─────────────────────────────────────────────────────────────
+// 7 quater. CALENDRIER
+// ─────────────────────────────────────────────────────────────
+
+/**
+ * Séances d'une période, avec leur volume. Le coach peut viser un pratiquant
+ * via p.email ; un pratiquant ne voit que les siennes (cf. cibleEmail_).
+ * p : {depuis, jusqua} en ISO ; par défaut les 120 derniers jours.
+ */
+function calendrier_(email, p) {
+  const fin = p && p.jusqua ? new Date(p.jusqua) : new Date();
+  const debut = p && p.depuis ? new Date(p.depuis) : new Date(fin.getTime() - 120 * 86400000);
+
+  const series = lire_(TABS.SERIES).filter(function (s) {
+    return String(s.email).toLowerCase() === email;
+  });
+
+  return lire_(TABS.SEANCES)
+    .filter(function (s) {
+      if (String(s.email).toLowerCase() !== email) return false;
+      const d = new Date(s.date);
+      return d >= debut && d <= fin;
+    })
+    .map(function (s) {
+      const mien = series.filter(function (x) { return String(x.seance_id) === String(s.id); });
+      let volume = 0;
+      mien.forEach(function (x) { volume += (Number(x.reps) || 0) * (Number(x.charge) || 0); });
+      return {
+        id: s.id,
+        date: s.date,
+        jour: s.jour,
+        duree_min: Number(s.duree_min) || 0,
+        ressenti: s.ressenti || '',
+        notes: s.notes || '',
+        nbSeries: mien.length,
+        volume: Math.round(volume)
+      };
+    })
+    .sort(function (a, b) { return new Date(a.date) - new Date(b.date); });
 }
 
 // ─────────────────────────────────────────────────────────────

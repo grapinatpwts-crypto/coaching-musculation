@@ -53,6 +53,64 @@ header{display:flex;align-items:baseline;justify-content:space-between;gap:12px;
 header h2{font-size:30px;text-transform:uppercase;line-height:1}
 .streak{font-size:13px;color:var(--dust);font-variant-numeric:tabular-nums}
 
+/* Calendrier */
+.mois{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:12px}
+.mois h3{font-size:24px;text-transform:uppercase}
+.mois button{width:40px;height:40px;border-radius:10px;background:var(--plate);
+  border:1px solid var(--edge);font-size:18px;color:var(--dust)}
+.cal{display:grid;grid-template-columns:repeat(7,1fr);gap:5px}
+.cal .jc{font-size:10px;letter-spacing:.1em;color:var(--dust);text-align:center;padding-bottom:4px;font-weight:600}
+.cal .c{aspect-ratio:1;border-radius:9px;background:var(--plate);border:1px solid var(--edge);
+  display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;
+  font-size:13px;font-variant-numeric:tabular-nums;color:var(--dust);padding:0}
+.cal .c.vide{background:none;border-color:transparent}
+.cal .c.today{border-color:var(--dust)}
+.cal .c.faite{background:var(--brand);border-color:var(--brand);color:var(--on-brand);font-weight:700}
+.cal .c[aria-pressed="true"]{outline:2px solid var(--brand-ink);outline-offset:1px}
+.cal .c .pt{width:4px;height:4px;border-radius:50%;background:var(--on-brand)}
+.legende{font-size:12px;color:var(--dust);margin:12px 0 4px;display:flex;gap:14px;flex-wrap:wrap}
+.stat{display:flex;gap:18px;flex-wrap:wrap;margin-top:6px}
+.stat b{font-family:'Bebas Neue',Impact,sans-serif;font-size:26px;font-weight:400;display:block;line-height:1}
+.stat span{font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:var(--dust)}
+
+/* Sous-navigation coach */
+.sous{display:flex;gap:8px;overflow-x:auto;margin-bottom:16px;scrollbar-width:none}
+.sous button{flex:0 0 auto;padding:9px 15px;border-radius:999px;background:var(--plate);
+  border:1px solid var(--edge);font-size:14px;font-weight:600;color:var(--dust)}
+.sous button[aria-pressed="true"]{background:var(--brand);border-color:var(--brand);color:var(--on-brand)}
+
+/* Formulaires d'édition */
+.f{width:100%;background:#2A2A2A;border:1px solid var(--edge);border-radius:9px;color:var(--chalk);
+  font-family:inherit;font-size:15px;padding:11px 12px;min-height:44px}
+.f:focus{outline:2px solid var(--brand-ink);outline-offset:1px}
+.champ{margin-bottom:10px}
+.champ label{display:block;font-size:11px;letter-spacing:.12em;text-transform:uppercase;
+  color:var(--dust);font-weight:600;margin-bottom:5px}
+.duo{display:flex;gap:10px}
+.duo>*{flex:1}
+.btn{min-height:46px;padding:0 16px;border-radius:10px;background:var(--plate);border:1px solid var(--edge);
+  font-weight:600;font-size:15px;color:var(--chalk)}
+.btn.plein{background:var(--brand);border-color:var(--brand);color:var(--on-brand)}
+.btn.danger{color:var(--brand-ink)}
+.barre{display:flex;gap:10px;flex-wrap:wrap;margin-top:14px}
+.ligne{display:flex;align-items:center;gap:10px;background:var(--plate);border:1px solid var(--edge);
+  border-radius:10px;padding:11px 12px;margin-bottom:8px}
+.ligne .g{flex:1;min-width:0}
+.ligne .g .nom{font-size:15px;font-weight:600}
+.ligne .g .meta{font-size:12.5px;color:var(--dust);margin-top:2px}
+.ligne .poignee{color:var(--dust);font-size:18px;padding:4px 2px}
+.entete{display:flex;align-items:center;gap:10px;margin-bottom:9px}
+.entete .eyebrow{flex:1}
+
+/* Fenêtre modale */
+.modal{position:fixed;inset:0;background:rgba(0,0,0,.72);z-index:40;display:flex;
+  align-items:flex-end;justify-content:center}
+.modal .feuille{background:var(--iron);border-top-left-radius:18px;border-top-right-radius:18px;
+  width:100%;max-width:560px;max-height:88dvh;overflow-y:auto;padding:18px 18px 28px;
+  border-top:1px solid var(--edge)}
+.modal h3{margin-bottom:14px}
+.recherche{position:sticky;top:0;background:var(--iron);padding-bottom:10px;z-index:1}
+
 /* Bloc : plusieurs exercices enchaînés, un seul repos à la fin du tour */
 .bloc{border-left:3px solid var(--brand);padding-left:12px;margin-bottom:14px}
 .bloc-tete{display:flex;justify-content:space-between;align-items:baseline;gap:10px;margin-bottom:8px}
@@ -150,6 +208,7 @@ header h2{font-size:30px;text-transform:uppercase;line-height:1}
 
 <nav id="nav" class="nav hidden">
   <button data-vue="seance" aria-pressed="true">Séance</button>
+  <button data-vue="calendrier">Calendrier</button>
   <button data-vue="progres">Progrès</button>
   <button data-vue="coach" class="hidden">Coach</button>
 </nav>
@@ -232,7 +291,9 @@ $('#nav').addEventListener('click', e => {
 });
 
 async function rendre() {
+  $('#logger').classList.add('hidden');   // l'overlay ne doit pas survivre à un changement de vue
   if (S.vue === 'seance') return vueSeance();
+  if (S.vue === 'calendrier') return vueCalendrier();
   if (S.vue === 'progres') return vueProgres();
   if (S.vue === 'coach') return vueCoach();
 }
@@ -363,13 +424,16 @@ async function ouvrirLogger(i) {
     <button class="valider">Valider la série ${(S.faits[e.exercice_id] || []).length + 1}</button>`;
 
   const maj = () => {
+    // Le logger a pu être fermé ou remplacé pendant que le chrono tournait :
+    // on arrête plutôt que d'écrire dans un DOM qui n'existe plus.
+    const champ = auTemps ? $('#vChrono') : $('#vReps');
+    if (!champ || L.classList.contains('hidden')) { clearInterval(chrono); chrono = null; return; }
     if (auTemps) {
       const reste = cible ? Math.max(0, cible - ecoule) : ecoule;
-      const v = $('#vChrono');
-      v.textContent = duree(reste);
-      v.classList.toggle('court', cible > 0 && tourne && reste <= 5);
+      champ.textContent = duree(reste);
+      champ.classList.toggle('court', cible > 0 && tourne && reste <= 5);
     } else {
-      $('#vReps').textContent = reps;
+      champ.textContent = reps;
     }
     $('#vCharge').textContent = charge;
     const btn = L.querySelector('.valider');
@@ -537,28 +601,478 @@ async function vueProgres() {
   $('#liste').innerHTML = blocs.join('') || `<div class="empty">Rien à afficher pour l'instant.</div>`;
 }
 
+// ── Vue calendrier ───────────────────────────────────────────
+const MOIS = ['Janvier', 'Février', 'Mars', 'Avril', 'Mai', 'Juin',
+              'Juillet', 'Août', 'Septembre', 'Octobre', 'Novembre', 'Décembre'];
+const JOURSC = ['L', 'M', 'M', 'J', 'V', 'S', 'D'];
+
+const cleJour = d => d.getFullYear() + '-' +
+  String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+
+async function vueCalendrier(email) {
+  const cible = email || null;
+  if (!S.cal || S.cal.email !== cible) {
+    const d = new Date();
+    S.cal = { email: cible, annee: d.getFullYear(), mois: d.getMonth(), seances: null, sel: null };
+  }
+  $('#app').innerHTML = `<header><h2>Calendrier</h2></header><div id="calzone"></div>`;
+  await peindreCalendrier();
+}
+
+/** Rend le calendrier dans #calzone. Les séances sont chargées une fois, sur un an. */
+async function peindreCalendrier() {
+  const z = $('#calzone');
+  const c = S.cal;
+  if (!c.seances) {
+    z.innerHTML = `<div class="empty">Chargement…</div>`;
+    const p = { depuis: new Date(Date.now() - 365 * 86400000).toISOString() };
+    if (c.email) p.email = c.email;
+    c.seances = await api('calendrier', p);
+  }
+
+  const parJour = {};
+  c.seances.forEach(s => {
+    const k = cleJour(new Date(s.date));
+    (parJour[k] = parJour[k] || []).push(s);
+  });
+
+  const premier = new Date(c.annee, c.mois, 1);
+  const decal = (premier.getDay() + 6) % 7;            // semaine commençant lundi
+  const nb = new Date(c.annee, c.mois + 1, 0).getDate();
+  const ajd = new Date().toDateString();
+
+  let cases = JOURSC.map(j => `<div class="jc">${j}</div>`).join('');
+  for (let i = 0; i < decal; i++) cases += `<div class="c vide"></div>`;
+  for (let d = 1; d <= nb; d++) {
+    const date = new Date(c.annee, c.mois, d);
+    const k = cleJour(date);
+    const faite = (parJour[k] || []).length;
+    cases += `<button class="c ${faite ? 'faite' : ''} ${date.toDateString() === ajd ? 'today' : ''}"
+      data-j="${k}" aria-pressed="${c.sel === k}">${d}${faite ? '<i class="pt"></i>' : ''}</button>`;
+  }
+
+  // Bilan du mois affiché
+  const duMois = c.seances.filter(s => {
+    const d = new Date(s.date);
+    return d.getFullYear() === c.annee && d.getMonth() === c.mois;
+  });
+  const volume = duMois.reduce((t, s) => t + s.volume, 0);
+  const minutes = duMois.reduce((t, s) => t + s.duree_min, 0);
+
+  z.innerHTML = `
+    <div class="mois">
+      <button id="prec" aria-label="Mois précédent">‹</button>
+      <h3>${MOIS[c.mois]} ${c.annee}</h3>
+      <button id="suiv" aria-label="Mois suivant">›</button>
+    </div>
+    <div class="cal">${cases}</div>
+    <div class="stat">
+      <div><b class="num">${duMois.length}</b><span>séance${duMois.length > 1 ? 's' : ''}</span></div>
+      <div><b class="num">${volume >= 1000 ? (volume / 1000).toFixed(1) + ' t' : volume + ' kg'}</b><span>volume</span></div>
+      <div><b class="num">${minutes}</b><span>minutes</span></div>
+    </div>
+    <div id="detail"></div>`;
+
+  $('#prec').onclick = () => { if (--c.mois < 0) { c.mois = 11; c.annee--; } c.sel = null; peindreCalendrier(); };
+  $('#suiv').onclick = () => { if (++c.mois > 11) { c.mois = 0; c.annee++; } c.sel = null; peindreCalendrier(); };
+
+  z.querySelectorAll('.c[data-j]').forEach(b => b.onclick = () => {
+    c.sel = c.sel === b.dataset.j ? null : b.dataset.j;
+    peindreCalendrier();
+  });
+
+  if (c.sel) {
+    const ss = parJour[c.sel] || [];
+    $('#detail').innerHTML = ss.length
+      ? ss.map(s => `<div class="card" style="display:block;margin-top:14px">
+          <div class="nom">${s.jour || 'Séance'}</div>
+          <div class="meta">${new Date(s.date).toLocaleDateString('fr-FR', { weekday:'long', day:'numeric', month:'long' })}</div>
+          <div class="sets">
+            <span class="set">${s.nbSeries} série${s.nbSeries > 1 ? 's' : ''}</span>
+            ${s.volume ? `<span class="set">${s.volume} kg soulevés</span>` : ''}
+            ${s.duree_min ? `<span class="set">${s.duree_min} min</span>` : ''}
+            ${s.ressenti ? `<span class="set">${s.ressenti}</span>` : ''}
+          </div>
+          ${s.notes ? `<p class="consigne" style="margin-top:10px">${s.notes}</p>` : ''}
+        </div>`).join('')
+      : `<div class="empty" style="padding:24px 0">Aucune séance ce jour-là.</div>`;
+  }
+}
+
 // ── Vue coach ────────────────────────────────────────────────
 async function vueCoach() {
+  S.coach = S.coach || { onglet: 'athletes', email: null, nom: '', sous: 'programme' };
+  const c = S.coach;
   const app = $('#app');
-  app.innerHTML = `<header><h2>Athlètes</h2></header><div id="liste"><div class="empty">Chargement…</div></div>`;
+
+  if (!c.email) {
+    app.innerHTML = `
+      <header><h2>Coach</h2></header>
+      <div class="sous">
+        <button data-o="athletes" aria-pressed="${c.onglet === 'athletes'}">Athlètes</button>
+        <button data-o="biblio" aria-pressed="${c.onglet === 'biblio'}">Bibliothèque</button>
+      </div>
+      <div id="zone"><div class="empty">Chargement…</div></div>`;
+    app.querySelectorAll('.sous button').forEach(b => b.onclick = () => {
+      c.onglet = b.dataset.o; vueCoach();
+    });
+    return c.onglet === 'biblio' ? vueBibliotheque() : listeAthletes();
+  }
+
+  app.innerHTML = `
+    <header><h2>${c.nom}</h2><button class="close" id="retour">← Athlètes</button></header>
+    <div class="sous">
+      <button data-s="programme" aria-pressed="${c.sous === 'programme'}">Programme</button>
+      <button data-s="calendrier" aria-pressed="${c.sous === 'calendrier'}">Calendrier</button>
+      <button data-s="historique" aria-pressed="${c.sous === 'historique'}">Historique</button>
+    </div>
+    <div id="zone"><div class="empty">Chargement…</div></div>`;
+
+  $('#retour').onclick = () => { c.email = null; S.cal = null; vueCoach(); };
+  app.querySelectorAll('.sous button').forEach(b => b.onclick = () => {
+    c.sous = b.dataset.s; vueCoach();
+  });
+
+  if (c.sous === 'programme') return vueProgramme();
+  if (c.sous === 'calendrier') {
+    $('#zone').innerHTML = `<div id="calzone"></div>`;
+    if (!S.cal || S.cal.email !== c.email) {
+      const d = new Date();
+      S.cal = { email: c.email, annee: d.getFullYear(), mois: d.getMonth(), seances: null, sel: null };
+    }
+    return peindreCalendrier();
+  }
+  return vueHistoriqueAthlete();
+}
+
+async function listeAthletes() {
   const list = await api('coachAthletes');
-  $('#liste').innerHTML = list.map(a => `
-    <button class="athlete" data-email="${a.email}">
+  $('#zone').innerHTML = list.map(a => `
+    <button class="athlete" data-email="${a.email}" data-nom="${a.nom}">
       <span><strong>${a.nom}</strong><br><span class="meta" style="color:var(--dust);font-size:13px">${a.nbSeances} séances</span></span>
       <span class="tag ${a.joursDepuis === null || a.joursDepuis >= 10 ? 'warn' : ''}">
         ${a.joursDepuis === null ? 'jamais venu' : 'il y a ' + a.joursDepuis + ' j'}</span>
-    </button>`).join('') || `<div class="empty">Aucun pratiquant inscrit.<br>Ajoutez-les dans l'onglet Pratiquants du Sheet.</div>`;
+    </button>`).join('') ||
+    `<div class="empty">Aucun pratiquant inscrit.<br>Ajoutez-les dans l'onglet Pratiquants du Sheet.</div>`;
 
-  $('#liste').querySelectorAll('.athlete').forEach(b => b.onclick = async () => {
-    const d = await api('coachDetail', { email:b.dataset.email });
-    app.innerHTML = `<header><h2>${b.querySelector('strong').textContent}</h2>
-      <button class="close" onclick="vueCoach()">← Retour</button></header>` +
-      (d.map(s => `<div class="card" style="display:block">
-        <div class="nom">${new Date(s.date).toLocaleDateString('fr-FR')} · ${s.jour}</div>
-        <div class="sets">${s.series.map(x =>
-          `<span class="set">${x.exercice} ${x.reps}×${x.charge}kg</span>`).join('')}</div>
-      </div>`).join('') || `<div class="empty">Aucune séance enregistrée.</div>`);
+  $('#zone').querySelectorAll('.athlete').forEach(b => b.onclick = () => {
+    S.coach.email = b.dataset.email;
+    S.coach.nom = b.dataset.nom;
+    S.coach.sous = 'programme';
+    S.cal = null;
+    vueCoach();
   });
+}
+
+async function vueHistoriqueAthlete() {
+  const d = await api('coachDetail', { email: S.coach.email });
+  $('#zone').innerHTML = d.map(s => `<div class="card" style="display:block">
+      <div class="nom">${new Date(s.date).toLocaleDateString('fr-FR')} · ${s.jour}</div>
+      <div class="sets">${s.series.map(x => `<span class="set">${x.exercice} ${x.reps}×${x.charge}kg</span>`).join('')}</div>
+    </div>`).join('') || `<div class="empty">Aucune séance enregistrée.</div>`;
+}
+
+// ── Fenêtre modale ───────────────────────────────────────────
+function modal(titre, corps) {
+  const d = document.createElement('div');
+  d.className = 'modal';
+  d.innerHTML = `<div class="feuille"><h3>${titre}</h3>${corps}</div>`;
+  document.body.appendChild(d);
+  d.onclick = ev => { if (ev.target === d) d.remove(); };
+  d.fermer = () => d.remove();
+  return d;
+}
+
+const SEMAINE = ['Lundi', 'Mardi', 'Mercredi', 'Jeudi', 'Vendredi', 'Samedi', 'Dimanche'];
+
+// ── Bibliothèque d'exercices ─────────────────────────────────
+async function vueBibliotheque() {
+  S.cat = await api('catalogue');
+  peindreBibliotheque();
+}
+
+function peindreBibliotheque(filtre) {
+  const q = (filtre || '').toLowerCase();
+  const vus = S.cat.filter(e =>
+    !q || (e.nom + ' ' + e.groupe + ' ' + e.equipement).toLowerCase().includes(q));
+
+  const groupes = {};
+  vus.forEach(e => (groupes[e.groupe || 'Sans groupe'] = groupes[e.groupe || 'Sans groupe'] || []).push(e));
+
+  $('#zone').innerHTML = `
+    <div class="champ"><input class="f" id="q" placeholder="Rechercher un exercice" value="${filtre || ''}"></div>
+    <div class="barre" style="margin-top:0"><button class="btn plein" id="neuf" style="flex:1">＋ Nouvel exercice</button></div>
+    <div style="margin-top:18px">
+      ${Object.keys(groupes).sort((a, b) => a.localeCompare(b, 'fr')).map(g => `
+        <div class="eyebrow" style="margin:16px 0 8px">${g} · ${groupes[g].length}</div>
+        ${groupes[g].map(e => `<div class="ligne">
+          <div class="g">
+            <div class="nom">${e.nom}</div>
+            <div class="meta">${[e.equipement, e.id].filter(Boolean).join(' · ')}</div>
+          </div>
+          ${e.video ? '<span class="poignee" title="Vidéo">▶</span>' : ''}
+          <button class="poignee" data-ex="${e.id}">✎</button>
+        </div>`).join('')}
+      `).join('') || `<div class="empty">Aucun exercice.</div>`}
+    </div>`;
+
+  const champ = $('#q');
+  champ.oninput = () => { const v = champ.value; peindreBibliotheque(v); const n = $('#q'); n.focus(); n.setSelectionRange(v.length, v.length); };
+  $('#neuf').onclick = () => modalExercice(null);
+  $('#zone').querySelectorAll('[data-ex]').forEach(b =>
+    b.onclick = () => modalExercice(S.cat.find(x => String(x.id) === b.dataset.ex)));
+}
+
+function modalExercice(ex) {
+  const e = ex || { id: '', nom: '', groupe: '', equipement: '', consigne: '', video: '' };
+  const m = modal(ex ? 'Modifier l\'exercice' : 'Nouvel exercice', `
+    <div class="champ"><label>Nom</label><input class="f" id="mNom" value="${e.nom}"></div>
+    <div class="duo">
+      <div class="champ"><label>Groupe musculaire</label><input class="f" id="mGrp" value="${e.groupe}" list="lGrp">
+        <datalist id="lGrp">${[...new Set(S.cat.map(x => x.groupe).filter(Boolean))].map(g => `<option>${g}</option>`).join('')}</datalist></div>
+      <div class="champ"><label>Équipement</label><input class="f" id="mEqp" value="${e.equipement}" list="lEqp">
+        <datalist id="lEqp">${['Barre', 'Haltère', 'Poulie', 'Machine', 'Kettlebell', 'Élastique', 'Poids de corps'].map(g => `<option>${g}</option>`).join('')}</datalist></div>
+    </div>
+    <div class="champ"><label>Consigne d'exécution</label><textarea class="f" id="mCon" rows="4">${e.consigne}</textarea></div>
+    <div class="champ"><label>Lien vidéo</label><input class="f" id="mVid" value="${e.video}" placeholder="https://youtu.be/…"></div>
+    <div class="barre">
+      <button class="btn" id="mAnn">Annuler</button>
+      <button class="btn plein" id="mOk" style="flex:1">Enregistrer</button>
+    </div>
+    ${ex ? '<div class="barre"><button class="btn danger" id="mDel">Supprimer</button></div>' : ''}`);
+
+  m.querySelector('#mAnn').onclick = m.fermer;
+  m.querySelector('#mOk').onclick = async function () {
+    this.disabled = true;
+    try {
+      await api('exerciceSave', {
+        id: e.id || undefined,
+        nom: m.querySelector('#mNom').value,
+        groupe: m.querySelector('#mGrp').value,
+        equipement: m.querySelector('#mEqp').value,
+        consigne: m.querySelector('#mCon').value,
+        video: m.querySelector('#mVid').value
+      });
+      m.fermer();
+      toast('Exercice enregistré');
+      vueBibliotheque();
+    } catch (err) { toast(err.message === 'NOM_REQUIS' ? 'Le nom est obligatoire' : err.message); this.disabled = false; }
+  };
+  if (ex) m.querySelector('#mDel').onclick = async function () {
+    this.disabled = true;
+    try {
+      await api('exerciceSuppr', { id: e.id });
+      m.fermer(); toast('Exercice supprimé'); vueBibliotheque();
+    } catch (err) {
+      const u = /^EXERCICE_UTILISE_(\d+)$/.exec(err.message);
+      toast(u ? `Impossible : utilisé dans ${u[1]} ligne(s) de programme` : err.message);
+      this.disabled = false;
+    }
+  };
+}
+
+// ── Éditeur de programme ─────────────────────────────────────
+async function vueProgramme() {
+  const prog = await api('programme', { email: S.coach.email });
+  S.prog = prog;
+  if (!S.cat) S.cat = await api('catalogue');
+
+  const jours = prog.jours.map(j => j.jour);
+  if (!S.ed || S.ed.email !== S.coach.email || (S.ed.jour && jours.indexOf(S.ed.jour) === -1 && !S.ed.neuf)) {
+    S.ed = null;
+  }
+  if (!S.ed && jours.length) chargerJour(jours[0]);
+
+  $('#zone').innerHTML = `
+    <div class="days" id="jours">
+      ${jours.map(j => `<button class="day" data-j="${j}" aria-pressed="${S.ed && S.ed.jour === j}">${j}</button>`).join('')}
+      <button class="day" id="addJour">＋ jour</button>
+    </div>
+    <div id="edit"></div>`;
+
+  $('#zone').querySelectorAll('.day[data-j]').forEach(b =>
+    b.onclick = () => { chargerJour(b.dataset.j); vueProgramme(); });
+  $('#addJour').onclick = modalNouveauJour;
+
+  peindreEditeur();
+}
+
+function chargerJour(jour) {
+  const j = (S.prog.jours || []).find(x => x.jour === jour);
+  S.ed = {
+    email: S.coach.email,
+    jour: jour,
+    neuf: !j,
+    blocs: j ? JSON.parse(JSON.stringify(j.blocs)) : []
+  };
+}
+
+function modalNouveauJour() {
+  const m = modal('Nouveau jour', `
+    <div class="champ"><label>Intitulé</label>
+      <input class="f" id="nj" placeholder="Lundi — Haut du corps" list="lj">
+      <datalist id="lj">${SEMAINE.map(j => `<option>${j} — </option>`).join('')}</datalist></div>
+    <p class="consigne">Le jour de la semaine doit apparaître dans l'intitulé : c'est lui qui donne l'ordre d'affichage.</p>
+    <div class="barre"><button class="btn" id="njAnn">Annuler</button>
+      <button class="btn plein" id="njOk" style="flex:1">Créer</button></div>`);
+  m.querySelector('#njAnn').onclick = m.fermer;
+  m.querySelector('#njOk').onclick = () => {
+    const v = m.querySelector('#nj').value.trim();
+    if (!v) return toast('Donnez un intitulé');
+    S.ed = { email: S.coach.email, jour: v, neuf: true, blocs: [] };
+    m.fermer();
+    $('#zone').querySelectorAll('.day[data-j]').forEach(b => b.setAttribute('aria-pressed', 'false'));
+    peindreEditeur();
+  };
+}
+
+function peindreEditeur() {
+  const z = $('#edit');
+  if (!S.ed) { z.innerHTML = `<div class="empty">Aucun jour. Créez-en un pour composer le programme.</div>`; return; }
+  const ed = S.ed;
+
+  z.innerHTML = `
+    <div class="eyebrow" style="margin:4px 0 12px">${ed.jour}${ed.neuf ? ' · nouveau' : ''}</div>
+    ${ed.blocs.map((b, i) => `
+      <div class="bloc">
+        <div class="entete">
+          <span class="eyebrow">Bloc ${i + 1}</span>
+          <input class="f" style="width:58px;text-align:center;padding:8px 4px;min-height:38px"
+            type="number" min="1" data-b="${i}" data-k="series" value="${b.series}">
+          <span style="font-size:12px;color:var(--dust)">tours</span>
+          <input class="f" style="width:66px;text-align:center;padding:8px 4px;min-height:38px"
+            type="number" min="0" step="5" data-b="${i}" data-k="repos_s" value="${b.repos_s}">
+          <span style="font-size:12px;color:var(--dust)">s</span>
+          <button class="poignee" data-delbloc="${i}" aria-label="Supprimer le bloc">✕</button>
+        </div>
+        ${b.exercices.map((e, j) => `
+          <div class="ligne">
+            <div class="g">
+              <div class="nom">${e.nom}</div>
+              <div class="meta">${(e.duree_s ? duree(e.duree_s) : e.reps_cible) || '—'}${
+                e.charge_cible ? ' · ' + e.charge_cible + ' kg' : ''}${
+                e.cadence ? ' · ' + e.cadence : ''}${
+                j < b.exercices.length - 1 && e.pause_s ? ' · pause ' + e.pause_s + ' s' : ''}</div>
+            </div>
+            <button class="poignee" data-mv="${i}.${j}.-1" aria-label="Monter">↑</button>
+            <button class="poignee" data-ed="${i}.${j}" aria-label="Modifier">✎</button>
+            <button class="poignee" data-delexo="${i}.${j}" aria-label="Retirer">✕</button>
+          </div>`).join('') || `<div class="empty" style="padding:14px 0;font-size:14px">Bloc vide</div>`}
+        <button class="btn" data-addexo="${i}" style="width:100%">＋ exercice</button>
+      </div>`).join('')}
+    <div class="barre">
+      <button class="btn" id="addBloc">＋ bloc</button>
+      <button class="btn plein" id="save" style="flex:1">Enregistrer</button>
+    </div>
+    ${ed.neuf ? '' : '<div class="barre"><button class="btn danger" id="delJour">Supprimer ce jour</button></div>'}`;
+
+  z.querySelectorAll('input[data-b]').forEach(inp => inp.onchange = () => {
+    ed.blocs[Number(inp.dataset.b)][inp.dataset.k] = Number(inp.value) || 0;
+  });
+  z.querySelectorAll('[data-delbloc]').forEach(b => b.onclick = () => {
+    ed.blocs.splice(Number(b.dataset.delbloc), 1); peindreEditeur();
+  });
+  z.querySelectorAll('[data-delexo]').forEach(b => b.onclick = () => {
+    const [i, j] = b.dataset.delexo.split('.').map(Number);
+    ed.blocs[i].exercices.splice(j, 1); peindreEditeur();
+  });
+  z.querySelectorAll('[data-mv]').forEach(b => b.onclick = () => {
+    const [i, j] = b.dataset.mv.split('.').map(Number);
+    if (j === 0) return;
+    const x = ed.blocs[i].exercices;
+    [x[j - 1], x[j]] = [x[j], x[j - 1]];
+    peindreEditeur();
+  });
+  z.querySelectorAll('[data-ed]').forEach(b => b.onclick = () => {
+    const [i, j] = b.dataset.ed.split('.').map(Number);
+    modalLigne(i, j);
+  });
+  z.querySelectorAll('[data-addexo]').forEach(b => b.onclick = () => choisirExercice(Number(b.dataset.addexo)));
+  $('#addBloc').onclick = () => { ed.blocs.push({ series: 3, repos_s: 90, exercices: [] }); peindreEditeur(); };
+  $('#save').onclick = enregistrerJour;
+  const dj = $('#delJour');
+  if (dj) dj.onclick = async function () {
+    this.disabled = true;
+    try {
+      await api('programmeJour', { email: ed.email, jour: ed.jour });
+      toast('Jour supprimé'); S.ed = null; vueProgramme();
+    } catch (err) { toast(err.message); this.disabled = false; }
+  };
+}
+
+function choisirExercice(bi) {
+  const m = modal('Ajouter un exercice', `
+    <div class="recherche"><input class="f" id="cq" placeholder="Rechercher"></div>
+    <div id="clist"></div>`);
+  const peindre = (q) => {
+    const f = (q || '').toLowerCase();
+    const vus = S.cat.filter(e => !f || (e.nom + ' ' + e.groupe + ' ' + e.equipement).toLowerCase().includes(f));
+    m.querySelector('#clist').innerHTML = vus.map(e => `<div class="ligne" data-pick="${e.id}">
+        <div class="g"><div class="nom">${e.nom}</div>
+          <div class="meta">${[e.groupe, e.equipement].filter(Boolean).join(' · ')}</div></div>
+        <span class="poignee">＋</span></div>`).join('') || `<div class="empty">Rien ne correspond.</div>`;
+    m.querySelectorAll('[data-pick]').forEach(l => l.onclick = () => {
+      const e = S.cat.find(x => String(x.id) === l.dataset.pick);
+      S.ed.blocs[bi].exercices.push({
+        exercice_id: e.id, nom: e.nom, reps_cible: '10', duree_s: '',
+        charge_cible: 0, cadence: '', pause_s: 0
+      });
+      m.fermer(); peindreEditeur();
+    });
+  };
+  peindre('');
+  m.querySelector('#cq').oninput = ev => peindre(ev.target.value);
+}
+
+function modalLigne(bi, ei) {
+  const e = S.ed.blocs[bi].exercices[ei];
+  const dernier = ei === S.ed.blocs[bi].exercices.length - 1;
+  const m = modal(e.nom, `
+    <div class="duo">
+      <div class="champ"><label>Répétitions</label><input class="f" id="lReps" value="${e.reps_cible || ''}" placeholder="8-10"></div>
+      <div class="champ"><label>ou durée (s)</label><input class="f" id="lDur" value="${e.duree_s || ''}" placeholder="45 ou max"></div>
+    </div>
+    <div class="duo">
+      <div class="champ"><label>Charge (kg)</label><input class="f" id="lChg" type="number" min="0" step="2.5" value="${e.charge_cible || 0}"></div>
+      <div class="champ"><label>Cadence</label><input class="f" id="lCad" value="${e.cadence || ''}" placeholder="1-0-3-1"></div>
+    </div>
+    <p class="tempo" id="apercu"></p>
+    ${dernier ? '' : `<div class="champ"><label>Pause avant l'exercice suivant (s)</label>
+      <input class="f" id="lPau" type="number" min="0" step="5" value="${e.pause_s || 0}"></div>`}
+    <div class="barre"><button class="btn" id="lAnn">Annuler</button>
+      <button class="btn plein" id="lOk" style="flex:1">Appliquer</button></div>`);
+
+  const cad = m.querySelector('#lCad');
+  const rafraichir = () => {
+    m.querySelector('#apercu').innerHTML = cad.value.trim()
+      ? tempo(cad.value.trim()) + courbeCadence(cad.value.trim(), true) : '';
+  };
+  cad.oninput = rafraichir; rafraichir();
+
+  m.querySelector('#lAnn').onclick = m.fermer;
+  m.querySelector('#lOk').onclick = () => {
+    e.reps_cible = m.querySelector('#lReps').value.trim();
+    e.duree_s = m.querySelector('#lDur').value.trim();
+    e.charge_cible = Number(m.querySelector('#lChg').value) || 0;
+    e.cadence = cad.value.trim();
+    if (!dernier) e.pause_s = Number(m.querySelector('#lPau').value) || 0;
+    m.fermer(); peindreEditeur();
+  };
+}
+
+async function enregistrerJour() {
+  const ed = S.ed;
+  const btn = $('#save');
+  if (!ed.blocs.length || ed.blocs.every(b => !b.exercices.length))
+    return toast('Ajoutez au moins un exercice');
+  btn.disabled = true;
+  try {
+    const blocs = ed.blocs.filter(b => b.exercices.length);
+    await api('programmeSave', { email: ed.email, jour: ed.jour, blocs: blocs });
+    toast('Programme enregistré');
+    S.ed = null;
+    vueProgramme();
+  } catch (err) { toast(err.message); btn.disabled = false; }
 }
 
 // ── Service worker (mode hors ligne) ─────────────────────────
