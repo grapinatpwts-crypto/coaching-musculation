@@ -1478,7 +1478,7 @@ function calendrier_(email, p) {
     return String(s.email).toLowerCase() === email;
   });
 
-  return lire_(TABS.SEANCES)
+  const seances = lire_(TABS.SEANCES)
     .filter(function (s) {
       if (String(s.email).toLowerCase() !== email) return false;
       const d = new Date(s.date);
@@ -1489,16 +1489,34 @@ function calendrier_(email, p) {
       let volume = 0;
       mien.forEach(function (x) { volume += (Number(x.reps) || 0) * (Number(x.charge) || 0); });
       return {
-        id: s.id,
-        date: s.date,
-        jour: s.jour,
+        type: 'seance',
+        id: s.id, date: s.date, jour: s.jour,
         duree_min: Number(s.duree_min) || 0,
-        ressenti: s.ressenti || '',
-        notes: s.notes || '',
-        nbSeries: mien.length,
-        volume: Math.round(volume)
+        ressenti: s.ressenti || '', notes: s.notes || '',
+        nbSeries: mien.length, volume: Math.round(volume)
       };
+    });
+
+  // Les activités libres rejoignent le calendrier : voir qu'un pratiquant a couru
+  // trois fois change la lecture de son assiduité.
+  const libres = lire_(TABS.ACTIVITES)
+    .filter(function (a) {
+      if (String(a.email).toLowerCase() !== email) return false;
+      const d = new Date(a.date);
+      return d >= debut && d <= fin;
     })
+    .map(function (a) {
+      return {
+        type: 'activite',
+        id: a.id, date: a.date, jour: a.sport, sport: a.sport,
+        duree_min: Number(a.duree_min) || 0,
+        distance_km: Number(a.distance_km) || 0,
+        effort: Number(a.effort) || 0,
+        notes: a.notes || '', nbSeries: 0, volume: 0
+      };
+    });
+
+  return seances.concat(libres)
     .sort(function (a, b) { return new Date(a.date) - new Date(b.date); });
 }
 
@@ -1631,7 +1649,8 @@ function pratiquant_(email) {
     nbSeries: series.length,
     derniere: derniere,
     joursDepuis: derniere ? Math.floor((Date.now() - new Date(derniere)) / 86400000) : null,
-    attributions: attributions_(cible)
+    attributions: attributions_(cible),
+    activites: activites_(cible, { depuis: new Date(Date.now() - 90 * 86400000).toISOString() }).slice(0, 12)
   };
 }
 

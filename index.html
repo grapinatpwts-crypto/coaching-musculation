@@ -103,7 +103,13 @@ header h2{font-size:30px;text-transform:uppercase;line-height:1}
 .card.clos .body{opacity:.72;flex:1;min-width:0;cursor:pointer}
 .reprendre{font-size:17px;line-height:1;flex:0 0 auto}
 .cal .c[aria-pressed="true"]{outline:2px solid var(--brand-ink);outline-offset:1px}
+.cal .c .pts{display:flex;gap:3px}
 .cal .c .pt{width:4px;height:4px;border-radius:50%;background:var(--on-brand)}
+.cal .c .pt.libre{background:var(--brand-ink)}
+.cal .c.libre{border-color:var(--brand);color:var(--chalk)}
+.cal .c.libre .pt.libre{background:var(--brand-ink)}
+.card.libre{border-left:3px solid var(--brand-ink)}
+.chip.libre{background:rgba(224,82,83,.15);color:var(--brand-ink)}
 .legende{font-size:12px;color:var(--dust);margin:12px 0 4px;display:flex;gap:14px;flex-wrap:wrap}
 .stat{display:flex;gap:18px;flex-wrap:wrap;margin-top:6px}
 .stat b{font-family:'Bebas Neue',Impact,sans-serif;font-size:26px;font-weight:400;display:block;line-height:1}
@@ -1397,9 +1403,16 @@ async function peindreCalendrier() {
   for (let d = 1; d <= nb; d++) {
     const date = new Date(c.annee, c.mois, d);
     const k = cleJour(date);
-    const faite = (parJour[k] || []).length;
-    cases += `<button class="c ${faite ? 'faite' : ''} ${date.toDateString() === ajd ? 'today' : ''}"
-      data-j="${k}" aria-pressed="${c.sel === k}">${d}${faite ? '<i class="pt"></i>' : ''}</button>`;
+    const duJour = parJour[k] || [];
+    const seance = duJour.some(x => x.type !== 'activite');
+    const libre = duJour.some(x => x.type === 'activite');
+    // Séance du programme en aplat, activité libre en contour : le coach doit
+    // distinguer d'un regard ce qu'il a prescrit de ce que le pratiquant a ajouté.
+    const classe = seance ? 'faite' : libre ? 'libre' : '';
+    cases += `<button class="c ${classe} ${date.toDateString() === ajd ? 'today' : ''}"
+      data-j="${k}" aria-pressed="${c.sel === k}">${d}${
+      duJour.length ? `<span class="pts">${seance ? '<i class="pt"></i>' : ''}${
+        libre ? '<i class="pt libre"></i>' : ''}</span>` : ''}</button>`;
   }
 
   // Bilan du mois affiché
@@ -1407,6 +1420,8 @@ async function peindreCalendrier() {
     const d = new Date(s.date);
     return d.getFullYear() === c.annee && d.getMonth() === c.mois;
   });
+  const seancesMois = duMois.filter(s => s.type !== 'activite');
+  const libresMois = duMois.filter(s => s.type === 'activite');
   const volume = duMois.reduce((t, s) => t + s.volume, 0);
   const minutes = duMois.reduce((t, s) => t + s.duree_min, 0);
 
@@ -1418,7 +1433,8 @@ async function peindreCalendrier() {
     </div>
     <div class="cal">${cases}</div>
     <div class="stat">
-      <div><b class="num">${duMois.length}</b><span>séance${duMois.length > 1 ? 's' : ''}</span></div>
+      <div><b class="num">${seancesMois.length}</b><span>séance${seancesMois.length > 1 ? 's' : ''}</span></div>
+      ${libresMois.length ? `<div><b class="num">${libresMois.length}</b><span>activité${libresMois.length > 1 ? 's' : ''}</span></div>` : ''}
       <div><b class="num">${volume >= 1000 ? (volume / 1000).toFixed(1) + ' t' : volume + ' kg'}</b><span>volume</span></div>
       <div><b class="num">${minutes}</b><span>minutes</span></div>
     </div>
@@ -1435,18 +1451,33 @@ async function peindreCalendrier() {
   if (c.sel) {
     const ss = parJour[c.sel] || [];
     $('#detail').innerHTML = ss.length
-      ? ss.map(s => `<div class="card" style="display:block;margin-top:14px">
-          <div class="nom">${s.jour || 'Séance'}</div>
-          <div class="meta">${new Date(s.date).toLocaleDateString('fr-FR', { weekday:'long', day:'numeric', month:'long' })}</div>
-          <div class="sets">
-            <span class="set">${s.nbSeries} série${s.nbSeries > 1 ? 's' : ''}</span>
-            ${s.volume ? `<span class="set">${s.volume} kg soulevés</span>` : ''}
-            ${s.duree_min ? `<span class="set">${s.duree_min} min</span>` : ''}
-            ${s.ressenti ? `<span class="set">${s.ressenti}</span>` : ''}
-          </div>
-          ${s.notes ? `<p class="consigne" style="margin-top:10px">${s.notes}</p>` : ''}
-        </div>`).join('')
-      : `<div class="empty" style="padding:24px 0">Aucune séance ce jour-là.</div>`;
+      ? ss.map(s => s.type === 'activite'
+        ? `<div class="card libre" style="display:block;margin-top:14px">
+            <div class="entete" style="margin-bottom:4px">
+              <span class="chip libre">Activité</span>
+              <span class="meta" style="flex:1;text-align:right">${
+                new Date(s.date).toLocaleDateString('fr-FR', { weekday:'long', day:'numeric', month:'long' })}</span>
+            </div>
+            <div class="nom">${s.sport}</div>
+            <div class="sets">
+              ${s.duree_min ? `<span class="set">${s.duree_min} min</span>` : ''}
+              ${s.distance_km ? `<span class="set">${s.distance_km} km</span>` : ''}
+              ${s.effort ? `<span class="set">effort ${s.effort}/10</span>` : ''}
+            </div>
+            ${s.notes ? `<p class="consigne" style="margin-top:10px">${s.notes}</p>` : ''}
+          </div>`
+        : `<div class="card" style="display:block;margin-top:14px">
+            <div class="nom">${s.jour || 'Séance'}</div>
+            <div class="meta">${new Date(s.date).toLocaleDateString('fr-FR', { weekday:'long', day:'numeric', month:'long' })}</div>
+            <div class="sets">
+              <span class="set">${s.nbSeries} série${s.nbSeries > 1 ? 's' : ''}</span>
+              ${s.volume ? `<span class="set">${s.volume} kg soulevés</span>` : ''}
+              ${s.duree_min ? `<span class="set">${s.duree_min} min</span>` : ''}
+              ${s.ressenti ? `<span class="set">${s.ressenti}</span>` : ''}
+            </div>
+            ${s.notes ? `<p class="consigne" style="margin-top:10px">${s.notes}</p>` : ''}
+          </div>`).join('')
+      : `<div class="empty" style="padding:24px 0">Rien ce jour-là.</div>`;
   }
 }
 
@@ -1643,6 +1674,22 @@ async function vueFiche() {
         <button class="poignee" data-prevenir="${a.id}" aria-label="Prévenir">✉</button>
         <button class="poignee" data-voir="${a.id}" aria-label="Voir ce programme">›</button>
       </div>`).join('') || `<div class="empty" style="padding:18px 0">Aucun programme donné.</div>`}
+
+    ${(f.activites || []).length ? `
+      <div class="eyebrow" style="margin:22px 0 10px">Activités hors programme · ${f.activites.length}</div>
+      <p class="consigne" style="margin-bottom:10px">Ce que le pratiquant fait de lui-même.
+        Utile pour lire son assiduité autrement que par les séances prescrites.</p>
+      ${f.activites.map(x => `<div class="ligne">
+        <div class="g">
+          <div class="nom">${x.sport}</div>
+          <div class="meta">${[
+            new Date(x.date).toLocaleDateString('fr-FR'),
+            x.duree_min ? x.duree_min + ' min' : '',
+            x.distance_km ? x.distance_km + ' km' : '',
+            x.effort ? 'effort ' + x.effort + '/10' : ''].filter(Boolean).join(' · ')}</div>
+          ${x.notes ? `<div class="meta">${x.notes}</div>` : ''}
+        </div>
+      </div>`).join('')}` : ''}
 
     ${f.notes ? `<div class="eyebrow" style="margin:22px 0 8px">Notes</div>
       <p class="consigne">${f.notes}</p>` : ''}`;

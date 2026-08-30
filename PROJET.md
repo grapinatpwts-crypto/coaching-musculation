@@ -162,7 +162,7 @@ Toutes en POST sur l'URL `/exec`, corps `{token, action, payload}`,
 | `finirExercice` | `{seance_id, exercice_id}` | clôt un exercice sans exiger toutes ses séries |
 | `reprendreExercice` | `{seance_id, exercice_id}` | rouvre un exercice clos par erreur |
 | `historique` | `{exercice_id}` | 30 dernières séries |
-| `calendrier` | `{depuis?, jusqua?, email?}` | séances de la période + volume et durée |
+| `calendrier` | `{depuis?, jusqua?, email?}` | séances **et activités** de la période, chacune marquée d'un `type` |
 | `catalogue` | — | bibliothèque d'exercices complète |
 | `coachAthletes` | — | liste des pratiquants + jours d'inactivité |
 | `coachDetail` | `{email}` | 15 dernières séances détaillées |
@@ -254,9 +254,19 @@ pratiquants ne bougent pas. Les numéros de bloc et d'ordre sont renumérotés �
 l'écriture — l'éditeur n'a pas à les tenir à jour.
 
 **Calendrier.** Le même composant sert au pratiquant pour lui-même et au coach par
-pratiquant : grille mensuelle, jours travaillés en rouge, bilan du mois (séances,
-volume, minutes), détail au clic sur un jour. Les séances sont chargées une fois sur
-douze mois, la navigation entre mois ne recharge rien.
+pratiquant : grille mensuelle, bilan du mois, détail au clic sur un jour. Chargé une
+fois sur douze mois, la navigation entre mois ne recharge rien.
+
+Deux natures d'événement s'y côtoient, et se distinguent d'un regard :
+
+| | Dans la grille | Au clic |
+|---|---|---|
+| Séance du programme | case en **aplat rouge**, point plein | séries, volume, durée, ressenti |
+| Activité libre | case **en contour**, point clair | sport, durée, distance, effort |
+
+Un jour qui porte les deux montre les deux points. Le bilan du mois compte les
+séances et les activités **séparément** : mélanger ce que le coach a prescrit et ce
+que le pratiquant a ajouté de lui-même fausserait la lecture de l'assiduité.
 
 ### Ce qui n'est pas fait
 
@@ -675,6 +685,11 @@ collectif, raquette, combat, souplesse, glisse. Volontairement courte : de quoi
 couvrir ce que font vraiment des pratiquants de musculation, pas un catalogue de
 fédération. « Séance libre » couvre la séance à nu, hors programme.
 
+Les activités remontent à trois endroits : l'accueil du pratiquant, son calendrier,
+et la **fiche que consulte le coach** — section « Activités hors programme ». Voir
+qu'un pratiquant a couru trois fois dans la semaine change la lecture de son
+assiduité, et c'est une information qu'aucune séance prescrite ne donne.
+
 ### Ce qu'on a repris de HexFit, et ce qu'on a écarté
 
 | | |
@@ -756,8 +771,8 @@ Ce qui reste, par ordre d'utilité décroissante.
    Coach ▸ Réglages. Compléter ensuite des exercices propres au coach (§ 8 nonies).
 2. **Installer sur téléphone** et juger l'ergonomie réelle, téléphone en main
    entre deux séries. Safari sur iOS, Chrome sur Android.
-3. **Faire apparaître les activités libres dans le calendrier**, à côté des séances
-   du programme, et dans la fiche que consulte le coach.
+3. **Décider ce que le pratiquant peut ajuster d'autre** que la charge — les
+   répétitions, par exemple (§ 8 octies).
 4. **Activer le déclencheur hebdomadaire** sur `rapportHebdo()`, depuis l'éditeur
    Apps Script (`Déclencheurs ▸ Ajouter`). Il n'écrit qu'au coach, jamais aux
    pratiquants : l'automatiser ne contredit pas le principe du § 1. L'envoi manuel
