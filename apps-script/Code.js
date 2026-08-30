@@ -23,6 +23,7 @@ const TABS = {
   MODELES: 'Modeles',
   MODELE_LIGNES: 'ModeleLignes',
   ATTRIBUTIONS: 'Attributions',
+  MAXIS: 'Maxis',
   PROGRAMMES: 'Programmes',
   SEANCES: 'Seances',
   SERIES: 'Series'
@@ -36,13 +37,16 @@ const SCHEMA = {
   Exercices: ['id', 'nom', 'groupe', 'equipement', 'consigne', 'video'],
   // Modèles : programmes génériques, sans pratiquant. Le coach les compose une fois.
   Modeles: ['id', 'nom', 'categorie', 'difficulte', 'description', 'duree_semaines', 'statut', 'cree_le'],
-  ModeleLignes: ['id', 'modele_id', 'jour', 'bloc', 'ordre', 'exercice_id', 'series', 'reps_cible', 'duree_s', 'charge_cible', 'cadence', 'pause_s', 'repos_s'],
+  ModeleLignes: ['id', 'modele_id', 'jour', 'bloc', 'ordre', 'exercice_id', 'series', 'reps_cible', 'duree_s', 'charge_cible', 'pct_rm', 'cadence', 'pause_s', 'repos_s'],
+  // Maxis : le 1RM connu d'un pratiquant sur un exercice. Sert à traduire un
+  // pourcentage en kilos. Sans entrée ici, le 1RM est estimé depuis l'historique.
+  Maxis: ['id', 'email', 'exercice_id', 'rm_kg', 'date', 'source'],
   // Attribution : un modèle donné à un pratiquant à une date. Le même modèle peut
   // être attribué plusieurs fois au même pratiquant au fil du temps.
   Attributions: ['id', 'email', 'modele_id', 'nom', 'date_debut', 'date_fin', 'statut', 'notes', 'cree_le'],
   // Programmes : les lignes RÉELLES d'une attribution, personnalisables sans
   // toucher au modèle dont elles sont issues.
-  Programmes: ['id', 'attribution_id', 'email', 'jour', 'bloc', 'ordre', 'exercice_id', 'series', 'reps_cible', 'duree_s', 'charge_cible', 'cadence', 'pause_s', 'repos_s'],
+  Programmes: ['id', 'attribution_id', 'email', 'jour', 'bloc', 'ordre', 'exercice_id', 'series', 'reps_cible', 'duree_s', 'charge_cible', 'pct_rm', 'cadence', 'pause_s', 'repos_s'],
   Seances: ['id', 'email', 'date', 'jour', 'duree_min', 'ressenti', 'notes', 'exercices_finis'],
   Series: ['id', 'seance_id', 'email', 'exercice_id', 'serie_num', 'reps', 'duree_s', 'charge', 'horodatage']
 };
@@ -143,6 +147,9 @@ function route_(action, p, user, profil, estCoach) {
     case 'attributionSuppr': return guardCoach_(estCoach, function () { return attributionSuppr_(p.id); });
     // Maintenance : les mêmes fonctions que le menu du Sheet, joignables depuis l'app.
     // Le menu n'existe pas dans Sheets mobile, le coach doit pouvoir s'en passer.
+    case 'maxis':          return maxis_(cibleEmail_(user, p, estCoach));
+    case 'maxiSave':       return guardCoach_(estCoach, function () { return maxiSave_(p); });
+    case 'maxiSuppr':      return guardCoach_(estCoach, function () { return maxiSuppr_(p); });
     case 'maintenance':    return guardCoach_(estCoach, function () { return maintenance_(p.op); });
     default: throw new Error('ACTION_INCONNUE');
   }
@@ -384,6 +391,44 @@ function lignesProgramme_(email) {
   return toutes.filter(function (l) { return String(l.attribution_id) === String(att.id); });
 }
 
+/** Arrondi au plus proche multiple de 2,5 kg : le plus petit saut réel sur une barre. */
+function arrondiCharge_(kg) {
+  return Math.round(Number(kg) / 2.5) * 2.5;
+}
+
+/**
+ * 1RM connu ou estimé, par exercice, pour un pratiquant.
+ * Une entrée dans `Maxis` fait foi. Sinon on estime depuis les séries réalisées,
+ * par la formule d'Epley : 1RM ≈ charge × (1 + reps / 30). On retient la meilleure
+ * estimation, pas la plus récente : un maxi ne se perd pas d'une séance à l'autre.
+ */
+function maxisPour_(email) {
+  const out = {};
+
+  lire_(TABS.SERIES)
+    .filter(function (s) { return String(s.email).toLowerCase() === email; })
+    .forEach(function (s) {
+      const charge = Number(s.charge) || 0;
+      const reps = Number(s.reps) || 0;
+      if (charge <= 0 || reps <= 0 || reps > 15) return;   // au-delà, Epley dérive
+      const est = charge * (1 + reps / 30);
+      const cle = String(s.exercice_id);
+      if (!out[cle] || est > out[cle].kg) {
+        out[cle] = { kg: Math.round(est * 10) / 10, source: 'estimé', date: s.horodatage };
+      }
+    });
+
+  // Un maxi saisi par le coach prime sur toute estimation.
+  lire_(TABS.MAXIS)
+    .filter(function (m) { return String(m.email).toLowerCase() === email; })
+    .forEach(function (m) {
+      const kg = Number(m.rm_kg) || 0;
+      if (kg > 0) out[String(m.exercice_id)] = { kg: kg, source: m.source || 'mesuré', date: m.date };
+    });
+
+  return out;
+}
+
 /** Séance du jour non terminée, s'il y en a une. Sert à reprendre après un rechargement. */
 function seanceOuverte_(email, jour) {
   const minuit = new Date(); minuit.setHours(0, 0, 0, 0);
@@ -420,6 +465,7 @@ function getSeance_(email, jour) {
 
   const series = lire_(TABS.SERIES)
     .filter(function (s) { return String(s.email).toLowerCase() === email; });
+  const maxis = maxisPour_(email);
 
   const blocs = [];
   const parNum = {};
@@ -434,7 +480,7 @@ function getSeance_(email, jour) {
       };
       blocs.push(parNum[num]);
     }
-    parNum[num].exercices.push(ligneExercice_(l, parNum[num], exercices, series));
+    parNum[num].exercices.push(ligneExercice_(l, parNum[num], exercices, series, maxis));
   });
 
   // Reprise : si une séance du jour est ouverte, on renvoie son identifiant et
@@ -505,13 +551,18 @@ function numBloc_(ligne) {
 }
 
 /** Détail d'un exercice ; series et repos_s sont hérités du bloc. */
-function ligneExercice_(l, bloc, exercices, series) {
+function ligneExercice_(l, bloc, exercices, series, maxis) {
   const passe = series
     .filter(function (s) { return String(s.exercice_id) === String(l.exercice_id); })
     .sort(function (a, b) { return new Date(b.horodatage) - new Date(a.horodatage); })
     .slice(0, 5);
 
   const ex = exercices[l.exercice_id] || {};
+  const pct = Number(String(l.pct_rm).replace('%', '')) || 0;
+  const rm = (maxis || {})[String(l.exercice_id)];
+  let charge = Number(l.charge_cible) || 0;
+  if (pct > 0 && rm && rm.kg > 0) charge = arrondiCharge_(rm.kg * pct / 100);
+
   return {
     exercice_id: l.exercice_id,
     nom: ex.nom || l.exercice_id,
@@ -528,7 +579,13 @@ function ligneExercice_(l, bloc, exercices, series) {
     // pause_s : temps mort APRÈS cet exercice, à l'intérieur du bloc.
     // À distinguer de repos_s, qui est le repos de fin de tour, porté par le bloc.
     pause_s: Number(l.pause_s) || 0,
-    charge_cible: Number(l.charge_cible) || 0,
+    pct_rm: pct,
+    rm: rm ? rm.kg : 0,
+    rm_source: rm ? rm.source : '',
+    // Une charge en pourcentage prime sur la charge fixe : c'est elle qui suit
+    // la progression du pratiquant.
+    charge_cible: charge,
+    charge_calculee: !!(pct && rm),
     dernier: passe.length ? { reps: passe[0].reps, charge: Number(passe[0].charge) } : null,
     record: passe.length ? Math.max.apply(null, passe.map(function (s) { return Number(s.charge) || 0; })) : 0
   };
@@ -757,6 +814,7 @@ function grouperEnJours_(lignes, noms) {
       reps_cible: l.reps_cible === undefined ? '' : String(l.reps_cible),
       duree_s: l.duree_s === '' || l.duree_s === undefined ? '' : l.duree_s,
       charge_cible: Number(l.charge_cible) || 0,
+      pct_rm: Number(String(l.pct_rm).replace('%', '')) || 0,
       cadence: l.cadence || '',
       pause_s: Number(l.pause_s) || 0
     });
@@ -781,6 +839,7 @@ function aplatirBlocs_(blocs, jour, base) {
         reps_cible: e.reps_cible === undefined ? '' : e.reps_cible,
         duree_s: e.duree_s === undefined ? '' : e.duree_s,
         charge_cible: Number(e.charge_cible) || 0,
+        pct_rm: Number(String(e.pct_rm).replace('%', '')) || 0,
         cadence: e.cadence || '',
         pause_s: Number(e.pause_s) || 0,
         repos_s: Number(b.repos_s) || 90
@@ -954,7 +1013,7 @@ function attribuer_(p) {
         id: uid_('PR'), attribution_id: id, email: email, jour: l.jour,
         bloc: l.bloc, ordre: l.ordre, exercice_id: l.exercice_id,
         series: l.series, reps_cible: l.reps_cible, duree_s: l.duree_s,
-        charge_cible: l.charge_cible, cadence: l.cadence,
+        charge_cible: l.charge_cible, pct_rm: l.pct_rm, cadence: l.cadence,
         pause_s: l.pause_s, repos_s: l.repos_s
       };
     });
@@ -1045,6 +1104,71 @@ function programmeJourSuppr_(p) {
   return { supprimees: supprimerLignes_(TABS.PROGRAMMES, function (l) {
     return String(l.attribution_id) === aid && String(l.jour) === jour;
   }) };
+}
+
+// ── Maxis (1RM) ──────────────────────────────────────────────
+
+/**
+ * 1RM par exercice pour un pratiquant : ceux saisis par le coach et ceux estimés
+ * depuis l'historique. Seuls les exercices présents au catalogue sont renvoyés.
+ */
+function maxis_(email) {
+  const calcules = maxisPour_(email);
+  const utilises = {};
+  lire_(TABS.PROGRAMMES).forEach(function (l) {
+    if (String(l.email).toLowerCase() === email) utilises[String(l.exercice_id)] = true;
+  });
+
+  return lire_(TABS.EXERCICES)
+    .filter(function (e) { return e.id !== '' && e.id !== null; })
+    .map(function (e) {
+      const m = calcules[String(e.id)];
+      return {
+        exercice_id: e.id, nom: e.nom, groupe: e.groupe || '',
+        rm_kg: m ? m.kg : 0,
+        source: m ? m.source : '',
+        date: m ? m.date : '',
+        auProgramme: !!utilises[String(e.id)]
+      };
+    })
+    .sort(function (a, b) {
+      if (a.auProgramme !== b.auProgramme) return a.auProgramme ? -1 : 1;
+      return String(a.nom).localeCompare(String(b.nom), 'fr');
+    });
+}
+
+/** Fixe le 1RM mesuré d'un pratiquant sur un exercice. Remplace l'estimation. */
+function maxiSave_(p) {
+  const email = String(p.email || '').toLowerCase();
+  const ex = String(p.exercice_id || '');
+  const kg = Number(p.rm_kg) || 0;
+  if (!email || !ex) throw new Error('PARAMS_REQUIS');
+  if (!(kg > 0)) throw new Error('VALEUR_INVALIDE');
+
+  const deja = lire_(TABS.MAXIS).filter(function (m) {
+    return String(m.email).toLowerCase() === email && String(m.exercice_id) === ex;
+  })[0];
+
+  if (deja) {
+    majLigne_(TABS.MAXIS, 'id', deja.id, { rm_kg: kg, date: new Date(), source: 'mesuré' });
+    return { id: deja.id, rm_kg: kg };
+  }
+  const id = uid_('MX');
+  ajouter_(TABS.MAXIS, {
+    id: id, email: email, exercice_id: ex, rm_kg: kg, date: new Date(), source: 'mesuré'
+  });
+  return { id: id, rm_kg: kg };
+}
+
+/** Efface le maxi saisi : on retombe sur l'estimation issue de l'historique. */
+function maxiSuppr_(p) {
+  const email = String(p.email || '').toLowerCase();
+  const ex = String(p.exercice_id || '');
+  if (!email || !ex) throw new Error('PARAMS_REQUIS');
+  const n = supprimerLignes_(TABS.MAXIS, function (m) {
+    return String(m.email).toLowerCase() === email && String(m.exercice_id) === ex;
+  });
+  return { supprimes: n };
 }
 
 // ─────────────────────────────────────────────────────────────
@@ -1275,16 +1399,19 @@ const TEST_EMAILS = ['grapinat.pwts@gmail.com', 'guillaume.rapinat@gmail.com'];
  * « 1-0-3-1 » = montée en 1 s, pas d'arrêt en haut, descente en 3 s, 1 s en bas.
  * Charges choisies pour tomber juste en disques réglementaires sur une barre de
  * 20 kg : 60 → 20 par côté, 80 → 25+5, 100 → 25+15.
- * [jour, bloc, ordre, exercice_id, series, reps_cible, duree_s, charge_cible, cadence, pause_s, repos_s]
+ * Le bloc 1 du jeudi illustre le schéma top set / back-off : la même barre à
+ * 90 % puis à 60 % du max, les charges se recalculant seules quand le max bouge.
+ * [jour, bloc, ordre, exercice_id, series, reps_cible, duree_s, charge_cible, pct_rm, cadence, pause_s, repos_s]
  */
 const PROGRAMME_TEST = [
-  ['Lundi — Haut', 1, 1, 'EX001', 4, '8-10', '',  60, '1-0-3-1',  0, 120],
-  ['Lundi — Haut', 2, 1, 'EX005', 3, '10',   '',  30, '1-1-2-0', 20,  90],
-  ['Lundi — Haut', 2, 2, 'EX004', 3, 'max',  '',   0, '1-1-2-0',  0,  90],
-  ['Lundi — Haut', 3, 1, 'EX006', 3, '12',   '',  30, '1-0-2-0',  0,  60],
-  ['Jeudi — Bas',  1, 1, 'EX002', 5, '5',    '',  80, '1-0-3-1',  0, 180],
-  ['Jeudi — Bas',  2, 1, 'EX003', 3, '5',    '', 100, '1-0-2-0', 30, 180],
-  ['Jeudi — Bas',  2, 2, 'EX007', 3, '',     45,   0, '',         0, 120]
+  ['Lundi — Haut', 1, 1, 'EX001', 4, '8-10', '',  60,  0, '1-0-3-1',  0, 120],
+  ['Lundi — Haut', 2, 1, 'EX005', 3, '10',   '',  30,  0, '1-1-2-0', 20,  90],
+  ['Lundi — Haut', 2, 2, 'EX004', 3, 'max',  '',   0,  0, '1-1-2-0',  0,  90],
+  ['Lundi — Haut', 3, 1, 'EX006', 3, '12',   '',  30,  0, '1-0-2-0',  0,  60],
+  ['Jeudi — Bas',  1, 1, 'EX002', 5, '3',    '',   0, 90, '1-0-3-1', 30, 180],
+  ['Jeudi — Bas',  1, 2, 'EX002', 5, '12',   '',   0, 60, '1-0-1-0',  0, 180],
+  ['Jeudi — Bas',  2, 1, 'EX003', 3, '5',    '', 100,  0, '1-0-2-0', 30, 180],
+  ['Jeudi — Bas',  2, 2, 'EX007', 3, '',     45,   0,  0, '',         0, 120]
 ];
 
 /** Ajoute le gainage au catalogue s'il n'y est pas : setup() ne resème pas. */
@@ -1331,7 +1458,7 @@ function programmeTest() {
       ajouter_(TABS.PROGRAMMES, {
         id: uid_('PR'), email: email, jour: p[0], bloc: p[1], ordre: p[2],
         exercice_id: p[3], series: p[4], reps_cible: p[5], duree_s: p[6],
-        charge_cible: p[7], cadence: p[8], pause_s: p[9], repos_s: p[10]
+        charge_cible: p[7], pct_rm: p[8], cadence: p[9], pause_s: p[10], repos_s: p[11]
       });
     });
     rapport.push(email + ' : ' + PROGRAMME_TEST.length + ' lignes ajoutées');

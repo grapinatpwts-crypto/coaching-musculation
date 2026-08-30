@@ -76,9 +76,10 @@ côté, zone sûre respectée). Régénérables : voir § 9.
 | `Pratiquants` | email, nom, actif, date_inscription, objectif |
 | `Exercices` | id, nom, groupe, **equipement**, consigne, **video** |
 | `Modeles` | id, nom, categorie, difficulte, description, duree_semaines, statut, cree_le |
-| `ModeleLignes` | id, modele_id, jour, bloc, ordre, exercice_id, series, reps_cible, duree_s, charge_cible, cadence, pause_s, repos_s |
+| `ModeleLignes` | id, modele_id, jour, bloc, ordre, exercice_id, series, reps_cible, duree_s, charge_cible, **pct_rm**, cadence, pause_s, repos_s |
 | `Attributions` | id, email, modele_id, nom, date_debut, date_fin, statut, notes, cree_le |
-| `Programmes` | id, **attribution_id**, email, jour, bloc, ordre, exercice_id, series, reps_cible, duree_s, charge_cible, cadence, pause_s, repos_s |
+| `Maxis` | id, email, exercice_id, rm_kg, date, source |
+| `Programmes` | id, **attribution_id**, email, jour, bloc, ordre, exercice_id, series, reps_cible, duree_s, charge_cible, **pct_rm**, cadence, pause_s, repos_s |
 | `Seances` | id, email, date, jour, duree_min, ressenti, notes, **exercices_finis** |
 | `Series` | id, seance_id, email, exercice_id, serie_num, reps, **duree_s**, charge, horodatage |
 
@@ -342,6 +343,35 @@ et `getDataRange()` échouait sur `null`.
 `Muscu ▸ Migration : aligner les colonnes` reste utile pour une chose que
 l'auto-création ne fait pas : rattacher les lignes de `Programmes` antérieures au
 modèle d'attribution à une attribution « Programme courant ».
+
+## 8 sexies. Charges en pourcentage du max
+
+`pct_rm` sur une ligne de programme remplace la charge fixe : la charge est
+recalculée à chaque lecture depuis le 1RM du pratiquant, et suit donc sa
+progression sans que le coach ait à retoucher le programme.
+
+```
+Squat · 5 tours
+  ├─ 3 reps à 90 %   ─┐ même exercice, même bloc
+  └─ 12 reps à 60 %  ─┘ top set puis back-off
+```
+
+**D'où vient le 1RM.** Une valeur saisie par le coach dans `Maxis` fait foi. À
+défaut, il est estimé depuis les séries réalisées par la formule d'Epley,
+`1RM ≈ charge × (1 + reps / 30)`, en retenant la **meilleure** estimation et non la
+plus récente — un maxi ne se perd pas d'une séance à l'autre. Les séries de plus de
+15 répétitions sont ignorées, Epley y devient trop optimiste.
+
+La charge obtenue est arrondie au multiple de 2,5 kg, le plus petit saut réel sur une
+barre. L'app affiche la charge **et** son origine — « 107,5 kg · 90 % de 120 kg » —
+et précise « estimés » quand le max n'a pas été mesuré : le pratiquant doit savoir
+si le chiffre repose sur une mesure ou sur un calcul.
+
+Sans 1RM connu, la ligne affiche « % — max inconnu » plutôt qu'une charge fausse.
+
+L'écran **Coach ▸ un athlète ▸ Maxis** liste les exercices, ceux du programme
+d'abord, avec leur 1RM et sa source. Une valeur saisie peut être effacée pour
+revenir à l'estimation.
 
 ## 9. Parti pris visuel — charte Wellness Sport Club
 

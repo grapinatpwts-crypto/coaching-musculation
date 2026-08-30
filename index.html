@@ -466,6 +466,19 @@ async function chargerSeance(jour) {
   return blocs;
 }
 
+/**
+ * Charge à afficher. Un pourcentage de 1RM prime sur une charge fixe : c'est lui
+ * qui suit la progression. On dit d'où vient le chiffre quand il est calculé.
+ */
+function chargeTexte(e) {
+  if (!e.charge_cible) return '';
+  if (!e.pct_rm) return e.charge_cible + ' kg';
+  const base = e.charge_calculee
+    ? `${e.pct_rm} % de ${e.rm} kg${e.rm_source === 'estimé' ? ' estimés' : ''}`
+    : `${e.pct_rm} % — max inconnu`;
+  return `${e.charge_cible} kg · ${base}`;
+}
+
 /** « 45 s », « max », « 1:30 ». */
 function duree(sec) {
   if (sec === 'max' || sec === 'MAX') return 'max';
@@ -484,7 +497,7 @@ function carte(e) {
   return `${ouvre}
     <div class="body" ${fini ? `data-i="${e._i}"` : ''}>
       <div class="nom">${e.nom}</div>
-      <div class="meta">${e.series} × ${cible}${e.charge_cible ? ' · ' + e.charge_cible + ' kg' : ''}${
+      <div class="meta">${e.series} × ${cible}${chargeTexte(e) ? ' · ' + chargeTexte(e) : ''}${
         fini && n < e.series ? ' · arrêté à ' + n : ''}${
         !fini && e.dernier && e.charge_cible ? ' · dernière fois ' + e.dernier.charge + ' kg' : ''}</div>
       ${e.cadence ? `<div class="cadbloc"><span class="cadence">${e.cadence}</span>${courbeCadence(e.cadence, false)}</div>` : ''}
@@ -933,6 +946,7 @@ async function vueCoach() {
     <header><h2>${c.nom}</h2><button class="close" id="retour">← Athlètes</button></header>
     <div class="sous">
       <button data-s="programme" aria-pressed="${c.sous === 'programme'}">Programme</button>
+      <button data-s="maxis" aria-pressed="${c.sous === 'maxis'}">Maxis</button>
       <button data-s="calendrier" aria-pressed="${c.sous === 'calendrier'}">Calendrier</button>
       <button data-s="historique" aria-pressed="${c.sous === 'historique'}">Historique</button>
     </div>
@@ -944,6 +958,7 @@ async function vueCoach() {
   });
 
   if (c.sous === 'programme') return vueProgramme();
+  if (c.sous === 'maxis') return vueMaxis();
   if (c.sous === 'calendrier') {
     $('#zone').innerHTML = `<div id="calzone"></div>`;
     if (!S.cal || S.cal.email !== c.email) {
@@ -1105,7 +1120,7 @@ function peindreEditeur() {
             <div class="g">
               <div class="nom">${e.nom}</div>
               <div class="meta">${(e.duree_s ? duree(e.duree_s) : e.reps_cible) || '—'}${
-                e.charge_cible ? ' · ' + e.charge_cible + ' kg' : ''}${
+                e.pct_rm ? ' · ' + e.pct_rm + ' % du max' : (e.charge_cible ? ' · ' + e.charge_cible + ' kg' : '')}${
                 e.cadence ? ' · ' + e.cadence : ''}${
                 j < b.exercices.length - 1 && e.pause_s ? ' · pause ' + e.pause_s + ' s' : ''}</div>
             </div>
@@ -1164,7 +1179,7 @@ function choisirExercice(bi) {
       const e = S.cat.find(x => String(x.id) === l.dataset.pick);
       S.ed.blocs[bi].exercices.push({
         exercice_id: e.id, nom: e.nom, reps_cible: '10', duree_s: '',
-        charge_cible: 0, cadence: '', pause_s: 0
+        charge_cible: 0, pct_rm: 0, cadence: '', pause_s: 0
       });
       m.fermer(); peindreEditeur();
     });
@@ -1183,8 +1198,11 @@ function modalLigne(bi, ei) {
     </div>
     <div class="duo">
       <div class="champ"><label>Charge (kg)</label><input class="f" id="lChg" type="number" min="0" step="2.5" value="${e.charge_cible || 0}"></div>
-      <div class="champ"><label>Cadence</label><input class="f" id="lCad" value="${e.cadence || ''}" placeholder="1-0-3-1"></div>
+      <div class="champ"><label>ou % du max</label><input class="f" id="lPct" type="number" min="0" max="120" value="${e.pct_rm || ''}" placeholder="90"></div>
     </div>
+    <p class="consigne">Un pourcentage l'emporte sur la charge fixe : la charge est
+      recalculée à chaque séance depuis le 1RM du pratiquant, mesuré ou estimé.</p>
+    <div class="champ"><label>Cadence</label><input class="f" id="lCad" value="${e.cadence || ''}" placeholder="1-0-3-1"></div>
     <p class="tempo" id="apercu"></p>
     ${dernier ? '' : `<div class="champ"><label>Pause avant l'exercice suivant (s)</label>
       <input class="f" id="lPau" type="number" min="0" step="5" value="${e.pause_s || 0}"></div>`}
@@ -1203,6 +1221,7 @@ function modalLigne(bi, ei) {
     e.reps_cible = m.querySelector('#lReps').value.trim();
     e.duree_s = m.querySelector('#lDur').value.trim();
     e.charge_cible = Number(m.querySelector('#lChg').value) || 0;
+    e.pct_rm = Number(m.querySelector('#lPct').value) || 0;
     e.cadence = cad.value.trim();
     if (!dernier) e.pause_s = Number(m.querySelector('#lPau').value) || 0;
     m.fermer(); peindreEditeur();
@@ -1370,6 +1389,71 @@ async function vueModele() {
     b.onclick = () => { chargerJour(b.dataset.j); vueModele(); });
   $('#addJour').onclick = modalNouveauJour;
   peindreEditeur();
+}
+
+// ── Maxis d'un pratiquant ────────────────────────────────────
+async function vueMaxis(filtre) {
+  const list = await api('maxis', { email: S.coach.email });
+  S.maxis = list;
+  peindreMaxis(filtre);
+}
+
+function peindreMaxis(filtre) {
+  const q = (filtre || '').toLowerCase();
+  const vus = S.maxis.filter(m => !q || (m.nom + ' ' + m.groupe).toLowerCase().includes(q));
+
+  $('#zone').innerHTML = `
+    <p class="consigne">Le 1RM sert à traduire un pourcentage en kilos. Sans valeur
+      saisie, il est estimé depuis les séries réalisées (formule d'Epley) — l'estimation
+      suffit souvent, la mesure la remplace dès qu'elle existe.</p>
+    <div class="champ" style="margin-top:14px"><input class="f" id="mq" placeholder="Rechercher un exercice" value="${filtre || ''}"></div>
+    ${vus.map(m => `<div class="ligne">
+      <div class="g">
+        <div class="nom">${m.nom}${m.auProgramme ? '' : ''}</div>
+        <div class="meta">${m.rm_kg
+          ? m.rm_kg + ' kg · ' + m.source
+          : 'aucune donnée'}${m.auProgramme ? ' · au programme' : ''}</div>
+      </div>
+      <button class="poignee" data-mx="${m.exercice_id}" aria-label="Modifier le max de ${m.nom}">✎</button>
+    </div>`).join('') || `<div class="empty">Aucun exercice.</div>`}`;
+
+  const champ = $('#mq');
+  champ.oninput = () => { const v = champ.value; peindreMaxis(v); const n = $('#mq'); n.focus(); n.setSelectionRange(v.length, v.length); };
+  $('#zone').querySelectorAll('[data-mx]').forEach(b =>
+    b.onclick = () => modalMaxi(S.maxis.find(x => String(x.exercice_id) === b.dataset.mx)));
+}
+
+function modalMaxi(m) {
+  const w = modal(m.nom, `
+    <div class="champ"><label>1RM mesuré (kg)</label>
+      <input class="f" id="xKg" type="number" min="0" step="2.5" value="${m.source === 'mesuré' ? m.rm_kg : ''}"
+        placeholder="${m.rm_kg ? m.rm_kg + ' estimés' : 'aucune donnée'}"></div>
+    <p class="consigne">${m.rm_kg
+      ? `Valeur actuelle : <strong>${m.rm_kg} kg</strong> (${m.source}).`
+      : 'Aucune série enregistrée sur cet exercice, donc aucune estimation possible.'}</p>
+    <div class="barre"><button class="btn" id="xAnn">Annuler</button>
+      <button class="btn plein" id="xOk" style="flex:1">Enregistrer</button></div>
+    ${m.source === 'mesuré' ? '<div class="barre"><button class="btn danger" id="xDel">Revenir à l\'estimation</button></div>' : ''}`);
+
+  w.querySelector('#xAnn').onclick = w.fermer;
+  w.querySelector('#xOk').onclick = async function () {
+    this.disabled = true;
+    try {
+      await api('maxiSave', { email:S.coach.email, exercice_id:m.exercice_id, rm_kg:w.querySelector('#xKg').value });
+      w.fermer(); toast('Max enregistré'); vueMaxis();
+    } catch (err) {
+      toast(err.message === 'VALEUR_INVALIDE' ? 'Donnez une valeur en kilos' : err.message);
+      this.disabled = false;
+    }
+  };
+  const d = w.querySelector('#xDel');
+  if (d) d.onclick = async function () {
+    this.disabled = true;
+    try {
+      await api('maxiSuppr', { email:S.coach.email, exercice_id:m.exercice_id });
+      w.fermer(); toast('Retour à l\'estimation'); vueMaxis();
+    } catch (err) { toast(err.message); this.disabled = false; }
+  };
 }
 
 // ── Programme d'un pratiquant ────────────────────────────────
