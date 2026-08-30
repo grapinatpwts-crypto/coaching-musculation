@@ -30,6 +30,7 @@ const TABS = {
   MAXIS: 'Maxis',
   AJUSTEMENTS: 'Ajustements',
   IMPORT: 'Import',
+  ACTIVITES: 'Activites',
   PROGRAMMES: 'Programmes',
   SEANCES: 'Seances',
   SERIES: 'Series'
@@ -37,6 +38,25 @@ const TABS = {
 
 /** Statuts d'une attribution. Un seul « En cours » par pratiquant à la fois. */
 const STATUTS = { COURS: 'En cours', TERMINE: 'Terminé', ARCHIVE: 'Archivé' };
+
+/**
+ * Sports proposés à la saisie libre, groupés par famille.
+ * Liste volontairement courte : de quoi couvrir ce que font vraiment des
+ * pratiquants de musculation, pas un catalogue de fédération.
+ */
+const SPORTS = [
+  ['Salle', ['Musculation', 'Séance libre', 'Cross-training', 'Cardio', 'Circuit training',
+             'Poids de corps', 'Kettlebell', 'Rameur', 'Vélo d\'intérieur', 'Elliptique', 'Stepper']],
+  ['Course', ['Course à pied', 'Trail', 'Tapis de course', 'Marche', 'Marche nordique', 'Randonnée']],
+  ['Vélo', ['Vélo de route', 'VTT', 'Spinning', 'Gravel']],
+  ['Eau', ['Natation', 'Eau libre', 'Aviron', 'Kayak', 'Surf', 'Paddle']],
+  ['Collectif', ['Football', 'Basketball', 'Handball', 'Rugby', 'Volleyball']],
+  ['Raquette', ['Tennis', 'Padel', 'Badminton', 'Squash', 'Tennis de table']],
+  ['Combat', ['Boxe', 'Arts martiaux', 'Grappling', 'Escrime']],
+  ['Souplesse', ['Yoga', 'Pilates', 'Étirements', 'Mobilité', 'Méditation']],
+  ['Glisse', ['Ski', 'Snowboard', 'Patinage', 'Escalade', 'Équitation']],
+  ['Autre', ['Danse', 'Golf', 'Jardinage', 'Autre']]
+];
 
 /** Statuts d'un pratiquant, du plus ouvert au plus fermé. */
 const ETATS = { NOUVEAU: 'Nouveau', ACTIF: 'Actif', INACTIF: 'Inactif', ARCHIVE: 'Archivé' };
@@ -66,6 +86,9 @@ const SCHEMA = {
   // exercices désignés par leur NOM. Rien n'y est conservé, c'est un sas.
   Import: ['jour', 'bloc', 'ordre', 'exercice', 'series', 'reps_cible', 'duree_s',
            'charge_cible', 'pct_rm', 'cadence', 'pause_s', 'repos_s'],
+  // Activités : tout ce qui se fait hors programme. Une sortie course, un match,
+  // une séance improvisée. Le pratiquant les consigne lui-même.
+  Activites: ['id', 'email', 'date', 'sport', 'duree_min', 'distance_km', 'effort', 'notes', 'cree_le'],
   // Programmes : les lignes RÉELLES d'une attribution, personnalisables sans
   // toucher au modèle dont elles sont issues.
   Programmes: ['id', 'attribution_id', 'email', 'jour', 'bloc', 'ordre', 'exercice_id', 'series', 'reps_cible', 'duree_s', 'charge_cible', 'pct_rm', 'cadence', 'pause_s', 'repos_s'],
@@ -158,6 +181,11 @@ function route_(action, p, user, profil, estCoach) {
     case 'reprendreExercice': return reprendreExercice_(user.email, p);
     case 'historique':     return historique_(user.email, p.exercice_id);
     case 'ajuster':        return ajuster_(user.email, p);
+    case 'activites':      return activites_(cibleEmail_(user, p, estCoach), p);
+    case 'accueil':        return accueil_(user.email);
+    case 'mesProgrammes':  return mesProgrammes_(user.email);
+    case 'activiteSave':   return activiteSave_(user.email, p);
+    case 'activiteSuppr':  return activiteSuppr_(user.email, p.id);
     case 'calendrier':     return calendrier_(cibleEmail_(user, p, estCoach), p);
     case 'catalogue':      return catalogue_();
     case 'coachAthletes':  return guardCoach_(estCoach, coachAthletes_);
@@ -418,6 +446,7 @@ function bootstrap_(user, profil, estCoach) {
     objectif: profil ? profil.objectif : '',
     estCoach: estCoach,
     coach: CONFIG.COACH_NOM,
+    sports: SPORTS,
     jours: jours.sort(triJours_),
     nbSeances: seances.length,
     derniereSeance: seances.length ? seances[seances.length - 1].date : null,
@@ -1277,6 +1306,159 @@ function maxiSuppr_(p) {
     return String(m.email).toLowerCase() === email && String(m.exercice_id) === ex;
   });
   return { supprimes: n };
+}
+
+// ─────────────────────────────────────────────────────────────
+// 7 sexies. ACTIVITÉS LIBRES
+// ─────────────────────────────────────────────────────────────
+
+/**
+ * Tout ce qui se fait hors programme : une sortie course, un match, une séance
+ * improvisée. Le pratiquant les consigne lui-même ; le coach les voit sur la fiche.
+ */
+function activites_(email, p) {
+  const fin = p && p.jusqua ? new Date(p.jusqua) : new Date();
+  const debut = p && p.depuis ? new Date(p.depuis) : new Date(fin.getTime() - 365 * 86400000);
+
+  return lire_(TABS.ACTIVITES)
+    .filter(function (a) {
+      if (String(a.email).toLowerCase() !== email) return false;
+      const d = new Date(a.date);
+      return d >= debut && d <= fin;
+    })
+    .map(function (a) {
+      return {
+        id: a.id, date: a.date, sport: a.sport,
+        duree_min: Number(a.duree_min) || 0,
+        distance_km: Number(a.distance_km) || 0,
+        effort: Number(a.effort) || 0,
+        notes: a.notes || ''
+      };
+    })
+    .sort(function (a, b) { return new Date(b.date) - new Date(a.date); });
+}
+
+function activiteSave_(email, p) {
+  const sport = String(p.sport || '').trim();
+  if (!sport) throw new Error('SPORT_REQUIS');
+  const champs = {
+    date: p.date ? new Date(p.date) : new Date(),
+    sport: sport,
+    duree_min: Number(p.duree_min) || 0,
+    distance_km: Number(p.distance_km) || 0,
+    // Perception de l'effort, de 0 à 10. Zéro vaut « non renseigné ».
+    effort: Math.max(0, Math.min(10, Number(p.effort) || 0)),
+    notes: String(p.notes || '')
+  };
+
+  if (p.id) {
+    // On ne modifie que ses propres activités.
+    const sienne = lire_(TABS.ACTIVITES).filter(function (a) {
+      return String(a.id) === String(p.id) && String(a.email).toLowerCase() === email;
+    })[0];
+    if (!sienne) throw new Error('ACTIVITE_INTROUVABLE');
+    majLigne_(TABS.ACTIVITES, 'id', p.id, champs);
+    return { id: p.id };
+  }
+
+  champs.id = uid_('AC');
+  champs.email = email;
+  champs.cree_le = new Date();
+  ajouter_(TABS.ACTIVITES, champs);
+  return { id: champs.id };
+}
+
+function activiteSuppr_(email, id) {
+  if (!id) throw new Error('ID_REQUIS');
+  const n = supprimerLignes_(TABS.ACTIVITES, function (a) {
+    return String(a.id) === String(id) && String(a.email).toLowerCase() === email;
+  });
+  if (!n) throw new Error('ACTIVITE_INTROUVABLE');
+  return { supprime: true };
+}
+
+/**
+ * Ce que le pratiquant voit en arrivant : sa prochaine séance et son programme
+ * en cours, sans le détail des exercices. Le détail est à un clic.
+ */
+function accueil_(email) {
+  const att = attributionActive_(email);
+  const lignes = lignesProgramme_(email);
+
+  const jours = [];
+  lignes.forEach(function (l) { if (jours.indexOf(l.jour) === -1) jours.push(l.jour); });
+  jours.sort(triJours_);
+
+  const seances = lire_(TABS.SEANCES).filter(function (s) {
+    return String(s.email).toLowerCase() === email;
+  });
+
+  // Prochaine séance : le premier jour du programme à venir dans la semaine,
+  // en repartant au début si la semaine est finie.
+  const aujourdhui = new Date().getDay();          // 0 = dimanche
+  const rangSemaine = function (j) {
+    const t = String(j).toLowerCase();
+    for (let i = 0; i < SEMAINE.length; i++) if (t.indexOf(SEMAINE[i]) !== -1) return (i + 1) % 7;
+    return -1;
+  };
+  let prochaine = null, ecart = 99;
+  jours.forEach(function (j) {
+    const r = rangSemaine(j);
+    if (r === -1) return;
+    let d = (r - aujourdhui + 7) % 7;
+    // Une séance du jour déjà terminée renvoie à la semaine suivante.
+    if (d === 0 && seanceTerminee_(seances, j)) d = 7;
+    if (d < ecart) { ecart = d; prochaine = { jour: j, dans: d }; }
+  });
+
+  let progression = null;
+  if (att) {
+    const mod = att.modele_id
+      ? lire_(TABS.MODELES).filter(function (m) { return String(m.id) === String(att.modele_id); })[0]
+      : null;
+    att.duree_semaines = mod ? mod.duree_semaines : 0;
+    progression = progression_(att, lignes, seances);
+  }
+
+  return {
+    jours: jours,
+    prochaine: prochaine,
+    programme: att ? {
+      id: att.id, nom: att.nom, date_debut: att.date_debut,
+      duree_semaines: Number(att.duree_semaines) || 0
+    } : null,
+    progression: progression,
+    nbSeances: seances.length,
+    derniere: seances.length ? seances[seances.length - 1].date : null,
+    activites: activites_(email, { depuis: new Date(Date.now() - 30 * 86400000).toISOString() }).slice(0, 5)
+  };
+}
+
+/** Une séance de ce jour a-t-elle déjà été close aujourd'hui ? */
+function seanceTerminee_(seances, jour) {
+  const minuit = new Date(); minuit.setHours(0, 0, 0, 0);
+  return seances.some(function (s) {
+    return String(s.jour) === String(jour) && new Date(s.date) >= minuit &&
+           s.duree_min !== '' && s.duree_min !== null && s.duree_min !== undefined;
+  });
+}
+
+/** Historique complet des programmes du pratiquant, pour lui-même. */
+function mesProgrammes_(email) {
+  const noms = {};
+  lire_(TABS.EXERCICES).forEach(function (e) { noms[e.id] = e.nom; });
+  const lignes = lire_(TABS.PROGRAMMES);
+
+  return lire_(TABS.ATTRIBUTIONS)
+    .filter(function (a) { return String(a.email).toLowerCase() === email; })
+    .sort(function (a, b) { return new Date(b.date_debut) - new Date(a.date_debut); })
+    .map(function (a) {
+      const mien = lignes.filter(function (l) { return String(l.attribution_id) === String(a.id); });
+      return {
+        id: a.id, nom: a.nom, statut: a.statut, date_debut: a.date_debut, date_fin: a.date_fin || '',
+        jours: grouperEnJours_(mien, noms)
+      };
+    });
 }
 
 // ─────────────────────────────────────────────────────────────

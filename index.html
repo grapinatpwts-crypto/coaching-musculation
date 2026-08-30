@@ -180,6 +180,11 @@ header h2{font-size:30px;text-transform:uppercase;line-height:1}
 .chip.actif{background:rgba(111,191,142,.15);color:#6FBF8E}
 .chip.inactif{background:#2A2A2A;color:var(--dust)}
 .chip.archive{background:none;border:1px dashed var(--edge);color:var(--dust)}
+/* Accueil : deux grandes cartes, tout le reste en dessous */
+.card.grande{align-items:center}
+.nom.gros{font-size:19px}
+.fleche-carte{font-size:26px;color:var(--dust);flex:0 0 auto;line-height:1}
+.curseur{width:100%;accent-color:var(--brand);height:34px}
 .jauge{height:6px;border-radius:3px;background:#2A2A2A;overflow:hidden;margin:9px 0 7px}
 .jauge i{display:block;height:100%;background:var(--brand);border-radius:3px;
   transition:width .4s ease-out}
@@ -564,7 +569,7 @@ async function onGoogle(res) {
 function construireNav(estCoach) {
   const onglets = estCoach
     ? [['athletes','Athlètes'], ['modeles','Modèles'], ['biblio','Bibliothèque'], ['reglages','Réglages']]
-    : [['seance','Séance'], ['calendrier','Calendrier'], ['progres','Progrès']];
+    : [['accueil','Accueil'], ['calendrier','Calendrier'], ['progres','Progrès']];
   if (!onglets.some(o => o[0] === S.vue)) S.vue = onglets[0][0];
   $('#nav').innerHTML = onglets.map(([v, t]) =>
     `<button data-vue="${v}" aria-pressed="${v === S.vue}">${t}</button>`).join('');
@@ -633,9 +638,192 @@ async function rendre() {
     }
     return vueCoach();
   }
+  if (S.vue === 'accueil') return vueAccueil();
   if (S.vue === 'seance') return vueSeance();
+  if (S.vue === 'programmes') return vueMesProgrammes();
   if (S.vue === 'calendrier') return vueCalendrier();
   if (S.vue === 'progres') return vueProgres();
+}
+
+// ── Accueil du pratiquant ────────────────────────────────────
+const salut = () => {
+  const h = new Date().getHours();
+  return h < 6 ? 'Bonne nuit' : h < 12 ? 'Bonjour' : h < 18 ? 'Bon après-midi' : 'Bonsoir';
+};
+
+const quand = d => d === 0 ? "aujourd'hui" : d === 1 ? 'demain' : `dans ${d} jours`;
+
+async function vueAccueil() {
+  const app = $('#app');
+  app.innerHTML = `<header>
+      <div class="titre-bloc">
+        <h2>${salut()} ${(S.moi.nom || '').split(' ')[0]}</h2>
+        ${S.moi.coach ? `<span class="signe">coaché par ${S.moi.coach}</span>` : ''}
+      </div>
+      <button class="quitter" id="quitter" title="Se déconnecter">Quitter</button>
+    </header><div id="zone"><div class="empty">Chargement…</div></div>`;
+
+  let a;
+  try { a = (await lire('accueil', {}, 'accueil')).d; }
+  catch (err) { $('#zone').innerHTML = `<div class="empty">Impossible de charger.<br>${err.message}</div>`; return; }
+  S.accueil = a;
+
+  const p = a.progression;
+  const part = p ? Math.round(p.part * 100) : 0;
+
+  $('#zone').innerHTML = `
+    ${a.prochaine ? `
+      <div class="eyebrow">Prochaine séance</div>
+      <button class="card grande" id="allerSeance">
+        <div class="body">
+          <div class="nom gros">${a.prochaine.jour}</div>
+          <div class="meta">${quand(a.prochaine.dans)}</div>
+        </div>
+        <span class="fleche-carte">›</span>
+      </button>`
+    : `<div class="empty">Aucune séance programmée.<br>${
+        S.moi.coach ? S.moi.coach + ' ne vous a pas encore attribué de programme.' : ''}</div>`}
+
+    ${a.programme ? `
+      <div class="eyebrow" style="margin-top:26px">Mon programme</div>
+      <div class="card" style="display:block">
+        <div class="nom gros">${a.programme.nom}</div>
+        <div class="meta">${p && p.duree_semaines
+          ? `semaine ${Math.min(p.semaine, p.duree_semaines)} sur ${p.duree_semaines}`
+          : p ? `semaine ${p.semaine}` : ''}${
+          a.programme.date_debut ? ' · depuis le ' + new Date(a.programme.date_debut).toLocaleDateString('fr-FR') : ''}</div>
+        ${p ? `<div class="jauge"><i style="width:${part}%"></i></div>
+        <div class="meta bas">${p.faites} séance${p.faites > 1 ? 's' : ''} sur ${p.attendues} attendue${p.attendues > 1 ? 's' : ''}</div>` : ''}
+        <div class="barre">
+          <button class="btn" id="detail" style="flex:1">Voir le détail</button>
+          <button class="btn" id="tous">Tous mes programmes</button>
+        </div>
+      </div>` : ''}
+
+    <div class="barre" style="margin-top:26px">
+      <button class="btn plein" id="consigner" style="flex:1">＋ Consigner une activité</button>
+    </div>
+
+    ${a.activites.length ? `
+      <div class="eyebrow" style="margin:26px 0 10px">Dernières activités</div>
+      ${a.activites.map(carteActivite).join('')}` : ''}`;
+
+  const go = () => { S.jour = a.prochaine.jour; S.vue = 'seance'; rendre(); };
+  const bs = $('#allerSeance'); if (bs) bs.onclick = go;
+  const bd = $('#detail'); if (bd) bd.onclick = go;
+  const bt = $('#tous'); if (bt) bt.onclick = () => { S.vue = 'programmes'; rendre(); };
+  $('#consigner').onclick = () => modalActivite(null);
+  $('#zone').querySelectorAll('[data-act]').forEach(b =>
+    b.onclick = () => modalActivite(a.activites.find(x => x.id === b.dataset.act)));
+}
+
+function carteActivite(x) {
+  const d = new Date(x.date);
+  const jours = Math.floor((Date.now() - d) / 86400000);
+  const detail = [
+    x.duree_min ? x.duree_min + ' min' : '',
+    x.distance_km ? x.distance_km + ' km' : '',
+    x.effort ? 'effort ' + x.effort + '/10' : ''
+  ].filter(Boolean).join(' · ');
+  return `<button class="ligne" data-act="${x.id}" style="width:100%;text-align:left">
+    <div class="g">
+      <div class="nom">${x.sport}</div>
+      <div class="meta">${detail || 'sans détail'}</div>
+    </div>
+    <span class="meta" style="white-space:nowrap">${
+      jours === 0 ? "aujourd'hui" : jours === 1 ? 'hier' : 'il y a ' + jours + ' j'}</span>
+  </button>`;
+}
+
+/**
+ * Consigner une activité hors programme. Le sport est choisi dans une liste
+ * groupée par famille ; « Séance libre » couvre la séance à nu, sans programme.
+ */
+function modalActivite(x) {
+  const a = x || { id:'', sport:'', date:new Date().toISOString().slice(0,10),
+                   duree_min:'', distance_km:'', effort:5, notes:'' };
+  const jour = a.date ? new Date(a.date).toISOString().slice(0, 10) : '';
+
+  const w = modal(x ? 'Modifier l\'activité' : 'Consigner une activité', `
+    <div class="champ"><label>Activité</label>
+      <select class="f" id="aSport">
+        <option value="">— Choisir —</option>
+        ${(S.moi.sports || []).map(([famille, liste]) => `<optgroup label="${famille}">
+          ${liste.map(s => `<option ${s === a.sport ? 'selected' : ''}>${s}</option>`).join('')}
+        </optgroup>`).join('')}
+      </select></div>
+    <div class="duo">
+      <div class="champ"><label>Date</label><input class="f" id="aDate" type="date" value="${jour}"></div>
+      <div class="champ"><label>Durée (min)</label><input class="f" id="aDuree" type="number" min="0" value="${a.duree_min || ''}"></div>
+    </div>
+    <div class="champ"><label>Distance (km) — si ça s'y prête</label>
+      <input class="f" id="aDist" type="number" min="0" step="0.1" value="${a.distance_km || ''}"></div>
+    <div class="champ"><label>Perception de l'effort — <span id="aEffortVal">${a.effort || 5}</span> sur 10</label>
+      <input class="curseur" id="aEffort" type="range" min="0" max="10" value="${a.effort || 5}"></div>
+    <div class="champ"><label>Notes</label><textarea class="f" id="aNotes" rows="3"
+      placeholder="Sensations, météo, partenaires…">${a.notes || ''}</textarea></div>
+    <div class="barre"><button class="btn" id="aAnn">Annuler</button>
+      <button class="btn plein" id="aOk" style="flex:1">Enregistrer</button></div>
+    ${x ? '<div class="barre"><button class="btn danger" id="aDel">Supprimer</button></div>' : ''}`);
+
+  const cur = w.querySelector('#aEffort');
+  cur.oninput = () => { w.querySelector('#aEffortVal').textContent = cur.value; };
+  w.querySelector('#aAnn').onclick = w.fermer;
+
+  w.querySelector('#aOk').onclick = async function () {
+    const sport = w.querySelector('#aSport').value;
+    if (!sport) return toast('Choisissez une activité');
+    this.disabled = true;
+    try {
+      await api('activiteSave', {
+        id: a.id || undefined, sport: sport,
+        date: w.querySelector('#aDate').value,
+        duree_min: w.querySelector('#aDuree').value,
+        distance_km: w.querySelector('#aDist').value,
+        effort: cur.value,
+        notes: w.querySelector('#aNotes').value
+      });
+      w.fermer(); toast('Activité enregistrée');
+      cache('accueil', undefined); S.cal = null;
+      vueAccueil();
+    } catch (err) { toast(err.message); this.disabled = false; }
+  };
+
+  if (x) w.querySelector('#aDel').onclick = async function () {
+    this.disabled = true;
+    try {
+      await api('activiteSuppr', { id: a.id });
+      w.fermer(); toast('Activité supprimée'); vueAccueil();
+    } catch (err) { toast(err.message); this.disabled = false; }
+  };
+}
+
+// ── Tous mes programmes ──────────────────────────────────────
+async function vueMesProgrammes() {
+  const app = $('#app');
+  app.innerHTML = `<header><h2>Mes programmes</h2>
+    <button class="close" id="retourAccueil">← Accueil</button></header>
+    <div id="zone"><div class="empty">Chargement…</div></div>`;
+  $('#retourAccueil').onclick = () => { S.vue = 'accueil'; rendre(); };
+
+  const list = await api('mesProgrammes');
+  $('#zone').innerHTML = list.map(pr => `
+    <details class="pli" ${pr.statut === 'En cours' ? 'open' : ''}>
+      <summary>
+        <span class="eyebrow">${pr.nom}</span>
+        <span class="compte">${pr.statut}</span>
+      </summary>
+      <div class="meta" style="padding:0 2px 10px">${
+        pr.date_debut ? 'du ' + new Date(pr.date_debut).toLocaleDateString('fr-FR') : ''}${
+        pr.date_fin ? ' au ' + new Date(pr.date_fin).toLocaleDateString('fr-FR') : ''}</div>
+      ${pr.jours.map(j => `<div class="ligne">
+        <div class="g">
+          <div class="nom">${j.jour}</div>
+          <div class="meta">${j.blocs.length} bloc${j.blocs.length > 1 ? 's' : ''} · ${
+            j.blocs.reduce((t, b) => t + b.exercices.length, 0)} exercices</div>
+        </div>
+      </div>`).join('') || `<div class="empty" style="padding:14px 0">Aucun jour composé.</div>`}
+    </details>`).join('') || `<div class="empty">Aucun programme pour l'instant.</div>`;
 }
 
 // ── Vue séance ───────────────────────────────────────────────
@@ -647,18 +835,16 @@ async function vueSeance() {
   }
   app.innerHTML = `
     <header>
-      <div class="titre-bloc">
-        <h2>${S.moi.nom.split(' ')[0] || 'Salut'}</h2>
-        ${S.moi.coach ? `<span class="signe">coaché par ${S.moi.coach}</span>` : ''}
-      </div>
-      <span class="streak num">${S.moi.nbSeances} séance${S.moi.nbSeances > 1 ? 's' : ''}</span>
-      <button class="quitter" id="quitter" title="Se déconnecter">Quitter</button>
+      <h2>Séance</h2>
+      <button class="close" id="retourAccueil">← Accueil</button>
     </header>
     <div class="eyebrow" id="avancement">Programme</div>
     <div class="days">${S.moi.jours.map(j =>
       `<button class="day" data-jour="${j}" aria-pressed="${j === S.jour}">${j}</button>`).join('')}</div>
     <div id="liste"><div class="empty">Chargement…</div></div>`;
 
+  const ra = $('#retourAccueil');
+  if (ra) ra.onclick = () => { S.vue = 'accueil'; rendre(); };
   app.querySelectorAll('.day').forEach(b => b.onclick = () => {
     S.jour = b.dataset.jour; vueSeance();
   });
@@ -1091,6 +1277,7 @@ function modalFinSeance() {
       w.fermer();
       toast('Séance enregistrée');
       S.seanceId = null; S.debut = null; S.faits = {}; S.finis = []; S.cal = null;
+      cache('accueil', undefined);   // la prochaine séance a changé
       try { S.moi = await api('bootstrap'); sauverSession(); } catch (err) {}
       vueSeance();
     } catch (err) { toast(err.message); this.disabled = false; }

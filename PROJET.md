@@ -85,7 +85,8 @@ côté, zone sûre respectée). Régénérables : voir § 9.
 | `Attributions` | id, email, modele_id, nom, date_debut, date_fin, statut, **paye**, notes, cree_le |
 | `Maxis` | id, email, exercice_id, rm_kg, date, source |
 | `Programmes` | id, **attribution_id**, email, jour, bloc, ordre, exercice_id, series, reps_cible, duree_s, charge_cible, **pct_rm**, cadence, pause_s, repos_s |
-| `Seances` | id, email, date, jour, duree_min, ressenti, notes, **exercices_finis** |
+| `Seances` | id, email, date, jour, duree_min, ressenti, notes, exercices_finis |
+| `Activites` | id, email, date, sport, duree_min, distance_km, effort, notes, cree_le |
 | `Series` | id, seance_id, email, exercice_id, serie_num, reps, **duree_s**, charge, horodatage |
 
 Sept exercices d'exemple créés par `setup()` : EX001 développé couché, EX002 squat,
@@ -642,6 +643,52 @@ Le fichier `modele-import.xlsx`, à la racine, sert de gabarit : une notice, la 
 du modèle, la grille à remplir, et la liste des exercices disponibles en référence.
 **Il ne contient aucun contenu acheté**, seulement la structure.
 
+## 8 quindecies. L'accueil du pratiquant
+
+Écran d'arrivée, calqué sur ce que HexFit fait bien et débarrassé de ce qu'il fait
+en trop.
+
+**Ce qu'on affiche.** Une salutation selon l'heure, la **prochaine séance
+programmée** avec son échéance — aujourd'hui, demain, dans trois jours — et le
+**programme en cours** : nom, semaine sur durée, barre d'assiduité. Puis deux liens,
+« Voir le détail » et « Tous mes programmes ».
+
+**Sans le détail des exercices.** L'accueil dit quoi et quand, pas comment. Le
+contenu de la séance est à un appui.
+
+`accueil_()` calcule la prochaine séance en comparant les jours du programme au jour
+courant, modulo sept. Une séance du jour **déjà close** renvoie à la semaine
+suivante : sinon l'app proposerait éternellement de refaire ce qui vient d'être fait.
+Vérifié sur les sept jours de la semaine.
+
+**La navigation du pratiquant** devient Accueil · Calendrier · Progrès. L'écran de
+séance n'est plus un onglet mais une destination, atteinte depuis l'accueil.
+
+## 8 sexdecies. Activités libres
+
+Tout ne se passe pas dans le programme : une sortie course, un match, une séance
+improvisée. `Coach ▸ … ▸ ＋ Consigner une activité` enregistre sport, date, durée,
+distance, **perception de l'effort de 0 à 10** et notes.
+
+Le sport se choisit dans une liste groupée par famille — salle, course, vélo, eau,
+collectif, raquette, combat, souplesse, glisse. Volontairement courte : de quoi
+couvrir ce que font vraiment des pratiquants de musculation, pas un catalogue de
+fédération. « Séance libre » couvre la séance à nu, hors programme.
+
+### Ce qu'on a repris de HexFit, et ce qu'on a écarté
+
+| | |
+|---|---|
+| Repris | accueil qui dit la prochaine séance et le programme en cours |
+| Repris | saisie d'activité libre avec liste de sports et effort perçu 0-10 |
+| Repris | bande de jours marquant ceux qui portent quelque chose (déjà dans le calendrier) |
+| **Écarté** | nutrition — hors sujet pour ce coach |
+| **Écarté** | messagerie intégrée — SMS, e-mail et WhatsApp existent déjà et le coach les maîtrise |
+
+La messagerie mérite un mot : c'est un canal de plus à surveiller, un historique de
+plus à conserver, et une conversation qui n'existe nulle part ailleurs. Le bouton
+**Prévenir** (§ 8 duodecies) fait le travail avec les outils que tout le monde a déjà.
+
 ## 9. Parti pris visuel — charte Wellness Sport Club
 
 L'app reprend l'identité de **Wellness Sport Club** (`wellness-sportclub.fr`),
@@ -709,8 +756,8 @@ Ce qui reste, par ordre d'utilité décroissante.
    Coach ▸ Réglages. Compléter ensuite des exercices propres au coach (§ 8 nonies).
 2. **Installer sur téléphone** et juger l'ergonomie réelle, téléphone en main
    entre deux séries. Safari sur iOS, Chrome sur Android.
-3. **Étendre l'ajustement du pratiquant** au-delà de la charge, si le besoin
-   apparaît à l'usage — les répétitions, par exemple (§ 8 octies).
+3. **Faire apparaître les activités libres dans le calendrier**, à côté des séances
+   du programme, et dans la fiche que consulte le coach.
 4. **Activer le déclencheur hebdomadaire** sur `rapportHebdo()`, depuis l'éditeur
    Apps Script (`Déclencheurs ▸ Ajouter`). Il n'écrit qu'au coach, jamais aux
    pratiquants : l'automatiser ne contredit pas le principe du § 1. L'envoi manuel
