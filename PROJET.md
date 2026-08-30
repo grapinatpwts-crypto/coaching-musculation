@@ -78,7 +78,7 @@ côté, zone sûre respectée). Régénérables : voir § 9.
 | Onglet | Colonnes |
 |---|---|
 | `Pratiquants` | email, nom, **statut**, **telephone**, date_inscription, objectif, **notes**, actif |
-| `Exercices` | id, nom, groupe, equipement, consigne, **photo**, video |
+| `Exercices` | id, nom, **nom_en**, groupe, equipement, consigne, photo, video |
 | `Ajustements` | id, email, attribution_id, exercice_id, charge, note, maj_le |
 | `Modeles` | id, nom, categorie, difficulte, description, duree_semaines, statut, cree_le |
 | `ModeleLignes` | id, modele_id, jour, bloc, ordre, exercice_id, series, reps_cible, duree_s, charge_cible, **pct_rm**, cadence, pause_s, repos_s |
@@ -564,6 +564,26 @@ Deux envois existent dans tout le projet, et deux seulement :
 
 `rapportHebdo` peut donc être automatisé sans réserve : il ne s'adresse qu'au coach.
 Aucune fonction n'écrit à un pratiquant sans action humaine.
+
+## 8 terdecies. Programmes types
+
+`Coaching Fitness ▸ Réglages ▸ Importer dix programmes types` verse dix méthodes
+largement documentées comme modèles réutilisables : 5×5 débutant, Force 3 jours,
+Push Pull Legs, Haut/Bas 4 jours, Full body débutant, Cycle 5/3/1, Texas Method,
+Madcow 5×5, Split 5 jours, Sans matériel. **135 lignes d'exercices au total**,
+toutes rattachées au catalogue de départ.
+
+**Sur les droits.** Un schéma séries × répétitions est une méthode, pas une œuvre :
+il se reprend librement. Les descriptions sont rédigées pour ce projet, aucune n'est
+recopiée, et l'origine est citée quand la méthode porte le nom de son auteur —
+Rippetoe pour Starting Strength, Wendler pour 5/3/1. C'est de l'honnêteté autant que
+du service : le coach voudra remonter à la source.
+
+Ce sont des **points de départ à adapter**. Les pourcentages supposent un max connu ;
+les charges fixes sont laissées à zéro quand elles dépendent trop de la personne.
+
+L'import est relançable : un modèle portant déjà le même nom est laissé intact, le
+coach ayant pu l'adapter.
 
 ## 9. Parti pris visuel — charte Wellness Sport Club
 

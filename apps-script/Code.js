@@ -48,7 +48,7 @@ const SCHEMA = {
   // statut : Nouveau (inscrit, pas encore de programme démarré), Actif,
   // Inactif (accès en lecture seule), Archivé (plus d'accès, données conservées).
   Pratiquants: ['email', 'nom', 'statut', 'telephone', 'date_inscription', 'objectif', 'notes', 'actif'],
-  Exercices: ['id', 'nom', 'groupe', 'equipement', 'consigne', 'photo', 'video'],
+  Exercices: ['id', 'nom', 'nom_en', 'groupe', 'equipement', 'consigne', 'photo', 'video'],
   // Modèles : programmes génériques, sans pratiquant. Le coach les compose une fois.
   Modeles: ['id', 'nom', 'categorie', 'difficulte', 'description', 'duree_semaines', 'statut', 'cree_le'],
   ModeleLignes: ['id', 'modele_id', 'jour', 'bloc', 'ordre', 'exercice_id', 'series', 'reps_cible', 'duree_s', 'charge_cible', 'pct_rm', 'cadence', 'pause_s', 'repos_s'],
@@ -821,7 +821,7 @@ function catalogue_() {
     .filter(function (e) { return e.id !== '' && e.id !== null; })
     .map(function (e) {
       return {
-        id: e.id, nom: e.nom, groupe: e.groupe || '',
+        id: e.id, nom: e.nom, nom_en: e.nom_en || '', groupe: e.groupe || '',
         equipement: e.equipement || '', consigne: e.consigne || '',
         photo: e.photo || '', video: e.video || ''
       };
@@ -849,6 +849,7 @@ function exerciceSave_(p) {
 
   const champs = {
     nom: nom,
+    nom_en: String(p.nom_en || '').trim(),
     groupe: String(p.groupe || '').trim(),
     equipement: String(p.equipement || '').trim(),
     consigne: String(p.consigne || '').trim(),
@@ -1720,6 +1721,7 @@ function maintenance_(op) {
     case 'rapport':      rapportHebdo(); return { message: 'Rapport envoyé si des pratiquants sont à relancer.' };
     case 'catalogue':    return { message: importerCatalogue() };
     case 'exemple':      return { message: creerExemple_() };
+    case 'programmes':   return { message: importerProgrammes() };
     default: throw new Error('OPERATION_INCONNUE');
   }
 }

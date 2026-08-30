@@ -161,6 +161,9 @@ header h2{font-size:30px;text-transform:uppercase;line-height:1}
 .cad.grand{margin-top:10px;max-width:100%;height:auto}
 .prog{display:block;width:100%;height:auto;max-width:340px;margin:10px 0 4px}
 .vignette{width:52px;height:52px;object-fit:cover;border-radius:9px;background:#2A2A2A;flex:0 0 auto}
+.vo{font-size:12.5px;font-weight:400;color:var(--dust)}
+.lien{text-decoration:none;color:var(--brand-ink);display:inline-block}
+.lien:focus-visible{outline:2px solid var(--brand-ink);outline-offset:2px;border-radius:5px}
 .apercu{width:100%;max-width:280px;border-radius:10px;background:#2A2A2A;margin-bottom:10px}
 .illu{width:100%;max-width:300px;border-radius:12px;background:#2A2A2A;margin:2px 0 12px;display:block}
 .perso{font-size:13px;color:var(--brand-ink);font-weight:600;background:none;border:0;
@@ -881,6 +884,7 @@ async function ouvrirLogger(i) {
     <div class="top"><button class="close">← Retour</button>
       <span class="eyebrow">${e.groupe}</span></div>
     <h3>${e.nom}</h3>
+    ${e.nom_en ? `<p class="vo">${e.nom_en}</p>` : ''}
     ${N > 1 ? `<span class="eyebrow">Bloc ${b.bloc} · exercice ${e._e + 1} sur ${N}</span>` : ''}
     ${e.photo ? `<img class="illu" src="${e.photo}" alt="" loading="lazy">` : ''}
     <p class="consigne">${e.consigne || ''}</p>
@@ -1596,8 +1600,10 @@ async function vueBibliotheque() {
 
 function peindreBibliotheque(filtre) {
   const q = (filtre || '').toLowerCase();
+  // La recherche porte aussi sur le nom d'origine : « bench press » doit trouver.
   const vus = S.cat.filter(e =>
-    !q || (e.nom + ' ' + e.groupe + ' ' + e.equipement).toLowerCase().includes(q));
+    !q || (e.nom + ' ' + (e.nom_en || '') + ' ' + e.groupe + ' ' + e.equipement)
+            .toLowerCase().includes(q));
 
   const groupes = {};
   vus.forEach(e => (groupes[e.groupe || 'Sans groupe'] = groupes[e.groupe || 'Sans groupe'] || []).push(e));
@@ -1611,10 +1617,10 @@ function peindreBibliotheque(filtre) {
         ${groupes[g].map(e => `<div class="ligne">
           ${e.photo ? `<img class="vignette" src="${e.photo}" alt="" loading="lazy">` : ''}
           <div class="g">
-            <div class="nom">${e.nom}</div>
+            <div class="nom">${e.nom}${e.nom_en ? ` <span class="vo">(${e.nom_en})</span>` : ''}</div>
             <div class="meta">${[e.equipement, e.id].filter(Boolean).join(' · ')}</div>
           </div>
-          ${e.video ? '<span class="poignee" title="Vidéo">▶</span>' : ''}
+          ${lienExercice(e)}
           <button class="poignee" data-ex="${e.id}">✎</button>
         </div>`).join('')}
       `).join('') || `<div class="empty">Aucun exercice.</div>`}
@@ -1627,10 +1633,25 @@ function peindreBibliotheque(filtre) {
     b.onclick = () => modalExercice(S.cat.find(x => String(x.id) === b.dataset.ex)));
 }
 
+/**
+ * Symbole d'ouverture du lien associé : la vidéo si elle existe, sinon
+ * l'illustration en grand. Rien si l'exercice ne porte aucun lien.
+ */
+function lienExercice(e) {
+  const url = e.video || e.photo;
+  if (!url) return '';
+  return `<a class="poignee lien" href="${url}" target="_blank" rel="noopener"
+    title="${e.video ? 'Ouvrir la vidéo' : "Ouvrir l'illustration"}"
+    aria-label="${e.video ? 'Ouvrir la vidéo de' : "Ouvrir l'illustration de"} ${e.nom}"
+    >${e.video ? '▶' : '↗'}</a>`;
+}
+
 function modalExercice(ex) {
-  const e = ex || { id: '', nom: '', groupe: '', equipement: '', consigne: '', photo: '', video: '' };
+  const e = ex || { id:'', nom:'', nom_en:'', groupe:'', equipement:'', consigne:'', photo:'', video:'' };
   const m = modal(ex ? 'Modifier l\'exercice' : 'Nouvel exercice', `
     <div class="champ"><label>Nom</label><input class="f" id="mNom" value="${e.nom}"></div>
+    <div class="champ"><label>Nom d'origine</label>
+      <input class="f" id="mNomEn" value="${e.nom_en || ''}" placeholder="Barbell Bench Press"></div>
     <div class="duo">
       <div class="champ"><label>Groupe musculaire</label><input class="f" id="mGrp" value="${e.groupe}" list="lGrp">
         <datalist id="lGrp">${[...new Set(S.cat.map(x => x.groupe).filter(Boolean))].map(g => `<option>${g}</option>`).join('')}</datalist></div>
@@ -1654,6 +1675,7 @@ function modalExercice(ex) {
       await api('exerciceSave', {
         id: e.id || undefined,
         nom: m.querySelector('#mNom').value,
+        nom_en: m.querySelector('#mNomEn').value,
         groupe: m.querySelector('#mGrp').value,
         equipement: m.querySelector('#mEqp').value,
         consigne: m.querySelector('#mCon').value,
@@ -1828,6 +1850,9 @@ function vueReglages() {
       sur:false },
     { op:'catalogue', nom:'Importer le catalogue de départ',
       quoi:'Verse 97 exercices en français, illustrés, issus d\'une base du domaine public. Un exercice dont le nom existe déjà est ignoré : vos fiches ne sont pas touchées.',
+      sur:true },
+    { op:'programmes', nom:'Importer dix programmes types',
+      quoi:'Verse dix méthodes largement documentées — 5×5, Push Pull Legs, Haut/Bas, 5/3/1, Texas Method, split 5 jours, sans matériel… — comme modèles réutilisables. Un modèle portant déjà le même nom est laissé intact.',
       sur:true },
     { op:'exemple', nom:'Créer le programme d\'exemple',
       quoi:'Compose un modèle « Prise de masse — Haut / Bas » sur 8 semaines et l\'attribue au compte de test, démarré il y a trois semaines pour que l\'avancement soit visible. Importe le catalogue s\'il manque.',
