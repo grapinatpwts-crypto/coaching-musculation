@@ -87,6 +87,7 @@ côté, zone sûre respectée). Régénérables : voir § 9.
 | `Programmes` | id, **attribution_id**, email, jour, bloc, ordre, exercice_id, series, reps_cible, duree_s, charge_cible, **pct_rm**, cadence, pause_s, repos_s |
 | `Seances` | id, email, date, jour, duree_min, ressenti, notes, exercices_finis |
 | `Activites` | id, email, date, sport, duree_min, distance_km, effort, notes, cree_le |
+| `Photos` | email, image, maj_le |
 | `Series` | id, seance_id, email, exercice_id, serie_num, reps, **duree_s**, charge, horodatage |
 
 Sept exercices d'exemple créés par `setup()` : EX001 développé couché, EX002 squat,
@@ -518,6 +519,18 @@ programme n'est pas payé.
 qui alimente la barre : un programme peut être à sa moitié dans le calendrier sans
 que personne ne soit venu. Sans durée déclarée au modèle, la référence devient ce qui
 aurait dû être fait depuis le début.
+
+**La photo du pratiquant** s'affiche en pastille dès la liste des athlètes, et en
+grand sur sa fiche. À défaut, ses initiales.
+
+Le fichier est **réduit dans le navigateur** avant l'envoi : carré de 256 px recadré
+au centre, en JPEG, la qualité baissant par paliers jusqu'à tenir sous 44 000
+caractères. Une cellule de Sheet en accepte 50 000, et une liste de 40 athlètes ne
+doit pas peser des mégaoctets.
+
+Les images vivent dans un onglet `Photos` séparé, joint à la demande : sans ça,
+chaque lecture d'une fiche traînerait quelques kilo-octets d'image pour rien.
+Aucun service externe, aucune portée Drive supplémentaire.
 
 **La fiche du pratiquant** ouvre sur l'identité, l'objectif et trois boutons de
 contact — WhatsApp, appel, e-mail — construits depuis le téléphone normalisé au

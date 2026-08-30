@@ -31,6 +31,7 @@ const TABS = {
   AJUSTEMENTS: 'Ajustements',
   IMPORT: 'Import',
   ACTIVITES: 'Activites',
+  PHOTOS: 'Photos',
   PROGRAMMES: 'Programmes',
   SEANCES: 'Seances',
   SERIES: 'Series'
@@ -89,6 +90,9 @@ const SCHEMA = {
   // Activités : tout ce qui se fait hors programme. Une sortie course, un match,
   // une séance improvisée. Le pratiquant les consigne lui-même.
   Activites: ['id', 'email', 'date', 'sport', 'duree_min', 'distance_km', 'effort', 'notes', 'cree_le'],
+  // Photos à part : une image encodée pèse quelques kilo-octets, on ne veut pas
+  // la traîner à chaque lecture de la fiche d'un pratiquant.
+  Photos: ['email', 'image', 'maj_le'],
   // Programmes : les lignes RÉELLES d'une attribution, personnalisables sans
   // toucher au modèle dont elles sont issues.
   Programmes: ['id', 'attribution_id', 'email', 'jour', 'bloc', 'ordre', 'exercice_id', 'series', 'reps_cible', 'duree_s', 'charge_cible', 'pct_rm', 'cadence', 'pause_s', 'repos_s'],
@@ -192,6 +196,8 @@ function route_(action, p, user, profil, estCoach) {
     case 'pratiquant':     return guardCoach_(estCoach, function () { return pratiquant_(p.email); });
     case 'pratiquantSave': return guardCoach_(estCoach, function () { return pratiquantSave_(p); });
     case 'pratiquantCreer':return guardCoach_(estCoach, function () { return pratiquantCreer_(p); });
+    case 'photoSave':      return guardCoach_(estCoach, function () { return photoSave_(p); });
+    case 'photoSuppr':     return guardCoach_(estCoach, function () { return photoSuppr_(p.email); });
     case 'messageType':    return guardCoach_(estCoach, function () { return messageType_(p); });
     case 'notifierMail':   return guardCoach_(estCoach, function () { return notifierMail_(p); });
     case 'coachDetail':    return guardCoach_(estCoach, function () { return coachDetail_(p.email); });
@@ -1571,6 +1577,7 @@ function coachAthletes_() {
   const atts = lire_(TABS.ATTRIBUTIONS);
   const modeles = {};
   lire_(TABS.MODELES).forEach(function (m) { modeles[String(m.id)] = m; });
+  const images = photos_();
 
   return lire_(TABS.PRATIQUANTS)
     .filter(function (p) {
@@ -1602,6 +1609,7 @@ function coachAthletes_() {
 
       return {
         email: p.email, nom: p.nom || email.split('@')[0],
+        photo: images[email] || '',
         statut: etat, telephone: p.telephone || '', objectif: p.objectif || '',
         nbSeances: mesSeances.length, derniere: derniere,
         joursDepuis: derniere ? Math.floor((Date.now() - new Date(derniere)) / 86400000) : null,
@@ -1618,6 +1626,43 @@ function coachAthletes_() {
       if (d !== 0) return d;
       return (b.joursDepuis === null ? 9999 : b.joursDepuis) - (a.joursDepuis === null ? 9999 : a.joursDepuis);
     });
+}
+
+/** Photos des pratiquants, indexées par email. */
+function photos_() {
+  const out = {};
+  lire_(TABS.PHOTOS).forEach(function (p) {
+    if (p.email && p.image) out[String(p.email).toLowerCase()] = String(p.image);
+  });
+  return out;
+}
+
+/**
+ * Enregistre la photo d'un pratiquant, déjà redimensionnée et encodée par le
+ * navigateur. Une cellule de Sheet accepte 50 000 caractères : on refuse au-delà
+ * de 45 000 plutôt que de tronquer silencieusement l'image.
+ */
+function photoSave_(p) {
+  const email = String(p.email || '').toLowerCase();
+  const img = String(p.image || '');
+  if (!email) throw new Error('EMAIL_REQUIS');
+  if (!findPratiquant_(email)) throw new Error('PRATIQUANT_INCONNU');
+  if (img.indexOf('data:image/') !== 0) throw new Error('IMAGE_INVALIDE');
+  if (img.length > 45000) throw new Error('IMAGE_TROP_LOURDE');
+
+  const deja = lire_(TABS.PHOTOS).filter(function (x) {
+    return String(x.email).toLowerCase() === email;
+  })[0];
+  if (deja) majLigne_(TABS.PHOTOS, 'email', email, { image: img, maj_le: new Date() });
+  else ajouter_(TABS.PHOTOS, { email: email, image: img, maj_le: new Date() });
+  return { enregistree: true, poids: img.length };
+}
+
+function photoSuppr_(email) {
+  const cible = String(email || '').toLowerCase();
+  if (!cible) throw new Error('EMAIL_REQUIS');
+  supprimerLignes_(TABS.PHOTOS, function (x) { return String(x.email).toLowerCase() === cible; });
+  return { supprimee: true };
 }
 
 /** Fiche complète d'un pratiquant : identité, statut, historique des programmes. */
@@ -1640,6 +1685,7 @@ function pratiquant_(email) {
   return {
     email: p.email,
     nom: p.nom || cible.split('@')[0],
+    photo: photos_()[cible] || '',
     statut: String(p.statut || ETATS.ACTIF),
     telephone: p.telephone || '',
     objectif: p.objectif || '',

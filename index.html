@@ -82,8 +82,8 @@ header h2{font-size:30px;text-transform:uppercase;line-height:1}
 #reseau .pastille{width:7px;height:7px;border-radius:50%;background:var(--brand-ink);
   flex:0 0 auto;animation:pulse 1.8s ease-in-out infinite}
 @keyframes pulse{0%,100%{opacity:1}50%{opacity:.35}}
-.quitter{font-size:12px;font-weight:600;color:var(--dust);border:1px solid var(--edge);
-  border-radius:999px;padding:7px 12px;background:var(--plate);white-space:nowrap}
+.quitter{font-size:11.5px;font-weight:600;color:var(--dust);border:1px solid var(--edge);
+  border-radius:999px;padding:7px 11px;background:var(--plate);white-space:nowrap;flex:0 0 auto}
 
 /* Calendrier */
 .mois{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:12px}
@@ -179,6 +179,11 @@ header h2{font-size:30px;text-transform:uppercase;line-height:1}
   padding:8px 2px;text-align:left;text-decoration:underline;text-underline-offset:3px}
 /* Accueil coach : une carte par athlète, statut et avancement lisibles d'un coup */
 .ath-tete{display:flex;align-items:center;gap:10px;margin-bottom:5px}
+.avatar{width:38px;height:38px;border-radius:50%;object-fit:cover;flex:0 0 auto;
+  background:#2A2A2A;display:grid;place-items:center;font-size:13px;font-weight:700;
+  color:var(--dust);letter-spacing:.02em}
+.avatar.grand{width:64px;height:64px;font-size:20px}
+.avatar.vide{border:1px solid var(--edge)}
 .ath-tete strong{font-size:17px;flex:1;min-width:0}
 .chip{font-size:11px;font-weight:700;letter-spacing:.06em;padding:4px 9px;border-radius:999px;
   white-space:nowrap;text-transform:uppercase}
@@ -666,7 +671,7 @@ async function vueAccueil() {
         <h2>${salut()} ${(S.moi.nom || '').split(' ')[0]}</h2>
         ${S.moi.coach ? `<span class="signe">coaché par ${S.moi.coach}</span>` : ''}
       </div>
-      <button class="quitter" id="quitter" title="Se déconnecter">Quitter</button>
+      <button class="quitter" id="quitter" >Se déconnecter</button>
     </header><div id="zone"><div class="empty">Chargement…</div></div>`;
 
   let a;
@@ -1329,7 +1334,7 @@ function bip() {
 async function vueProgres() {
   const app = $('#app');
   app.innerHTML = `<header><h2>Progrès</h2>
-    <button class="quitter" id="quitter" title="Se déconnecter">Quitter</button></header>
+    <button class="quitter" id="quitter" >Se déconnecter</button></header>
     <div id="liste"><div class="empty">Chargement…</div></div>`;
   if (!S.exos.length && S.jour) await chargerSeance(S.jour);
   if (!S.exos.length) { $('#liste').innerHTML = `<div class="empty">Enregistrez une première séance pour voir vos courbes.</div>`; return; }
@@ -1372,7 +1377,7 @@ async function vueCalendrier(email) {
     S.cal = { email: cible, annee: d.getFullYear(), mois: d.getMonth(), seances: null, sel: null };
   }
   $('#app').innerHTML = `<header><h2>Calendrier</h2>
-    <button class="quitter" id="quitter" title="Se déconnecter">Quitter</button></header><div id="calzone"></div>`;
+    <button class="quitter" id="quitter" >Se déconnecter</button></header><div id="calzone"></div>`;
   await peindreCalendrier();
 }
 
@@ -1503,7 +1508,7 @@ async function vueCoach() {
           <h2>${titres[c.onglet] || 'Coach'}</h2>
           ${S.moi.coach ? `<span class="signe">${S.moi.coach}</span>` : ''}
         </div>
-        <button class="quitter" id="quitter" title="Se déconnecter">Quitter</button></header>
+        <button class="quitter" id="quitter" >Se déconnecter</button></header>
       <div id="zone"><div class="empty">Chargement…</div></div>`;
     if (c.onglet === 'biblio') return vueBibliotheque();
     if (c.onglet === 'modeles') return vueModeles();
@@ -1576,6 +1581,15 @@ async function listeAthletes() {
   });
 }
 
+/** Photo du pratiquant, ou ses initiales à défaut. */
+function avatar(a, taille) {
+  const c = taille === 'grand' ? 'avatar grand' : 'avatar';
+  if (a.photo) return `<img class="${c}" src="${a.photo}" alt="">`;
+  const ini = (a.nom || a.email || '?').split(/[\s.@_-]+/).filter(Boolean)
+    .slice(0, 2).map(m => m[0].toUpperCase()).join('');
+  return `<span class="${c} vide">${ini || '?'}</span>`;
+}
+
 function carteAthlete(a) {
   const p = a.progression;
   const part = p ? Math.round(p.part * 100) : 0;
@@ -1584,6 +1598,7 @@ function carteAthlete(a) {
 
   return `<button class="athlete" data-email="${a.email}" data-nom="${a.nom}">
     <div class="ath-tete">
+      ${avatar(a)}
       <strong>${a.nom}</strong>
       <span class="chip ${a.statut.toLowerCase().replace('é','e')}">${a.statut}</span>
     </div>
@@ -1638,8 +1653,11 @@ async function vueFiche() {
   $('#zone').innerHTML = `
     <div class="card" style="display:block">
       <div class="entete" style="margin-bottom:12px">
-        <span class="chip ${f.statut.toLowerCase().replace('é','e')}">${f.statut}</span>
-        <span class="meta" style="flex:1;text-align:right">${f.nbSeances} séance${f.nbSeances > 1 ? 's' : ''} · ${f.nbSeries} séries</span>
+        ${avatar(f, 'grand')}
+        <div style="flex:1;min-width:0">
+          <span class="chip ${f.statut.toLowerCase().replace('é','e')}">${f.statut}</span>
+          <div class="meta" style="margin-top:5px">${f.nbSeances} séance${f.nbSeances > 1 ? 's' : ''} · ${f.nbSeries} séries</div>
+        </div>
       </div>
       ${f.objectif ? `<p class="quoi"><span class="eyebrow">Objectif</span><br>${f.objectif}</p>` : ''}
       <div class="contacts">
@@ -1648,7 +1666,12 @@ async function vueFiche() {
         <a class="btn contact" href="mailto:${f.email}">E-mail</a>
       </div>
       ${!t ? `<p class="meta" style="margin-top:8px">Ajoutez un téléphone pour WhatsApp et l'appel direct.</p>` : ''}
-      <div class="barre"><button class="btn" id="editFiche" style="flex:1">Modifier la fiche</button></div>
+      <div class="barre">
+        <button class="btn" id="editFiche" style="flex:1">Modifier la fiche</button>
+        <button class="btn" id="photo">${f.photo ? 'Changer la photo' : 'Ajouter une photo'}</button>
+        ${f.photo ? '<button class="btn danger" id="photoDel">Retirer</button>' : ''}
+      </div>
+      <input type="file" id="fichierPhoto" accept="image/*" hidden>
     </div>
 
     <div class="eyebrow" style="margin:22px 0 10px">Statut</div>
@@ -1695,6 +1718,14 @@ async function vueFiche() {
       <p class="consigne">${f.notes}</p>` : ''}`;
 
   $('#editFiche').onclick = () => modalFiche(f);
+  $('#photo').onclick = () => $('#fichierPhoto').click();
+  $('#fichierPhoto').onchange = ev => envoyerPhoto(ev.target.files[0], f.email);
+  const pd = $('#photoDel');
+  if (pd) pd.onclick = async function () {
+    this.disabled = true;
+    try { await api('photoSuppr', { email: f.email }); toast('Photo retirée'); vueFiche(); }
+    catch (err) { toast(err.message); this.disabled = false; }
+  };
   $('#zone').querySelectorAll('[data-etat]').forEach(b => b.onclick = async function () {
     if (this.getAttribute('aria-pressed') === 'true') return;
     try {
@@ -1780,6 +1811,46 @@ async function modalNotifier(attributionId, email) {
       toast(err.message); this.disabled = false; this.textContent = "Envoyer l'e-mail depuis mon compte";
     }
   };
+}
+
+/**
+ * Réduit la photo dans le navigateur avant de l'envoyer : carré de 256 px,
+ * recadré au centre, en JPEG. Une cellule de Sheet ne prend que 50 000
+ * caractères, et on ne veut pas alourdir la liste des athlètes.
+ * La qualité baisse par paliers jusqu'à tenir dans le budget.
+ */
+function reduireImage(fichier, cote, budget) {
+  return new Promise((ok, ko) => {
+    const img = new Image();
+    img.onload = () => {
+      const c = Math.min(img.width, img.height);
+      const cv = document.createElement('canvas');
+      cv.width = cv.height = cote;
+      const ctx = cv.getContext('2d');
+      ctx.drawImage(img, (img.width - c) / 2, (img.height - c) / 2, c, c, 0, 0, cote, cote);
+      let q = 0.75, url = cv.toDataURL('image/jpeg', q);
+      while (url.length > budget && q > 0.32) { q -= 0.1; url = cv.toDataURL('image/jpeg', q); }
+      URL.revokeObjectURL(img.src);
+      url.length > budget ? ko(new Error('IMAGE_TROP_LOURDE')) : ok(url);
+    };
+    img.onerror = () => ko(new Error('IMAGE_ILLISIBLE'));
+    img.src = URL.createObjectURL(fichier);
+  });
+}
+
+async function envoyerPhoto(fichier, email) {
+  if (!fichier) return;
+  toast('Préparation de la photo…');
+  try {
+    const url = await reduireImage(fichier, 256, 44000);
+    await api('photoSave', { email, image: url });
+    toast('Photo enregistrée');
+    S.athletes = null;
+    vueFiche();
+  } catch (err) {
+    toast(err.message === 'IMAGE_TROP_LOURDE' ? 'Image trop lourde, essayez-en une autre'
+        : err.message === 'IMAGE_ILLISIBLE' ? 'Fichier image illisible' : err.message);
+  }
 }
 
 function modalFiche(f) {
