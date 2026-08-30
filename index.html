@@ -138,6 +138,13 @@ header h2{font-size:30px;text-transform:uppercase;line-height:1}
 .cad{display:block;overflow:visible}
 .cad.grand{margin-top:10px;max-width:100%;height:auto}
 .prog{display:block;width:100%;height:auto;max-width:340px;margin:10px 0 4px}
+.vignette{width:52px;height:52px;object-fit:cover;border-radius:9px;background:#2A2A2A;flex:0 0 auto}
+.apercu{width:100%;max-width:280px;border-radius:10px;background:#2A2A2A;margin-bottom:10px}
+.illu{width:100%;max-width:300px;border-radius:12px;background:#2A2A2A;margin:2px 0 12px;display:block}
+.perso{font-size:13px;color:var(--brand-ink);font-weight:600;background:none;border:0;
+  padding:8px 2px;text-align:left;text-decoration:underline;text-underline-offset:3px}
+.origine{display:flex;flex-direction:column;gap:2px;margin-top:12px;min-height:24px}
+.origine .dit{font-size:12.5px;color:var(--dust)}
 
 /* Sélecteur de jour */
 .days{display:flex;gap:8px;overflow-x:auto;padding-bottom:14px;margin-bottom:6px;scrollbar-width:none}
@@ -640,8 +647,43 @@ async function chargerSeance(jour) {
  * Charge à afficher. Un pourcentage de 1RM prime sur une charge fixe : c'est lui
  * qui suit la progression. On dit d'où vient le chiffre quand il est calculé.
  */
+/**
+ * Dit d'où vient la charge affichée, et laisse le pratiquant se l'approprier.
+ * Le coach fixe une charge ou un pourcentage du max ; c'est le pratiquant qui est
+ * sous la barre, il a le dernier mot, et son choix vaut pour les séances suivantes.
+ */
+function majOrigine(e, charge) {
+  const z = $('#origine');
+  if (!z) return;
+  const change = Math.abs(charge - (Number(e.charge_cible) || 0)) > 0.01;
+
+  let dit = '';
+  if (e.charge_ajustee) dit = `Votre charge · le programme dit ${e.charge_coach || '—'} kg`;
+  else if (e.charge_calculee) dit = `${e.pct_rm} % de votre max (${e.rm} kg${e.rm_source === 'estimé' ? ', estimé' : ''})`;
+  else if (e.pct_rm) dit = `${e.pct_rm} % du max — votre max n'est pas connu, à vous de juger`;
+  else if (e.charge_cible) dit = 'Charge prévue par le coach';
+
+  z.innerHTML = `${dit ? `<span class="dit">${dit}</span>` : ''}
+    ${change || e.charge_ajustee
+      ? `<button class="perso" id="garder">${change ? 'Garder ' + charge + ' kg comme ma charge' : 'Revenir à la charge du programme'}</button>`
+      : ''}`;
+
+  const g = $('#garder');
+  if (g) g.onclick = async function () {
+    this.disabled = true;
+    try {
+      await api('ajuster', { exercice_id:e.exercice_id, charge: change ? charge : 0 });
+      if (change) { e.charge_coach = e.charge_coach || e.charge_cible; e.charge_cible = charge; e.charge_ajustee = true; }
+      else { e.charge_cible = e.charge_coach || 0; e.charge_ajustee = false; }
+      toast(change ? 'Charge enregistrée' : 'Retour à la charge du programme');
+      majOrigine(e, charge);
+    } catch (err) { toast(err.message); this.disabled = false; }
+  };
+}
+
 function chargeTexte(e) {
   if (!e.charge_cible) return '';
+  if (e.charge_ajustee) return e.charge_cible + ' kg · votre charge';
   if (!e.pct_rm) return e.charge_cible + ' kg';
   const base = e.charge_calculee
     ? `${e.pct_rm} % de ${e.rm} kg${e.rm_source === 'estimé' ? ' estimés' : ''}`
@@ -770,6 +812,7 @@ async function ouvrirLogger(i) {
       <span class="eyebrow">${e.groupe}</span></div>
     <h3>${e.nom}</h3>
     ${N > 1 ? `<span class="eyebrow">Bloc ${b.bloc} · exercice ${e._e + 1} sur ${N}</span>` : ''}
+    ${e.photo ? `<img class="illu" src="${e.photo}" alt="" loading="lazy">` : ''}
     <p class="consigne">${e.consigne || ''}</p>
     ${e.cadence ? `<div class="tempo"><strong>Cadence ${e.cadence}</strong><br>${tempo(e.cadence)}
       ${courbeCadence(e.cadence, true)}</div>` : ''}
@@ -786,6 +829,7 @@ async function ouvrirLogger(i) {
         <div class="val num" id="vCharge">${charge}</div>
         <div class="row"><button data-c="-2.5">−</button><button data-c="2.5">+</button></div></div>
     </div>
+    <div id="origine" class="origine"></div>
     <button class="valider">Valider la série ${(S.faits[e.exercice_id] || []).length + 1}</button>
     <div class="barre"><button class="btn" id="finir" style="flex:1">Terminer cet exercice</button></div>`;
 
@@ -802,6 +846,7 @@ async function ouvrirLogger(i) {
       champ.textContent = reps;
     }
     $('#vCharge').textContent = charge;
+    majOrigine(e, charge);
     const btn = L.querySelector('.valider');
     btn.textContent = `Valider la série ${(S.faits[e.exercice_id] || []).length + 1}`;
     btn.disabled = auTemps && ecoule === 0;
@@ -1264,6 +1309,7 @@ function peindreBibliotheque(filtre) {
       ${Object.keys(groupes).sort((a, b) => a.localeCompare(b, 'fr')).map(g => `
         <div class="eyebrow" style="margin:16px 0 8px">${g} · ${groupes[g].length}</div>
         ${groupes[g].map(e => `<div class="ligne">
+          ${e.photo ? `<img class="vignette" src="${e.photo}" alt="" loading="lazy">` : ''}
           <div class="g">
             <div class="nom">${e.nom}</div>
             <div class="meta">${[e.equipement, e.id].filter(Boolean).join(' · ')}</div>
@@ -1282,7 +1328,7 @@ function peindreBibliotheque(filtre) {
 }
 
 function modalExercice(ex) {
-  const e = ex || { id: '', nom: '', groupe: '', equipement: '', consigne: '', video: '' };
+  const e = ex || { id: '', nom: '', groupe: '', equipement: '', consigne: '', photo: '', video: '' };
   const m = modal(ex ? 'Modifier l\'exercice' : 'Nouvel exercice', `
     <div class="champ"><label>Nom</label><input class="f" id="mNom" value="${e.nom}"></div>
     <div class="duo">
@@ -1292,6 +1338,8 @@ function modalExercice(ex) {
         <datalist id="lEqp">${['Barre', 'Haltère', 'Poulie', 'Machine', 'Kettlebell', 'Élastique', 'Poids de corps'].map(g => `<option>${g}</option>`).join('')}</datalist></div>
     </div>
     <div class="champ"><label>Consigne d'exécution</label><textarea class="f" id="mCon" rows="4">${e.consigne}</textarea></div>
+    <div class="champ"><label>Illustration</label><input class="f" id="mPho" value="${e.photo || ''}" placeholder="https://…"></div>
+    ${e.photo ? `<img class="apercu" src="${e.photo}" alt="">` : ''}
     <div class="champ"><label>Lien vidéo</label><input class="f" id="mVid" value="${e.video}" placeholder="https://youtu.be/…"></div>
     <div class="barre">
       <button class="btn" id="mAnn">Annuler</button>
@@ -1309,6 +1357,7 @@ function modalExercice(ex) {
         groupe: m.querySelector('#mGrp').value,
         equipement: m.querySelector('#mEqp').value,
         consigne: m.querySelector('#mCon').value,
+        photo: m.querySelector('#mPho').value,
         video: m.querySelector('#mVid').value
       });
       m.fermer();
@@ -1477,6 +1526,9 @@ function vueReglages() {
     { op:'jeuEssaiReset', nom:'Recharger le programme de test',
       quoi:'Efface les lignes de programme des seuls comptes de test, puis les repose.',
       sur:false },
+    { op:'catalogue', nom:'Importer le catalogue de départ',
+      quoi:'Verse 97 exercices en français, illustrés, issus d\'une base du domaine public. Un exercice dont le nom existe déjà est ignoré : vos fiches ne sont pas touchées.',
+      sur:true },
     { op:'rapport', nom:'Envoyer le rapport hebdomadaire',
       quoi:'Envoie au coach la liste des pratiquants sans séance depuis 10 jours.',
       sur:true }

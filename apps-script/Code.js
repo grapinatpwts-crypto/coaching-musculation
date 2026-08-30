@@ -24,6 +24,7 @@ const TABS = {
   MODELE_LIGNES: 'ModeleLignes',
   ATTRIBUTIONS: 'Attributions',
   MAXIS: 'Maxis',
+  AJUSTEMENTS: 'Ajustements',
   PROGRAMMES: 'Programmes',
   SEANCES: 'Seances',
   SERIES: 'Series'
@@ -34,7 +35,7 @@ const STATUTS = { COURS: 'En cours', TERMINE: 'Terminé', ARCHIVE: 'Archivé' };
 
 const SCHEMA = {
   Pratiquants: ['email', 'nom', 'actif', 'date_inscription', 'objectif'],
-  Exercices: ['id', 'nom', 'groupe', 'equipement', 'consigne', 'video'],
+  Exercices: ['id', 'nom', 'groupe', 'equipement', 'consigne', 'photo', 'video'],
   // Modèles : programmes génériques, sans pratiquant. Le coach les compose une fois.
   Modeles: ['id', 'nom', 'categorie', 'difficulte', 'description', 'duree_semaines', 'statut', 'cree_le'],
   ModeleLignes: ['id', 'modele_id', 'jour', 'bloc', 'ordre', 'exercice_id', 'series', 'reps_cible', 'duree_s', 'charge_cible', 'pct_rm', 'cadence', 'pause_s', 'repos_s'],
@@ -44,6 +45,9 @@ const SCHEMA = {
   // Attribution : un modèle donné à un pratiquant à une date. Le même modèle peut
   // être attribué plusieurs fois au même pratiquant au fil du temps.
   Attributions: ['id', 'email', 'modele_id', 'nom', 'date_debut', 'date_fin', 'statut', 'notes', 'cree_le'],
+  // Ajustements : la charge que le pratiquant se fixe lui-même, exercice par
+  // exercice. Elle prime sur la charge du coach et sur le calcul en % du max.
+  Ajustements: ['id', 'email', 'attribution_id', 'exercice_id', 'charge', 'note', 'maj_le'],
   // Programmes : les lignes RÉELLES d'une attribution, personnalisables sans
   // toucher au modèle dont elles sont issues.
   Programmes: ['id', 'attribution_id', 'email', 'jour', 'bloc', 'ordre', 'exercice_id', 'series', 'reps_cible', 'duree_s', 'charge_cible', 'pct_rm', 'cadence', 'pause_s', 'repos_s'],
@@ -126,6 +130,7 @@ function route_(action, p, user, profil, estCoach) {
     case 'finirExercice':  return finirExercice_(user.email, p);
     case 'reprendreExercice': return reprendreExercice_(user.email, p);
     case 'historique':     return historique_(user.email, p.exercice_id);
+    case 'ajuster':        return ajuster_(user.email, p);
     case 'calendrier':     return calendrier_(cibleEmail_(user, p, estCoach), p);
     case 'catalogue':      return catalogue_();
     case 'coachAthletes':  return guardCoach_(estCoach, coachAthletes_);
@@ -467,6 +472,9 @@ function getSeance_(email, jour) {
     .filter(function (s) { return String(s.email).toLowerCase() === email; });
   const maxis = maxisPour_(email);
 
+  const attCourante = attributionActive_(email);
+  const ajustes = ajustements_(email, attCourante ? attCourante.id : '');
+
   const blocs = [];
   const parNum = {};
   lignes.forEach(function (l) {
@@ -480,7 +488,7 @@ function getSeance_(email, jour) {
       };
       blocs.push(parNum[num]);
     }
-    parNum[num].exercices.push(ligneExercice_(l, parNum[num], exercices, series, maxis));
+    parNum[num].exercices.push(ligneExercice_(l, parNum[num], exercices, series, maxis, ajustes));
   });
 
   // Reprise : si une séance du jour est ouverte, on renvoie son identifiant et
@@ -551,7 +559,50 @@ function numBloc_(ligne) {
 }
 
 /** Détail d'un exercice ; series et repos_s sont hérités du bloc. */
-function ligneExercice_(l, bloc, exercices, series, maxis) {
+/** Ajustements de charge du pratiquant, indexés par exercice, pour une attribution. */
+function ajustements_(email, attributionId) {
+  const out = {};
+  lire_(TABS.AJUSTEMENTS).forEach(function (a) {
+    if (String(a.email).toLowerCase() !== email) return;
+    if (attributionId && a.attribution_id && String(a.attribution_id) !== String(attributionId)) return;
+    out[String(a.exercice_id)] = Number(a.charge) || 0;
+  });
+  return out;
+}
+
+/**
+ * Le pratiquant fixe sa propre charge sur un exercice. Elle prime sur celle du
+ * coach et sur le calcul en pourcentage du max : c'est lui qui est sous la barre.
+ * Une charge nulle ou vide efface l'ajustement et rend la main au programme.
+ */
+function ajuster_(email, p) {
+  if (!p.exercice_id) throw new Error('EXERCICE_REQUIS');
+  const att = attributionActive_(email);
+  const aid = att ? att.id : '';
+  const charge = Number(p.charge) || 0;
+
+  const deja = lire_(TABS.AJUSTEMENTS).filter(function (a) {
+    return String(a.email).toLowerCase() === email &&
+           String(a.exercice_id) === String(p.exercice_id) &&
+           String(a.attribution_id || '') === String(aid);
+  })[0];
+
+  if (!charge) {
+    if (deja) supprimerLignes_(TABS.AJUSTEMENTS, function (a) { return String(a.id) === String(deja.id); });
+    return { charge: 0, efface: true };
+  }
+  if (deja) {
+    majLigne_(TABS.AJUSTEMENTS, 'id', deja.id, { charge: charge, note: String(p.note || ''), maj_le: new Date() });
+  } else {
+    ajouter_(TABS.AJUSTEMENTS, {
+      id: uid_('AJ'), email: email, attribution_id: aid, exercice_id: p.exercice_id,
+      charge: charge, note: String(p.note || ''), maj_le: new Date()
+    });
+  }
+  return { charge: charge };
+}
+
+function ligneExercice_(l, bloc, exercices, series, maxis, ajustes) {
   const passe = series
     .filter(function (s) { return String(s.exercice_id) === String(l.exercice_id); })
     .sort(function (a, b) { return new Date(b.horodatage) - new Date(a.horodatage); })
@@ -563,11 +614,18 @@ function ligneExercice_(l, bloc, exercices, series, maxis) {
   let charge = Number(l.charge_cible) || 0;
   if (pct > 0 && rm && rm.kg > 0) charge = arrondiCharge_(rm.kg * pct / 100);
 
+  // L'ajustement du pratiquant passe en dernier : il a le dernier mot.
+  const perso = (ajustes || {})[String(l.exercice_id)];
+  const ajuste = perso > 0;
+  const chargeCoach = charge;
+  if (ajuste) charge = perso;
+
   return {
     exercice_id: l.exercice_id,
     nom: ex.nom || l.exercice_id,
     groupe: ex.groupe || '',
     consigne: ex.consigne || '',
+    photo: ex.photo || '',
     bloc: bloc.bloc,
     series: bloc.series,
     repos_s: bloc.repos_s,
@@ -585,7 +643,9 @@ function ligneExercice_(l, bloc, exercices, series, maxis) {
     // Une charge en pourcentage prime sur la charge fixe : c'est elle qui suit
     // la progression du pratiquant.
     charge_cible: charge,
-    charge_calculee: !!(pct && rm),
+    charge_calculee: !!(pct && rm) && !ajuste,
+    charge_coach: chargeCoach,
+    charge_ajustee: ajuste,
     dernier: passe.length ? { reps: passe[0].reps, charge: Number(passe[0].charge) } : null,
     record: passe.length ? Math.max.apply(null, passe.map(function (s) { return Number(s.charge) || 0; })) : 0
   };
@@ -726,7 +786,8 @@ function catalogue_() {
     .map(function (e) {
       return {
         id: e.id, nom: e.nom, groupe: e.groupe || '',
-        equipement: e.equipement || '', consigne: e.consigne || '', video: e.video || ''
+        equipement: e.equipement || '', consigne: e.consigne || '',
+        photo: e.photo || '', video: e.video || ''
       };
     })
     .sort(function (a, b) {
@@ -755,6 +816,7 @@ function exerciceSave_(p) {
     groupe: String(p.groupe || '').trim(),
     equipement: String(p.equipement || '').trim(),
     consigne: String(p.consigne || '').trim(),
+    photo: String(p.photo || '').trim(),
     video: String(p.video || '').trim()
   };
 
@@ -1368,6 +1430,7 @@ function maintenance_(op) {
     case 'jeuEssai':     return { message: programmeTest() };
     case 'jeuEssaiReset':return { message: rechargerProgrammeTest() };
     case 'rapport':      rapportHebdo(); return { message: 'Rapport envoyé si des pratiquants sont à relancer.' };
+    case 'catalogue':    return { message: importerCatalogue() };
     default: throw new Error('OPERATION_INCONNUE');
   }
 }

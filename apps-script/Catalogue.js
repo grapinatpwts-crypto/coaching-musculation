@@ -1,0 +1,245 @@
+/**
+ * CATALOGUE DE DÉPART — 97 exercices en français, illustrés.
+ *
+ * Source des données et des images : free-exercise-db (github.com/yuhonas/free-exercise-db),
+ * publié sous Unlicense, c'est-à-dire versé au domaine public : réutilisation libre,
+ * y compris commerciale, sans attribution obligatoire.
+ * Noms, groupes, équipements et consignes ont été rédigés en français pour ce projet.
+ *
+ * L'import est relançable : un exercice dont le NOM existe déjà est ignoré, ce qui
+ * protège les fiches saisies par le coach. Les identifiants continuent la numérotation.
+ *
+ * [nom, groupe, équipement, consigne, photo]
+ */
+const CATALOGUE_DEPART = [
+  ["Développé couché", "Pectoraux", "Barre", "Omoplates serrées et basses, pieds ancrés au sol. La barre descend au niveau des tétons, coudes à 45° du buste.",
+   "https://raw.githubusercontent.com/yuhonas/free-exercise-db/main/exercises/Barbell_Bench_Press_-_Medium_Grip/0.jpg"],
+  ["Développé incliné à la barre", "Pectoraux", "Barre", "Banc à 30°. La barre descend haut sur la poitrine, sous les clavicules.",
+   "https://raw.githubusercontent.com/yuhonas/free-exercise-db/main/exercises/Barbell_Incline_Bench_Press_-_Medium_Grip/0.jpg"],
+  ["Développé décliné à la barre", "Pectoraux", "Barre", "Banc décliné, jambes bien calées. Amplitude plus courte qu'au couché, ne pas rebondir sur le thorax.",
+   "https://raw.githubusercontent.com/yuhonas/free-exercise-db/main/exercises/Decline_Barbell_Bench_Press/0.jpg"],
+  ["Développé couché aux haltères", "Pectoraux", "Haltère", "Amplitude plus grande qu'à la barre. Les haltères descendent au niveau des pectoraux sans se toucher en haut.",
+   "https://raw.githubusercontent.com/yuhonas/free-exercise-db/main/exercises/Dumbbell_Bench_Press/0.jpg"],
+  ["Développé incliné aux haltères", "Pectoraux", "Haltère", "Banc à 30°, poignets neutres. Ne pas verrouiller les coudes en haut pour garder la tension.",
+   "https://raw.githubusercontent.com/yuhonas/free-exercise-db/main/exercises/Incline_Dumbbell_Press/0.jpg"],
+  ["Écarté couché aux haltères", "Pectoraux", "Haltère", "Coudes légèrement fléchis et bloqués dans cet angle. Descendre jusqu'à l'étirement, jamais plus bas que le banc.",
+   "https://raw.githubusercontent.com/yuhonas/free-exercise-db/main/exercises/Dumbbell_Flyes/0.jpg"],
+  ["Écarté incliné aux haltères", "Pectoraux", "Haltère", "Même geste que l'écarté couché, banc à 30°, pour le faisceau claviculaire.",
+   "https://raw.githubusercontent.com/yuhonas/free-exercise-db/main/exercises/Incline_Dumbbell_Flyes/0.jpg"],
+  ["Écarté à la poulie haute", "Pectoraux", "Poulie", "Buste légèrement penché, un pied devant. Les mains se rejoignent devant le bassin, contraction marquée une seconde.",
+   "https://raw.githubusercontent.com/yuhonas/free-exercise-db/main/exercises/Cable_Crossover/0.jpg"],
+  ["Pec-deck", "Pectoraux", "Machine", "Dos plaqué au dossier, coudes à hauteur d'épaules. Fermer sans claquer les bras l'un contre l'autre.",
+   "https://raw.githubusercontent.com/yuhonas/free-exercise-db/main/exercises/Butterfly/0.jpg"],
+  ["Pompes", "Pectoraux", "Poids de corps", "Corps aligné des chevilles aux épaules, abdos gainés. Coudes à 45°, pas écartés à 90°.",
+   "https://raw.githubusercontent.com/yuhonas/free-exercise-db/main/exercises/Pushups/0.jpg"],
+  ["Pull-over à l'haltère", "Pectoraux", "Haltère", "Allongé sur le banc, bassin bas. Descendre l'haltère derrière la tête sans cambrer, coudes semi-fléchis.",
+   "https://raw.githubusercontent.com/yuhonas/free-exercise-db/main/exercises/Bent-Arm_Dumbbell_Pullover/0.jpg"],
+  ["Dips pectoraux", "Pectoraux", "Poids de corps", "Buste penché en avant, coudes écartés. Descendre jusqu'à ce que les épaules passent sous les coudes.",
+   "https://raw.githubusercontent.com/yuhonas/free-exercise-db/main/exercises/Dips_-_Chest_Version/0.jpg"],
+  ["Soulevé de terre", "Dos", "Barre", "Barre contre les tibias, dos plat, épaules au-dessus de la barre. Pousser dans le sol plutôt que tirer avec les bras.",
+   "https://raw.githubusercontent.com/yuhonas/free-exercise-db/main/exercises/Barbell_Deadlift/0.jpg"],
+  ["Soulevé de terre sumo", "Dos", "Barre", "Pieds très écartés, mains à l'intérieur des genoux. Buste plus vertical qu'au soulevé classique.",
+   "https://raw.githubusercontent.com/yuhonas/free-exercise-db/main/exercises/Sumo_Deadlift/0.jpg"],
+  ["Soulevé de terre roumain", "Dos", "Barre", "Jambes quasi tendues, bassin qui recule. La barre frôle les cuisses, on descend jusqu'à l'étirement des ischios.",
+   "https://raw.githubusercontent.com/yuhonas/free-exercise-db/main/exercises/Romanian_Deadlift/0.jpg"],
+  ["Rack pull", "Dos", "Barre", "Barre partant des supports à hauteur de genoux. Travaille le haut du mouvement avec des charges lourdes.",
+   "https://raw.githubusercontent.com/yuhonas/free-exercise-db/main/exercises/Rack_Pulls/0.jpg"],
+  ["Rowing barre buste penché", "Dos", "Barre", "Buste à 45°, dos plat. Tirer la barre vers le nombril, coudes le long du corps.",
+   "https://raw.githubusercontent.com/yuhonas/free-exercise-db/main/exercises/Bent_Over_Barbell_Row/0.jpg"],
+  ["Rowing barre en supination", "Dos", "Barre", "Prise en supination, coudes serrés. Sollicite davantage le bas des dorsaux et les biceps.",
+   "https://raw.githubusercontent.com/yuhonas/free-exercise-db/main/exercises/Reverse_Grip_Bent-Over_Rows/0.jpg"],
+  ["Rowing haltère un bras", "Dos", "Haltère", "Genou et main opposés sur le banc, dos parallèle au sol. Tirer le coude vers la hanche, sans rotation du buste.",
+   "https://raw.githubusercontent.com/yuhonas/free-exercise-db/main/exercises/One-Arm_Dumbbell_Row/0.jpg"],
+  ["Rowing haltères deux bras", "Dos", "Haltère", "Buste penché, un haltère dans chaque main. Serrer les omoplates en fin de tirage.",
+   "https://raw.githubusercontent.com/yuhonas/free-exercise-db/main/exercises/Bent_Over_Two-Dumbbell_Row/0.jpg"],
+  ["Rowing assis à la poulie", "Dos", "Poulie", "Dos droit, buste fixe. Tirer la poignée vers le nombril en ouvrant la poitrine, revenir en contrôlant.",
+   "https://raw.githubusercontent.com/yuhonas/free-exercise-db/main/exercises/Seated_Cable_Rows/0.jpg"],
+  ["Rowing T-bar", "Dos", "Machine", "Buste penché, poitrine contre le support si la machine en a un. Tirer vers le bas du sternum.",
+   "https://raw.githubusercontent.com/yuhonas/free-exercise-db/main/exercises/T-Bar_Row_with_Handle/0.jpg"],
+  ["Tirage vertical prise large", "Dos", "Poulie", "Buste légèrement en arrière, poitrine ouverte. Amener la barre sous le menton, pas derrière la nuque.",
+   "https://raw.githubusercontent.com/yuhonas/free-exercise-db/main/exercises/Wide-Grip_Lat_Pulldown/0.jpg"],
+  ["Tirage vertical prise serrée", "Dos", "Poulie", "Prise neutre serrée. Tirer vers le haut de la poitrine, coudes vers l'arrière.",
+   "https://raw.githubusercontent.com/yuhonas/free-exercise-db/main/exercises/Close-Grip_Front_Lat_Pulldown/0.jpg"],
+  ["Tractions pronation", "Dos", "Poids de corps", "Prise pronation largeur épaules et demie. Monter jusqu'à ce que le menton dépasse la barre, sans élan.",
+   "https://raw.githubusercontent.com/yuhonas/free-exercise-db/main/exercises/Pullups/0.jpg"],
+  ["Tractions supination", "Dos", "Poids de corps", "Prise supination largeur épaules. Plus de biceps que la pronation, amplitude complète.",
+   "https://raw.githubusercontent.com/yuhonas/free-exercise-db/main/exercises/Chin-Up/0.jpg"],
+  ["Pull-over à la poulie haute", "Dos", "Poulie", "Bras tendus, coudes verrouillés. Descendre la barre jusqu'aux cuisses par la seule action des dorsaux.",
+   "https://raw.githubusercontent.com/yuhonas/free-exercise-db/main/exercises/Straight-Arm_Pulldown/0.jpg"],
+  ["Extension lombaire au banc", "Lombaires", "Poids de corps", "Descendre jusqu'à 90°, remonter à l'alignement sans hyperextension. Le mouvement vient des hanches.",
+   "https://raw.githubusercontent.com/yuhonas/free-exercise-db/main/exercises/Hyperextensions_Back_Extensions/0.jpg"],
+  ["Good morning", "Lombaires", "Barre", "Barre sur les trapèzes, genoux souples. Bassin qui recule, dos plat, on descend jusqu'à l'horizontale du buste.",
+   "https://raw.githubusercontent.com/yuhonas/free-exercise-db/main/exercises/Good_Morning/0.jpg"],
+  ["Développé militaire debout", "Épaules", "Barre", "Abdos et fessiers serrés, pas de cambrure. La tête recule légèrement au passage de la barre.",
+   "https://raw.githubusercontent.com/yuhonas/free-exercise-db/main/exercises/Barbell_Shoulder_Press/0.jpg"],
+  ["Développé militaire assis", "Épaules", "Barre", "Dossier vertical, dos plaqué. Amplitude jusqu'au menton, sans à-coup en bas.",
+   "https://raw.githubusercontent.com/yuhonas/free-exercise-db/main/exercises/Seated_Barbell_Military_Press/0.jpg"],
+  ["Développé épaules aux haltères", "Épaules", "Haltère", "Coudes légèrement en avant du plan du buste. Les haltères se rapprochent en haut sans se cogner.",
+   "https://raw.githubusercontent.com/yuhonas/free-exercise-db/main/exercises/Dumbbell_Shoulder_Press/0.jpg"],
+  ["Développé Arnold", "Épaules", "Haltère", "Départ paumes vers soi, rotation progressive pendant la montée. Contrôler la rotation, pas la subir.",
+   "https://raw.githubusercontent.com/yuhonas/free-exercise-db/main/exercises/Arnold_Dumbbell_Press/0.jpg"],
+  ["Élévations latérales", "Épaules", "Haltère", "Coudes très légèrement fléchis, montée jusqu'à l'horizontale. Ne pas hausser les épaules.",
+   "https://raw.githubusercontent.com/yuhonas/free-exercise-db/main/exercises/Side_Lateral_Raise/0.jpg"],
+  ["Élévations latérales à la poulie", "Épaules", "Poulie", "Tension constante sur toute l'amplitude, contrairement aux haltères. Un bras à la fois.",
+   "https://raw.githubusercontent.com/yuhonas/free-exercise-db/main/exercises/Cable_Seated_Lateral_Raise/0.jpg"],
+  ["Élévations frontales", "Épaules", "Haltère", "Monter jusqu'à hauteur des yeux, sans élan de bassin. Alterner ou simultané.",
+   "https://raw.githubusercontent.com/yuhonas/free-exercise-db/main/exercises/Front_Dumbbell_Raise/0.jpg"],
+  ["Oiseau buste penché", "Épaules", "Haltère", "Buste à 45° ou poitrine sur un banc incliné. Ouvrir les bras en serrant les omoplates.",
+   "https://raw.githubusercontent.com/yuhonas/free-exercise-db/main/exercises/Reverse_Flyes/0.jpg"],
+  ["Face pull", "Épaules", "Poulie", "Corde à hauteur de visage. Tirer vers le front en écartant les mains, coudes hauts.",
+   "https://raw.githubusercontent.com/yuhonas/free-exercise-db/main/exercises/Face_Pull/0.jpg"],
+  ["Rowing menton aux haltères", "Trapèzes", "Haltère", "Coudes qui montent avant les mains, jusqu'à hauteur de poitrine. S'arrêter si l'épaule pince.",
+   "https://raw.githubusercontent.com/yuhonas/free-exercise-db/main/exercises/Standing_Dumbbell_Upright_Row/0.jpg"],
+  ["Haussements d'épaules à la barre", "Trapèzes", "Barre", "Monter les épaules vers les oreilles, sans rouler. Marquer une seconde en haut.",
+   "https://raw.githubusercontent.com/yuhonas/free-exercise-db/main/exercises/Barbell_Shrug/0.jpg"],
+  ["Haussements d'épaules aux haltères", "Trapèzes", "Haltère", "Bras tendus le long du corps, mouvement strictement vertical.",
+   "https://raw.githubusercontent.com/yuhonas/free-exercise-db/main/exercises/Dumbbell_Shrug/0.jpg"],
+  ["Curl barre", "Biceps", "Barre", "Coudes fixes le long du corps, pas de balancier. Descendre en contrôlant jusqu'à l'extension complète.",
+   "https://raw.githubusercontent.com/yuhonas/free-exercise-db/main/exercises/Barbell_Curl/0.jpg"],
+  ["Curl à la barre EZ", "Biceps", "Barre EZ", "Prise cassée, plus confortable pour les poignets. Mêmes consignes que le curl barre.",
+   "https://raw.githubusercontent.com/yuhonas/free-exercise-db/main/exercises/EZ-Bar_Curl/0.jpg"],
+  ["Curl haltères", "Biceps", "Haltère", "Supination progressive pendant la montée. Alterner les bras ou monter ensemble.",
+   "https://raw.githubusercontent.com/yuhonas/free-exercise-db/main/exercises/Dumbbell_Bicep_Curl/0.jpg"],
+  ["Curl marteau", "Biceps", "Haltère", "Prise neutre maintenue. Cible le brachial et le long supinateur autant que le biceps.",
+   "https://raw.githubusercontent.com/yuhonas/free-exercise-db/main/exercises/Hammer_Curls/0.jpg"],
+  ["Curl incliné", "Biceps", "Haltère", "Banc à 45°, bras pendants. Position d'étirement maximal du biceps, charges légères.",
+   "https://raw.githubusercontent.com/yuhonas/free-exercise-db/main/exercises/Incline_Dumbbell_Curl/0.jpg"],
+  ["Curl au pupitre", "Biceps", "Barre EZ", "Aisselles bien calées sur le pupitre. Ne pas verrouiller les coudes en bas.",
+   "https://raw.githubusercontent.com/yuhonas/free-exercise-db/main/exercises/Preacher_Curl/0.jpg"],
+  ["Curl concentré", "Biceps", "Haltère", "Coude calé contre l'intérieur de la cuisse. Un bras à la fois, contraction marquée en haut.",
+   "https://raw.githubusercontent.com/yuhonas/free-exercise-db/main/exercises/Concentration_Curls/0.jpg"],
+  ["Curl marteau à la poulie", "Biceps", "Poulie", "Corde à la poulie basse, prise neutre. Tension constante sur toute l'amplitude.",
+   "https://raw.githubusercontent.com/yuhonas/free-exercise-db/main/exercises/Cable_Hammer_Curls_-_Rope_Attachment/0.jpg"],
+  ["Développé couché prise serrée", "Triceps", "Barre", "Mains à largeur d'épaules, coudes serrés contre le buste. La barre descend au bas du sternum.",
+   "https://raw.githubusercontent.com/yuhonas/free-exercise-db/main/exercises/Close-Grip_Barbell_Bench_Press/0.jpg"],
+  ["Barre au front", "Triceps", "Barre EZ", "Coudes fixes et pointés vers le plafond. Descendre la barre au front ou juste derrière.",
+   "https://raw.githubusercontent.com/yuhonas/free-exercise-db/main/exercises/EZ-Bar_Skullcrusher/0.jpg"],
+  ["Extension à la poulie haute", "Triceps", "Poulie", "Coudes collés au corps. Étendre sans avancer les coudes, revenir jusqu'à 90°.",
+   "https://raw.githubusercontent.com/yuhonas/free-exercise-db/main/exercises/Triceps_Pushdown/0.jpg"],
+  ["Extension nuque à la corde", "Triceps", "Poulie", "Bras au-dessus de la tête, coudes serrés. Position d'étirement de la longue portion.",
+   "https://raw.githubusercontent.com/yuhonas/free-exercise-db/main/exercises/Cable_Rope_Overhead_Triceps_Extension/0.jpg"],
+  ["Extension nuque un bras", "Triceps", "Haltère", "Coude haut et fixe, l'autre main peut le stabiliser. Descendre lentement derrière la nuque.",
+   "https://raw.githubusercontent.com/yuhonas/free-exercise-db/main/exercises/Dumbbell_One-Arm_Triceps_Extension/0.jpg"],
+  ["Dips sur banc", "Triceps", "Poids de corps", "Mains sur le banc derrière soi, coudes vers l'arrière. Descendre jusqu'à 90° maximum.",
+   "https://raw.githubusercontent.com/yuhonas/free-exercise-db/main/exercises/Bench_Dips/0.jpg"],
+  ["Dips triceps", "Triceps", "Poids de corps", "Buste vertical, coudes serrés. Version dure : lester avec une ceinture.",
+   "https://raw.githubusercontent.com/yuhonas/free-exercise-db/main/exercises/Dips_-_Triceps_Version/0.jpg"],
+  ["Extension couché à la barre", "Triceps", "Barre", "Allongé, bras verticaux. Fléchir uniquement les coudes, les bras restent en place.",
+   "https://raw.githubusercontent.com/yuhonas/free-exercise-db/main/exercises/Lying_Triceps_Press/0.jpg"],
+  ["Pompes prise serrée", "Triceps", "Poids de corps", "Mains sous les épaules, coudes frôlant les côtes. Gainage maintenu du début à la fin.",
+   "https://raw.githubusercontent.com/yuhonas/free-exercise-db/main/exercises/Close-Grip_Push-Up_off_of_a_Dumbbell/0.jpg"],
+  ["Squat barre", "Jambes", "Barre", "Barre sur les trapèzes, pieds largeur d'épaules. Descendre sous la parallèle, genoux dans l'axe des pieds.",
+   "https://raw.githubusercontent.com/yuhonas/free-exercise-db/main/exercises/Barbell_Squat/0.jpg"],
+  ["Squat complet", "Jambes", "Barre", "Descente maximale, talons au sol. Demande de la mobilité de cheville et de hanche.",
+   "https://raw.githubusercontent.com/yuhonas/free-exercise-db/main/exercises/Barbell_Full_Squat/0.jpg"],
+  ["Squat avant", "Jambes", "Barre", "Barre sur les deltoïdes antérieurs, coudes hauts. Buste plus vertical, plus de quadriceps.",
+   "https://raw.githubusercontent.com/yuhonas/free-exercise-db/main/exercises/Front_Barbell_Squat/0.jpg"],
+  ["Box squat", "Jambes", "Barre", "S'asseoir franchement sur la box, marquer un temps, puis repousser. Casse le rebond élastique.",
+   "https://raw.githubusercontent.com/yuhonas/free-exercise-db/main/exercises/Box_Squat/0.jpg"],
+  ["Fente avant à la barre", "Jambes", "Barre", "Grand pas en avant, genou arrière proche du sol. Le buste reste vertical.",
+   "https://raw.githubusercontent.com/yuhonas/free-exercise-db/main/exercises/Barbell_Lunge/0.jpg"],
+  ["Fente aux haltères", "Jambes", "Haltère", "Un haltère dans chaque main. Alterner les jambes ou finir une jambe avant l'autre.",
+   "https://raw.githubusercontent.com/yuhonas/free-exercise-db/main/exercises/Dumbbell_Lunges/0.jpg"],
+  ["Fente arrière", "Jambes", "Haltère", "Pas vers l'arrière, plus doux pour les genoux que la fente avant.",
+   "https://raw.githubusercontent.com/yuhonas/free-exercise-db/main/exercises/Dumbbell_Rear_Lunge/0.jpg"],
+  ["Fente marchée", "Jambes", "Barre", "Enchaîner les pas sans marquer d'arrêt. Cardio et équilibre en plus du travail musculaire.",
+   "https://raw.githubusercontent.com/yuhonas/free-exercise-db/main/exercises/Barbell_Walking_Lunge/0.jpg"],
+  ["Goblet squat", "Jambes", "Haltère", "Haltère tenu contre la poitrine. Excellent pour apprendre la descente du squat.",
+   "https://raw.githubusercontent.com/yuhonas/free-exercise-db/main/exercises/Dumbbell_Squat/0.jpg"],
+  ["Squat bulgare", "Jambes", "Haltère", "Pied arrière sur un banc, poids sur la jambe avant. Descendre à la verticale, sans à-coup.",
+   "https://raw.githubusercontent.com/yuhonas/free-exercise-db/main/exercises/Split_Squat_with_Dumbbells/0.jpg"],
+  ["Presse à cuisses", "Jambes", "Machine", "Pieds à mi-hauteur de la plateforme. Ne jamais verrouiller les genoux en fin de poussée.",
+   "https://raw.githubusercontent.com/yuhonas/free-exercise-db/main/exercises/Leg_Press/0.jpg"],
+  ["Leg extension", "Jambes", "Machine", "Dos plaqué, mouvement contrôlé. Marquer un temps en haut, contraction du quadriceps.",
+   "https://raw.githubusercontent.com/yuhonas/free-exercise-db/main/exercises/Leg_Extensions/0.jpg"],
+  ["Leg curl allongé", "Jambes", "Machine", "Bassin plaqué au banc. Ne pas décoller les hanches pour tricher sur les dernières répétitions.",
+   "https://raw.githubusercontent.com/yuhonas/free-exercise-db/main/exercises/Lying_Leg_Curls/0.jpg"],
+  ["Leg curl assis", "Jambes", "Machine", "Dos calé, genoux alignés avec l'axe de la machine.",
+   "https://raw.githubusercontent.com/yuhonas/free-exercise-db/main/exercises/Seated_Leg_Curl/0.jpg"],
+  ["Hack squat à la barre", "Jambes", "Barre", "Barre derrière les mollets. Version historique du hack squat, très quadriceps.",
+   "https://raw.githubusercontent.com/yuhonas/free-exercise-db/main/exercises/Barbell_Hack_Squat/0.jpg"],
+  ["Montée sur banc", "Jambes", "Barre", "Pousser dans le talon de la jambe sur le banc, sans s'aider de la jambe au sol.",
+   "https://raw.githubusercontent.com/yuhonas/free-exercise-db/main/exercises/Barbell_Step_Ups/0.jpg"],
+  ["Mollets debout", "Mollets", "Machine", "Amplitude complète, étirement en bas et contraction en haut. Ne pas rebondir.",
+   "https://raw.githubusercontent.com/yuhonas/free-exercise-db/main/exercises/Standing_Calf_Raises/0.jpg"],
+  ["Mollets assis", "Mollets", "Machine", "Genoux fléchis : cible le soléaire plutôt que les jumeaux.",
+   "https://raw.githubusercontent.com/yuhonas/free-exercise-db/main/exercises/Seated_Calf_Raise/0.jpg"],
+  ["Mollets à la presse", "Mollets", "Machine", "Avant-pieds au bord de la plateforme, poussée par les orteils.",
+   "https://raw.githubusercontent.com/yuhonas/free-exercise-db/main/exercises/Calf_Press_On_The_Leg_Press_Machine/0.jpg"],
+  ["Hip thrust", "Fessiers", "Barre", "Omoplates sur le banc, menton rentré. Monter jusqu'à l'alignement cuisses-buste, serrer une seconde.",
+   "https://raw.githubusercontent.com/yuhonas/free-exercise-db/main/exercises/Barbell_Hip_Thrust/0.jpg"],
+  ["Pont fessier à la barre", "Fessiers", "Barre", "Dos au sol, même geste que le hip thrust avec moins d'amplitude.",
+   "https://raw.githubusercontent.com/yuhonas/free-exercise-db/main/exercises/Barbell_Glute_Bridge/0.jpg"],
+  ["Pont fessier unilatéral", "Fessiers", "Poids de corps", "Une jambe tendue en l'air. Le bassin doit rester horizontal.",
+   "https://raw.githubusercontent.com/yuhonas/free-exercise-db/main/exercises/Single_Leg_Glute_Bridge/0.jpg"],
+  ["Kickback à la poulie", "Fessiers", "Poulie", "Jambe tendue vers l'arrière, sans cambrer le bas du dos. Mouvement court et contrôlé.",
+   "https://raw.githubusercontent.com/yuhonas/free-exercise-db/main/exercises/One-Legged_Cable_Kickback/0.jpg"],
+  ["Pull through à la poulie", "Fessiers", "Poulie", "Corde entre les jambes, bassin qui recule puis avance. Charnière de hanche pure.",
+   "https://raw.githubusercontent.com/yuhonas/free-exercise-db/main/exercises/Pull_Through/0.jpg"],
+  ["Montée sur banc avec relevé de genou", "Fessiers", "Poids de corps", "Monter puis lever le genou opposé. Équilibre et fessiers.",
+   "https://raw.githubusercontent.com/yuhonas/free-exercise-db/main/exercises/Step-up_with_Knee_Raise/0.jpg"],
+  ["Swing kettlebell", "Fessiers", "Kettlebell", "Charnière de hanche, pas un squat. La kettlebell est projetée par les hanches, bras relâchés.",
+   "https://raw.githubusercontent.com/yuhonas/free-exercise-db/main/exercises/One-Arm_Kettlebell_Swings/0.jpg"],
+  ["Gainage face", "Abdominaux", "Poids de corps", "Corps aligné, bassin en rétroversion. Ne pas creuser le bas du dos, respirer normalement.",
+   "https://raw.githubusercontent.com/yuhonas/free-exercise-db/main/exercises/Plank/0.jpg"],
+  ["Gainage latéral", "Abdominaux", "Poids de corps", "Appui sur l'avant-bras et le bord du pied. Hanches hautes, corps en ligne.",
+   "https://raw.githubusercontent.com/yuhonas/free-exercise-db/main/exercises/Side_Bridge/0.jpg"],
+  ["Crunch", "Abdominaux", "Poids de corps", "Décoller les omoplates sans tirer sur la nuque. Le bas du dos reste au sol.",
+   "https://raw.githubusercontent.com/yuhonas/free-exercise-db/main/exercises/Crunches/0.jpg"],
+  ["Crunch à la poulie", "Abdominaux", "Poulie", "À genoux, corde derrière la nuque. Enrouler le buste, le bassin ne bouge pas.",
+   "https://raw.githubusercontent.com/yuhonas/free-exercise-db/main/exercises/Cable_Crunch/0.jpg"],
+  ["Relevé de jambes suspendu", "Abdominaux", "Poids de corps", "Suspendu à la barre, monter les jambes tendues ou genoux fléchis. Sans balancier.",
+   "https://raw.githubusercontent.com/yuhonas/free-exercise-db/main/exercises/Hanging_Leg_Raise/0.jpg"],
+  ["Crunch bicyclette", "Abdominaux", "Poids de corps", "Coude vers le genou opposé, jambes en pédalage. Mouvement lent, pas rapide.",
+   "https://raw.githubusercontent.com/yuhonas/free-exercise-db/main/exercises/Air_Bike/0.jpg"],
+  ["Russian twist", "Abdominaux", "Poids de corps", "Buste incliné en arrière, rotation d'un côté à l'autre. Talons décollés pour durcir.",
+   "https://raw.githubusercontent.com/yuhonas/free-exercise-db/main/exercises/Russian_Twist/0.jpg"],
+  ["Roulette abdominale à genoux", "Abdominaux", "Barre", "Dérouler sans creuser le dos. Ne pas aller plus loin que ce que le gainage tient.",
+   "https://raw.githubusercontent.com/yuhonas/free-exercise-db/main/exercises/Barbell_Ab_Rollout_-_On_Knees/0.jpg"],
+  ["Crunch décliné", "Abdominaux", "Poids de corps", "Banc décliné, amplitude plus grande. Contrôler la descente.",
+   "https://raw.githubusercontent.com/yuhonas/free-exercise-db/main/exercises/Decline_Crunch/0.jpg"],
+  ["Dead bug", "Abdominaux", "Poids de corps", "Bras et jambe opposés qui s'éloignent, bas du dos plaqué au sol en permanence.",
+   "https://raw.githubusercontent.com/yuhonas/free-exercise-db/main/exercises/Dead_Bug/0.jpg"],
+  ["Curl poignets", "Avant-bras", "Barre", "Avant-bras sur le banc, paumes vers le haut. Amplitude courte, séries longues.",
+   "https://raw.githubusercontent.com/yuhonas/free-exercise-db/main/exercises/Palms-Up_Barbell_Wrist_Curl_Over_A_Bench/0.jpg"],
+  ["Extension poignets", "Avant-bras", "Barre", "Paumes vers le bas. Charges légères, le mouvement est petit.",
+   "https://raw.githubusercontent.com/yuhonas/free-exercise-db/main/exercises/Palms-Down_Wrist_Curl_Over_A_Bench/0.jpg"],
+  ["Marche du fermier", "Avant-bras", "Haltère", "Charges lourdes dans chaque main, marcher en restant gainé. Grip, trapèzes et gainage.",
+   "https://raw.githubusercontent.com/yuhonas/free-exercise-db/main/exercises/Farmers_Walk/0.jpg"],
+];
+
+/**
+ * Verse le catalogue de départ dans l'onglet Exercices.
+ * Ne modifie ni ne supprime aucune fiche existante.
+ */
+function importerCatalogue() {
+  const existants = lire_(TABS.EXERCICES);
+  const noms = {};
+  existants.forEach(function (e) {
+    if (e.nom) noms[String(e.nom).trim().toLowerCase()] = true;
+  });
+
+  let max = 0;
+  existants.forEach(function (e) {
+    const m = /^EX(\d+)$/.exec(String(e.id));
+    if (m && Number(m[1]) > max) max = Number(m[1]);
+  });
+
+  const neufs = [];
+  CATALOGUE_DEPART.forEach(function (c) {
+    if (noms[c[0].trim().toLowerCase()]) return;
+    max++;
+    neufs.push({
+      id: 'EX' + String(max).padStart(3, '0'),
+      nom: c[0], groupe: c[1], equipement: c[2], consigne: c[3], photo: c[4], video: ''
+    });
+  });
+
+  if (neufs.length) ajouterPlusieurs_(TABS.EXERCICES, neufs);
+
+  const ignores = CATALOGUE_DEPART.length - neufs.length;
+  const msg = neufs.length + ' exercice(s) ajouté(s)' +
+    (ignores ? ', ' + ignores + ' déjà présent(s) et laissé(s) tels quels' : '') + '.';
+  Logger.log(msg);
+  return msg;
+}

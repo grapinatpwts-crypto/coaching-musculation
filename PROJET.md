@@ -74,7 +74,8 @@ côté, zone sûre respectée). Régénérables : voir § 9.
 | Onglet | Colonnes |
 |---|---|
 | `Pratiquants` | email, nom, actif, date_inscription, objectif |
-| `Exercices` | id, nom, groupe, **equipement**, consigne, **video** |
+| `Exercices` | id, nom, groupe, equipement, consigne, **photo**, video |
+| `Ajustements` | id, email, attribution_id, exercice_id, charge, note, maj_le |
 | `Modeles` | id, nom, categorie, difficulte, description, duree_semaines, statut, cree_le |
 | `ModeleLignes` | id, modele_id, jour, bloc, ordre, exercice_id, series, reps_cible, duree_s, charge_cible, **pct_rm**, cadence, pause_s, repos_s |
 | `Attributions` | id, email, modele_id, nom, date_debut, date_fin, statut, notes, cree_le |
@@ -410,6 +411,55 @@ L'échelle part de **90 % du minimum**, pas de zéro : sur des charges qui passe
 50 à 60 kg, une échelle absolue écraserait la pente et ne dirait rien. L'écart depuis
 la première séance est affiché à côté du record.
 
+## 8 octies. La charge appartient au pratiquant
+
+Le coach fixe une charge, ou un pourcentage du max. Mais c'est le pratiquant qui est
+sous la barre : il peut décider autrement, et son choix tient d'une séance à l'autre.
+
+Trois sources, dans cet ordre de priorité :
+
+| Source | Quand | Affiché |
+|---|---|---|
+| `charge_cible` | le coach a fixé un poids | « Charge prévue par le coach » |
+| `pct_rm` × 1RM | le coach a fixé un pourcentage et le max est connu | « 90 % de votre max (100 kg) » |
+| `Ajustements` | le pratiquant a enregistré sa propre charge | « Votre charge · le programme dit 60 kg » |
+
+**Un pourcentage sans max connu ne donne aucune charge.** L'app le dit —
+« votre max n'est pas connu, à vous de juger » — plutôt que d'inventer un chiffre.
+
+L'ajustement se pose depuis l'écran de saisie : le pratiquant change la charge, un
+bouton propose de la garder. Un second appui revient à la charge du programme.
+L'ajustement est rattaché à l'attribution en cours : un nouveau programme repart
+des valeurs du coach.
+
+## 8 nonies. Bibliothèque de départ
+
+`apps-script/Catalogue.js` contient **97 exercices en français, illustrés**, versés
+dans l'onglet `Exercices` par `Coach ▸ Réglages ▸ Importer le catalogue de départ`.
+
+Répartition : Jambes 16, Dos 15, Pectoraux 12, Abdominaux 10, Épaules 9, Triceps 9,
+Biceps 8, Fessiers 7, Mollets 3, Trapèzes 3, Avant-bras 3, Lombaires 2.
+Par matériel : barre 29, haltère 24, poids de corps 18, poulie 13, machine 9,
+barre EZ 3, kettlebell 1.
+
+**Provenance et droits.** Données et images viennent de
+[free-exercise-db](https://github.com/yuhonas/free-exercise-db), publié sous
+*Unlicense* — versé au domaine public, réutilisation libre y compris commerciale,
+sans attribution obligatoire. Les noms, groupes, équipements et consignes ont été
+rédigés en français pour ce projet ; seules les illustrations sont reprises telles
+quelles, servies depuis leur dépôt.
+
+**Ce qui a été écarté.** Les fiches de docteur-fitness.com ont servi de référence
+de *structure* — leur découpage groupe / matériel / consigne est propre. Leurs
+illustrations, en revanche, portent un crédit d'illustrateur tiers
+(`© Aliaksandr Makatserchyk`) : les reprendre dans une app distribuée à
+40 pratiquants serait une contrefaçon. Si le coach y tient, la voie est de leur
+demander une licence, ou de photographier ses propres mouvements en salle.
+
+L'import est **relançable** : un exercice dont le nom existe déjà est ignoré, les
+fiches saisies par le coach ne sont jamais touchées, et les identifiants continuent
+la numérotation existante.
+
 ## 9. Parti pris visuel — charte Wellness Sport Club
 
 L'app reprend l'identité de **Wellness Sport Club** (`wellness-sportclub.fr`),
@@ -473,12 +523,12 @@ Ces couleurs sont normatives, pas décoratives : elles ne suivent pas la charte.
 
 Ce qui reste, par ordre d'utilité décroissante.
 
-1. **Saisir le vrai catalogue du coach** depuis Coach ▸ Bibliothèque. Les sept
-   exercices d'exemple ne servent qu'aux tests.
+1. **Importer la bibliothèque** depuis Coach ▸ Réglages, puis la compléter des
+   exercices propres au coach et de ses propres consignes (§ 8 nonies).
 2. **Installer sur téléphone** et juger l'ergonomie réelle, téléphone en main
    entre deux séries. Safari sur iOS, Chrome sur Android.
-3. **Laisser le pratiquant ajuster certaines valeurs** de son programme — décidé
-   comme un chantier à part, la question étant lesquelles et jusqu'où.
+3. **Étendre l'ajustement du pratiquant** au-delà de la charge, si le besoin
+   apparaît à l'usage — les répétitions, par exemple (§ 8 octies).
 4. **Activer le déclencheur hebdomadaire** sur `rapportHebdo()`, depuis l'éditeur
    Apps Script (`Déclencheurs ▸ Ajouter`). L'envoi manuel existe déjà dans
    Coach ▸ Réglages.
