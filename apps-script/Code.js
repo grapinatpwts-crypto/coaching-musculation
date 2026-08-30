@@ -84,8 +84,6 @@ function setup() {
   }
   const msg = 'Installation terminée. Onglets créés et exercices d\'exemple ajoutés.';
   Logger.log(msg);
-  // getUi() n'existe que si l'éditeur a été ouvert depuis le Sheet.
-  try { SpreadsheetApp.getUi().alert(msg); } catch (e) {}
   return msg;
 }
 
@@ -1250,9 +1248,13 @@ function maintenance_(op) {
   }
 }
 
+/**
+ * Rend compte sans bloquer. Un `getUi().alert()` suspend l'exécution jusqu'au clic,
+ * et depuis l'éditeur ou depuis l'app ce clic ne vient jamais : la fonction paraît
+ * tourner dans le vide alors que son travail est terminé.
+ */
 function finMigration_(msg) {
   Logger.log(msg);
-  try { SpreadsheetApp.getUi().alert('Migration des blocs\n\n' + msg); } catch (e) {}
   return msg;
 }
 
@@ -1337,7 +1339,6 @@ function programmeTest() {
 
   const msg = rapport.join('\n');
   Logger.log(msg);
-  try { SpreadsheetApp.getUi().alert('Jeu d\'essai\n\n' + msg); } catch (e) {}
   return msg;
 }
 
