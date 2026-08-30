@@ -1671,7 +1671,8 @@ async function vueFiche() {
         <button class="btn" id="photo">${f.photo ? 'Changer la photo' : 'Ajouter une photo'}</button>
         ${f.photo ? '<button class="btn danger" id="photoDel">Retirer</button>' : ''}
       </div>
-      <input type="file" id="fichierPhoto" accept="image/*" hidden>
+      <input type="file" id="photoAppareil" accept="image/*" capture="environment" hidden>
+      <input type="file" id="photoFichier" accept="image/*" hidden>
     </div>
 
     <div class="eyebrow" style="margin:22px 0 10px">Statut</div>
@@ -1718,8 +1719,9 @@ async function vueFiche() {
       <p class="consigne">${f.notes}</p>` : ''}`;
 
   $('#editFiche').onclick = () => modalFiche(f);
-  $('#photo').onclick = () => $('#fichierPhoto').click();
-  $('#fichierPhoto').onchange = ev => envoyerPhoto(ev.target.files[0], f.email);
+  $('#photo').onclick = () => modalPhoto(f.email);
+  $('#photoAppareil').onchange = ev => envoyerPhoto(ev.target.files[0], f.email);
+  $('#photoFichier').onchange = ev => envoyerPhoto(ev.target.files[0], f.email);
   const pd = $('#photoDel');
   if (pd) pd.onclick = async function () {
     this.disabled = true;
@@ -1811,6 +1813,26 @@ async function modalNotifier(attributionId, email) {
       toast(err.message); this.disabled = false; this.textContent = "Envoyer l'e-mail depuis mon compte";
     }
   };
+}
+
+/**
+ * Deux entrées distinctes pour la photo. Un input `accept="image/*"` seul laisse
+ * le téléphone décider, et il propose rarement l'appareil ; `capture` le force,
+ * mais interdit alors la galerie. On offre donc les deux, explicitement.
+ * Sur ordinateur, `capture` est ignoré et le sélecteur de fichiers s'ouvre.
+ */
+function modalPhoto(email) {
+  const w = modal('Photo du pratiquant', `
+    <div class="barre" style="margin-top:0;flex-direction:column">
+      <button class="btn plein" id="pAppareil" style="width:100%">Prendre une photo</button>
+      <button class="btn" id="pFichier" style="width:100%">Choisir dans mes fichiers</button>
+    </div>
+    <p class="consigne">L'image est réduite sur votre téléphone avant l'envoi :
+      un carré de 256 pixels, recadré au centre. Rien ne sort de votre classeur.</p>
+    <div class="barre"><button class="btn" id="pAnn" style="flex:1">Annuler</button></div>`);
+  w.querySelector('#pAnn').onclick = w.fermer;
+  w.querySelector('#pAppareil').onclick = () => { w.fermer(); $('#photoAppareil').click(); };
+  w.querySelector('#pFichier').onclick = () => { w.fermer(); $('#photoFichier').click(); };
 }
 
 /**
