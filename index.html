@@ -140,7 +140,9 @@ header h2{font-size:30px;text-transform:uppercase;line-height:1}
 .ligne .g{flex:1;min-width:0}
 .ligne .g .nom{font-size:15px;font-weight:600}
 .ligne .g .meta{font-size:12.5px;color:var(--dust);margin-top:2px}
-.ligne .poignee{color:var(--dust);font-size:18px;padding:4px 2px}
+.ligne .poignee{color:var(--dust);font-size:18px;padding:8px 6px}
+.ligne.cliquable{cursor:pointer}
+.ligne.cliquable:active{background:#262626}
 .entete{display:flex;align-items:center;gap:10px;margin-bottom:9px}
 .entete .eyebrow{flex:1}
 
@@ -1832,7 +1834,7 @@ async function vueFiche() {
 
     <div class="eyebrow" style="margin:22px 0 10px">Programmes donnés · ${f.attributions.length}</div>
     ${f.attributions.map(a => `
-      <div class="ligne" style="align-items:flex-start">
+      <div class="ligne" data-voirligne="${a.id}" style="align-items:flex-start">
         <div class="g">
           <div class="nom">${a.nom}</div>
           <div class="meta">${a.statut}${a.date_debut ? ' · depuis le ' + new Date(a.date_debut).toLocaleDateString('fr-FR') : ''}${
@@ -1841,7 +1843,6 @@ async function vueFiche() {
             <span>${a.paye ? 'Payé' : 'Non payé'}</span></label>
         </div>
         <button class="poignee" data-prevenir="${a.id}" aria-label="Prévenir">✉</button>
-        <button class="poignee" data-voir="${a.id}" aria-label="Voir ce programme">›</button>
       </div>`).join('') || `<div class="empty" style="padding:18px 0">Aucun programme donné.</div>`}
 
     ${(f.activites || []).length ? `
@@ -1890,8 +1891,8 @@ async function vueFiche() {
   });
   $('#zone').querySelectorAll('[data-prevenir]').forEach(b =>
     b.onclick = () => modalNotifier(b.dataset.prevenir, f.email));
-  $('#zone').querySelectorAll('[data-voir]').forEach(b => b.onclick = () => {
-    S.attSel = b.dataset.voir; S.ed = null; S.coach.sous = 'programme'; vueCoach();
+  lignesCliquables($('#zone'), '[data-voirligne]', l => {
+    S.attSel = l.dataset.voirligne; S.ed = null; S.coach.sous = 'programme'; vueCoach();
   });
 }
 
@@ -2055,6 +2056,21 @@ async function vueHistoriqueAthlete() {
 }
 
 // ── Fenêtre modale ───────────────────────────────────────────
+/**
+ * Rend des lignes cliquables dans leur entier. On clique la ligne, pas une petite
+ * icône : c'est plus sûr avec un pouce, et le crayon devient inutile.
+ * Les boutons imbriqués — supprimer, monter, prévenir — gardent leur propre rôle.
+ */
+function lignesCliquables(zone, selecteur, action) {
+  zone.querySelectorAll(selecteur).forEach(l => {
+    l.classList.add('cliquable');
+    l.onclick = ev => {
+      if (ev.target.closest('button, a, input, label, select, textarea')) return;
+      action(l);
+    };
+  });
+}
+
 function modal(titre, corps) {
   const d = document.createElement('div');
   d.className = 'modal';
@@ -2089,14 +2105,13 @@ function peindreBibliotheque(filtre) {
     <div style="margin-top:18px">
       ${Object.keys(groupes).sort((a, b) => a.localeCompare(b, 'fr')).map(g => `
         <div class="eyebrow" style="margin:16px 0 8px">${g} · ${groupes[g].length}</div>
-        ${groupes[g].map(e => `<div class="ligne">
+        ${groupes[g].map(e => `<div class="ligne" data-ex="${e.id}">
           ${e.photo ? `<img class="vignette" src="${e.photo}" alt="" loading="lazy">` : ''}
           <div class="g">
             <div class="nom">${e.nom}${e.nom_en ? ` <span class="vo">(${e.nom_en})</span>` : ''}</div>
             <div class="meta">${[e.equipement, e.id].filter(Boolean).join(' · ')}</div>
           </div>
           ${lienExercice(e)}
-          <button class="poignee" data-ex="${e.id}">✎</button>
         </div>`).join('')}
       `).join('') || `<div class="empty">Aucun exercice.</div>`}
     </div>`;
@@ -2104,8 +2119,8 @@ function peindreBibliotheque(filtre) {
   const champ = $('#q');
   champ.oninput = () => { const v = champ.value; peindreBibliotheque(v); const n = $('#q'); n.focus(); n.setSelectionRange(v.length, v.length); };
   $('#neuf').onclick = () => modalExercice(null);
-  $('#zone').querySelectorAll('[data-ex]').forEach(b =>
-    b.onclick = () => modalExercice(S.cat.find(x => String(x.id) === b.dataset.ex)));
+  lignesCliquables($('#zone'), '[data-ex]',
+    l => modalExercice(S.cat.find(x => String(x.id) === l.dataset.ex)));
 }
 
 /**
@@ -2195,7 +2210,7 @@ function peindreEditeur() {
           <button class="poignee" data-delbloc="${i}" aria-label="Supprimer le bloc">✕</button>
         </div>
         ${b.exercices.map((e, j) => `
-          <div class="ligne">
+          <div class="ligne" data-ed="${i}.${j}">
             <div class="g">
               <div class="nom">${e.nom}</div>
               <div class="meta">${(e.duree_s ? duree(e.duree_s) : e.reps_cible) || '—'}${
@@ -2204,9 +2219,8 @@ function peindreEditeur() {
                 j < b.exercices.length - 1 && e.pause_s ? ' · pause ' + e.pause_s + ' s' : ''}</div>
               ${e.note ? `<div class="note-coach">${e.note}</div>` : ''}
             </div>
-            <button class="poignee" data-mv="${i}.${j}.-1" aria-label="Monter">↑</button>
-            <button class="poignee" data-ed="${i}.${j}" aria-label="Modifier">✎</button>
-            <button class="poignee" data-delexo="${i}.${j}" aria-label="Retirer">✕</button>
+            <button class="poignee" data-mv="${i}.${j}.-1" aria-label="Monter ${e.nom}">↑</button>
+            <button class="poignee" data-delexo="${i}.${j}" aria-label="Retirer ${e.nom}">✕</button>
           </div>`).join('') || `<div class="empty" style="padding:14px 0;font-size:14px">Bloc vide</div>`}
         <button class="btn" data-addexo="${i}" style="width:100%">＋ exercice</button>
       </div>`).join('')}
@@ -2233,8 +2247,8 @@ function peindreEditeur() {
     [x[j - 1], x[j]] = [x[j], x[j - 1]];
     peindreEditeur();
   });
-  z.querySelectorAll('[data-ed]').forEach(b => b.onclick = () => {
-    const [i, j] = b.dataset.ed.split('.').map(Number);
+  lignesCliquables(z, '[data-ed]', l => {
+    const [i, j] = l.dataset.ed.split('.').map(Number);
     modalLigne(i, j);
   });
   z.querySelectorAll('[data-addexo]').forEach(b => b.onclick = () => choisirExercice(Number(b.dataset.addexo)));
@@ -2255,7 +2269,7 @@ function choisirExercice(bi) {
         <div class="g"><div class="nom">${e.nom}</div>
           <div class="meta">${[e.groupe, e.equipement].filter(Boolean).join(' · ')}</div></div>
         <span class="poignee">＋</span></div>`).join('') || `<div class="empty">Rien ne correspond.</div>`;
-    m.querySelectorAll('[data-pick]').forEach(l => l.onclick = () => {
+    lignesCliquables(m, '[data-pick]', l => {
       const e = S.cat.find(x => String(x.id) === l.dataset.pick);
       S.ed.blocs[bi].exercices.push({
         exercice_id: e.id, nom: e.nom, reps_cible: '10', duree_s: '',
@@ -2659,20 +2673,19 @@ function peindreMaxis(filtre) {
       saisie, il est estimé depuis les séries réalisées (formule d'Epley) — l'estimation
       suffit souvent, la mesure la remplace dès qu'elle existe.</p>
     <div class="champ" style="margin-top:14px"><input class="f" id="mq" placeholder="Rechercher un exercice" value="${filtre || ''}"></div>
-    ${vus.map(m => `<div class="ligne">
+    ${vus.map(m => `<div class="ligne" data-mx="${m.exercice_id}">
       <div class="g">
         <div class="nom">${m.nom}${m.auProgramme ? '' : ''}</div>
         <div class="meta">${m.rm_kg
           ? m.rm_kg + ' kg · ' + m.source
           : 'aucune donnée'}${m.auProgramme ? ' · au programme' : ''}</div>
       </div>
-      <button class="poignee" data-mx="${m.exercice_id}" aria-label="Modifier le max de ${m.nom}">✎</button>
     </div>`).join('') || `<div class="empty">Aucun exercice.</div>`}`;
 
   const champ = $('#mq');
   champ.oninput = () => { const v = champ.value; peindreMaxis(v); const n = $('#mq'); n.focus(); n.setSelectionRange(v.length, v.length); };
-  $('#zone').querySelectorAll('[data-mx]').forEach(b =>
-    b.onclick = () => modalMaxi(S.maxis.find(x => String(x.exercice_id) === b.dataset.mx)));
+  lignesCliquables($('#zone'), '[data-mx]',
+    l => modalMaxi(S.maxis.find(x => String(x.exercice_id) === l.dataset.mx)));
 }
 
 function modalMaxi(m) {

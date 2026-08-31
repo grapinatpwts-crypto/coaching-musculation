@@ -787,6 +787,20 @@ Les photos vivent dans le classeur, ce qui évitait tout service externe. À que
 dizaines de pratiquants, lire l'onglet `Photos` charge toutes les images d'un coup.
 Au-delà de cent, il faudra les déplacer — Drive, ou un onglet par tranche.
 
+## 8 novodecies. On clique la ligne, pas l'icône
+
+Partout où une ligne représente un enregistrement — un exercice du programme, une
+fiche du catalogue, un maximum, un programme attribué — **la ligne entière ouvre
+l'édition**. Les crayons ont disparu : ils étaient de petites cibles, et un pouce
+en salle ne vise pas au pixel.
+
+`lignesCliquables()` pose le comportement en une ligne de code par écran. Les
+boutons imbriqués gardent leur rôle : supprimer, monter, prévenir, ouvrir un lien.
+Un clic sur eux ne déclenche pas l'édition, un clic ailleurs sur la ligne si.
+
+Les zones tactiles des boutons restants passent de 4 à 8 pixels de marge, pour la
+même raison.
+
 ## 9. Parti pris visuel — charte Wellness Sport Club
 
 L'app reprend l'identité de **Wellness Sport Club** (`wellness-sportclub.fr`),
