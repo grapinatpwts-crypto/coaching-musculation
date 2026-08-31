@@ -971,15 +971,18 @@ async function vueSeance() {
 
   const blocs = await chargerSeance(S.jour);
   $('#liste').innerHTML = blocs.map(b => {
-    const cartes = b.exercices.map((e, k) => carte(e) +
-      (k < b.exercices.length - 1 && e.pause_s ? `<div class="pause">↓ ${e.pause_s} s de pause</div>` : '')
+    const seul = b.exercices.length < 2;
+    const cartes = b.exercices.map((e, k) => carte(e, seul) +
+      (k < b.exercices.length - 1 && e.pause_s
+        ? `<div class="pause">↓ ${reposTexte(e.pause_s)} de pause</div>` : '')
     ).join('');
-    if (b.exercices.length < 2) return cartes;
+    if (seul) return cartes;
     // Superset : on enchaîne les exercices, le repos vient après le tour complet.
     return `<div class="bloc">
       <div class="bloc-tete">
         <span class="eyebrow">Bloc ${b.bloc} · superset</span>
-        <span class="bloc-info">${b.series} tours · ${b.repos_s} s</span>
+        <span class="bloc-info">${b.series} tours · repos ${reposTexte(b.repos_s)} · ${
+          dureeTexte(Math.round(dureeBloc(b) / 60))}</span>
       </div>${cartes}</div>`;
   }).join('') + (S.seanceId
     ? `<div class="barre"><button class="btn plein" id="finSeance" style="flex:1">Terminer la séance</button></div>`
@@ -1185,11 +1188,20 @@ function majPendule(clos, total) {
   if (S.seanceId) S.pendule = setInterval(peindre, 60000);
 }
 
+/** « 45 s », « 2 min », « 2 min 30 ». Un repos de 150 s ne se lit pas. */
+function reposTexte(sec) {
+  const n = Number(sec) || 0;
+  if (!n) return '';
+  if (n < 60) return n + ' s';
+  const m = Math.floor(n / 60), r = n % 60;
+  return r ? `${m} min ${r}` : `${m} min`;
+}
+
 /** Commentaires non lus sur un exercice, pour celui qui regarde. */
 const enAttente = id => ((S.nonLus || {}).exercices || {})[id] || 0;
 
 /** Carte d'un exercice. series et repos_s sont hérités de son bloc. */
-function carte(e) {
+function carte(e, seul) {
   const n = (S.faits[e.exercice_id] || []).length;
   const fini = S.finis.indexOf(e.exercice_id) !== -1;
   const cible = e.duree_s ? duree(e.duree_s) : e.reps_cible;
@@ -1202,6 +1214,10 @@ function carte(e) {
       <div class="meta">${e.series} × ${cible}${chargeTexte(e) ? ' · ' + chargeTexte(e) : ''}${
         fini && n < e.series ? ' · arrêté à ' + n : ''}${
         !fini && e.dernier && e.charge_cible ? ' · dernière fois ' + e.dernier.charge + ' kg' : ''}</div>
+      ${seul ? `<div class="meta">${[
+        e.repos_s ? 'repos ' + reposTexte(e.repos_s) : '',
+        dureeTexte(Math.round(dureeBloc({ series:e.series, repos_s:e.repos_s, exercices:[e] }) / 60))
+      ].filter(Boolean).join(' · ')}</div>` : ''}
       ${enAttente(e.exercice_id) ? `<span class="pastille-cm">${enAttente(e.exercice_id)} mot${
         enAttente(e.exercice_id) > 1 ? 's' : ''} de ${S.moi.coach || 'votre coach'}</span>` : ''}
       ${e.note ? `<div class="note-coach">${e.note}</div>` : ''}

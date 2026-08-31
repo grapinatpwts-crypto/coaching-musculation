@@ -873,7 +873,14 @@ et l'arrondi le dit déjà.
 La durée s'affiche sur l'accueil, sur l'écran de séance, dans l'éditeur et sur les
 programmes. **Chaque bloc affiche aussi la sienne**, sans l'échauffement ni le
 changement de poste qui n'appartiennent à aucun bloc en particulier : c'est ce qui
-permet de voir d'un coup d'œil quel bloc pèse dans la séance. `dureeJour()` la recalcule côté client pour le jour en cours d'édition,
+permet de voir d'un coup d'œil quel bloc pèse dans la séance.
+
+Côté pratiquant, un bloc à un seul exercice n'a pas d'en-tête — il ne se distingue
+pas d'une série classique, et c'est voulu. Sa durée et son repos passent alors **sur
+la carte de l'exercice**, faute de quoi ils ne s'afficheraient nulle part.
+
+Les repos sont écrits en minutes dès qu'ils dépassent la minute : « 2 min 30 » plutôt
+que « 150 s », qu'on ne lit pas. `dureeJour()` la recalcule côté client pour le jour en cours d'édition,
 que le serveur ne connaît pas encore.
 
 ### Démarrer et suivre
