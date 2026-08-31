@@ -414,6 +414,14 @@ function cache(cle, valeur) {
   ecrireJSON(CLE_CACHE, c);
 }
 
+/** Jette une copie locale devenue fausse. `cache(cle, undefined)` la lit, ne l'efface pas. */
+function oublier(cle) {
+  const c = lireJSON(CLE_CACHE, {});
+  if (c[cle] === undefined) return;
+  delete c[cle];
+  ecrireJSON(CLE_CACHE, c);
+}
+
 /**
  * Plusieurs lectures en une seule invocation. Chaque sous-appel a son propre
  * résultat : `[{ok, data}|{ok:false, error}]`. On rend directement les données,
@@ -916,7 +924,7 @@ function modalActivite(x) {
         notes: w.querySelector('#aNotes').value
       });
       w.fermer(); toast('Activité enregistrée');
-      cache('accueil', undefined); S.cal = null;
+      oublier('accueil'); S.cal = null;
       vueAccueil();
     } catch (err) { toast(err.message); this.disabled = false; }
   };
@@ -1016,7 +1024,7 @@ async function vueSeance() {
       const r = await api('demarrer', { jour: S.jour });
       S.seanceId = r.seance_id;
       S.debut = new Date().toISOString();
-      cache('accueil', undefined);
+      oublier('accueil');
       vueSeance();
     } catch (err) {
       if (!estReseau(err)) { toast(err.message); this.disabled = false; this.textContent = 'Démarrer la séance'; return; }
@@ -1579,7 +1587,7 @@ function modalFinSeance() {
       w.fermer();
       toast('Séance enregistrée');
       S.seanceId = null; S.debut = null; S.faits = {}; S.finis = []; S.cal = null;
-      cache('accueil', undefined);   // la prochaine séance a changé
+      oublier('accueil');   // la prochaine séance a changé
       try { S.moi = await api('bootstrap'); sauverSession(); } catch (err) {}
       vueSeance();
     } catch (err) { toast(err.message); this.disabled = false; }
@@ -1607,7 +1615,7 @@ function annulerSeance(w, faites) {
       w.fermer();
       toast('Séance annulée');
       S.seanceId = null; S.debut = null; S.faits = {}; S.finis = []; S.cal = null;
-      cache('accueil', undefined); cache('seance:' + S.jour, undefined);
+      oublier('accueil'); oublier('seance:' + S.jour);
       try { S.moi = await api('bootstrap'); sauverSession(); } catch (err) {}
       vueSeance();
     } catch (err) { toast(err.message); this.disabled = false; }
