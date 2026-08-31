@@ -142,6 +142,12 @@ header h2{font-size:30px;text-transform:uppercase;line-height:1}
 .ligne .g .meta{font-size:12.5px;color:var(--dust);margin-top:2px}
 .ligne .poignee{color:var(--dust);font-size:18px;padding:8px 6px}
 .ligne.cliquable{cursor:pointer}
+/* La prise doit être une cible franche, et ne pas déclencher le défilement */
+.prise{touch-action:none;cursor:grab;user-select:none;letter-spacing:-2px;
+  font-size:16px;color:var(--dust);flex:0 0 auto}
+.prise:active{cursor:grabbing;color:var(--brand-ink)}
+.deplace{opacity:.55;outline:2px dashed var(--brand-ink);outline-offset:2px;border-radius:10px}
+.bloc.deplace{background:#1F1F1F}
 .ligne.cliquable:active{background:#262626}
 .entete{display:flex;align-items:center;gap:10px;margin-bottom:9px}
 .entete .eyebrow{flex:1}
@@ -2071,6 +2077,49 @@ function lignesCliquables(zone, selecteur, action) {
   });
 }
 
+/**
+ * Glisser-déposer d'une liste verticale, au doigt comme à la souris.
+ * Le glisser-déposer HTML5 n'existe pas au tactile : on passe par les événements
+ * pointeur, qui couvrent les deux. La prise se fait sur une poignée dédiée —
+ * attraper la ligne entière entrerait en conflit avec le défilement.
+ *
+ * L'élément est déplacé dans le DOM en direct ; `onFin` relit l'ordre obtenu.
+ */
+function triable(conteneur, selecteurItem, onFin) {
+  conteneur.querySelectorAll(selecteurItem + ' > [data-poignee], ' + selecteurItem + ' [data-poignee]')
+    .forEach(poignee => {
+      const item = poignee.closest(selecteurItem);
+      if (!item) return;
+
+      poignee.onpointerdown = ev => {
+        ev.preventDefault();
+        ev.stopPropagation();
+        item.classList.add('deplace');
+        poignee.setPointerCapture(ev.pointerId);
+        if (navigator.vibrate) navigator.vibrate(12);
+
+        poignee.onpointermove = e => {
+          const sous = document.elementFromPoint(e.clientX, e.clientY);
+          const cible = sous && sous.closest(selecteurItem);
+          if (!cible || cible === item || !conteneur.contains(cible)) return;
+          const r = cible.getBoundingClientRect();
+          const apres = e.clientY > r.top + r.height / 2;
+          cible.parentNode.insertBefore(item, apres ? cible.nextSibling : cible);
+        };
+
+        const finir = () => {
+          poignee.onpointermove = null;
+          poignee.onpointerup = null;
+          poignee.onpointercancel = null;
+          item.classList.remove('deplace');
+          onFin();
+        };
+        poignee.onpointerup = finir;
+        poignee.onpointercancel = finir;
+      };
+    });
+}
+
 function modal(titre, corps) {
   const d = document.createElement('div');
   d.className = 'modal';
@@ -2190,6 +2239,28 @@ function modalExercice(ex) {
   };
 }
 
+/**
+ * Relit l'ordre depuis le DOM après un déplacement, et le réinjecte dans S.ed.
+ * On repart des identités : un bloc vidé disparaît, un bloc reste à sa place.
+ */
+function relireOrdre() {
+  const z = $('#edit');
+  const parUid = {};
+  S.ed.blocs.forEach(b => {
+    parUid[b._uid] = b;
+    b.exercices.forEach(e => { parUid[e._uid] = e; });
+  });
+
+  S.ed.blocs = [...z.querySelectorAll('.bloc[data-buid]')].map(bd => {
+    const b = parUid[bd.dataset.buid];
+    b.exercices = [...bd.querySelectorAll('.ligne[data-uid]')]
+      .map(l => parUid[l.dataset.uid]).filter(Boolean);
+    return b;
+  }).filter(Boolean);
+
+  peindreEditeur();
+}
+
 function peindreEditeur() {
   const z = $('#edit');
   if (!S.ed) { z.innerHTML = `<div class="empty">Aucun jour. Créez-en un pour composer le programme.</div>`; return; }
@@ -2198,8 +2269,9 @@ function peindreEditeur() {
   z.innerHTML = `
     <div class="eyebrow" style="margin:4px 0 12px">${ed.jour}${ed.neuf ? ' · nouveau' : ''}</div>
     ${ed.blocs.map((b, i) => `
-      <div class="bloc">
+      <div class="bloc" data-buid="${b._uid}">
         <div class="entete">
+          <span class="poignee prise" data-poignee title="Déplacer le bloc" aria-label="Déplacer le bloc ${i + 1}">⠿</span>
           <span class="eyebrow">Bloc ${i + 1}</span>
           <input class="f" style="width:58px;text-align:center;padding:8px 4px;min-height:38px"
             type="number" min="1" data-b="${i}" data-k="series" value="${b.series}">
@@ -2210,7 +2282,8 @@ function peindreEditeur() {
           <button class="poignee" data-delbloc="${i}" aria-label="Supprimer le bloc">✕</button>
         </div>
         ${b.exercices.map((e, j) => `
-          <div class="ligne" data-ed="${i}.${j}">
+          <div class="ligne" data-ed="${i}.${j}" data-uid="${e._uid}">
+            <span class="poignee prise" data-poignee title="Déplacer" aria-label="Déplacer ${e.nom}">⠿</span>
             <div class="g">
               <div class="nom">${e.nom}</div>
               <div class="meta">${(e.duree_s ? duree(e.duree_s) : e.reps_cible) || '—'}${
@@ -2219,7 +2292,6 @@ function peindreEditeur() {
                 j < b.exercices.length - 1 && e.pause_s ? ' · pause ' + e.pause_s + ' s' : ''}</div>
               ${e.note ? `<div class="note-coach">${e.note}</div>` : ''}
             </div>
-            <button class="poignee" data-mv="${i}.${j}.-1" aria-label="Monter ${e.nom}">↑</button>
             <button class="poignee" data-delexo="${i}.${j}" aria-label="Retirer ${e.nom}">✕</button>
           </div>`).join('') || `<div class="empty" style="padding:14px 0;font-size:14px">Bloc vide</div>`}
         <button class="btn" data-addexo="${i}" style="width:100%">＋ exercice</button>
@@ -2240,19 +2312,18 @@ function peindreEditeur() {
     const [i, j] = b.dataset.delexo.split('.').map(Number);
     ed.blocs[i].exercices.splice(j, 1); peindreEditeur();
   });
-  z.querySelectorAll('[data-mv]').forEach(b => b.onclick = () => {
-    const [i, j] = b.dataset.mv.split('.').map(Number);
-    if (j === 0) return;
-    const x = ed.blocs[i].exercices;
-    [x[j - 1], x[j]] = [x[j], x[j - 1]];
-    peindreEditeur();
-  });
+  // Un exercice peut passer d'un bloc à l'autre : le conteneur est tout l'éditeur.
+  triable(z, '.ligne[data-uid]', relireOrdre);
+  triable(z, '.bloc[data-buid]', relireOrdre);
   lignesCliquables(z, '[data-ed]', l => {
     const [i, j] = l.dataset.ed.split('.').map(Number);
     modalLigne(i, j);
   });
   z.querySelectorAll('[data-addexo]').forEach(b => b.onclick = () => choisirExercice(Number(b.dataset.addexo)));
-  $('#addBloc').onclick = () => { ed.blocs.push({ series: 3, repos_s: 90, exercices: [] }); peindreEditeur(); };
+  $('#addBloc').onclick = () => {
+    ed.blocs.push(marquer([{ series: 3, repos_s: 90, exercices: [] }])[0]);
+    peindreEditeur();
+  };
   $('#save').onclick = enregistrerJour;
   const dj = $('#delJour');
   if (dj) dj.onclick = function () { supprimerJour(this); };
@@ -2273,7 +2344,8 @@ function choisirExercice(bi) {
       const e = S.cat.find(x => String(x.id) === l.dataset.pick);
       S.ed.blocs[bi].exercices.push({
         exercice_id: e.id, nom: e.nom, reps_cible: '10', duree_s: '',
-        charge_cible: 0, pct_rm: 0, cadence: '', pause_s: 0
+        charge_cible: 0, pct_rm: 0, cadence: '', pause_s: 0, note: '',
+        _uid: 'e' + (++_uid)
       });
       m.fermer(); peindreEditeur();
     });
@@ -2862,6 +2934,17 @@ async function modalAttribuer() {
 }
 
 // ── Éditeur de jour, commun aux modèles et aux programmes ─────
+/** Chaque bloc et chaque exercice reçoit une identité, seule façon de relire
+ *  l'ordre après un déplacement : la position ne peut pas servir de clé. */
+let _uid = 0;
+function marquer(blocs) {
+  blocs.forEach(b => {
+    if (!b._uid) b._uid = 'b' + (++_uid);
+    b.exercices.forEach(e => { if (!e._uid) e._uid = 'e' + (++_uid); });
+  });
+  return blocs;
+}
+
 function chargerJour(jour) {
   const modele = !!S.coach.modele;
   const src = modele ? S.modele : S.prog;
@@ -2873,7 +2956,7 @@ function chargerJour(jour) {
     attribution_id: modele ? null : S.attSel,
     jour: jour,
     neuf: !j,
-    blocs: j ? JSON.parse(JSON.stringify(j.blocs)) : []
+    blocs: marquer(j ? JSON.parse(JSON.stringify(j.blocs)) : [])
   };
 }
 

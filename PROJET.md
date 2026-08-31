@@ -801,6 +801,30 @@ Un clic sur eux ne déclenche pas l'édition, un clic ailleurs sur la ligne si.
 Les zones tactiles des boutons restants passent de 4 à 8 pixels de marge, pour la
 même raison.
 
+## 8 vicies. Glisser-déposer
+
+Blocs et exercices se réordonnent au doigt dans l'éditeur. Un exercice peut passer
+d'un bloc à l'autre, ce qui est le geste courant : on transforme deux séries isolées
+en superset en tirant l'une dans l'autre.
+
+**Pas de glisser-déposer HTML5.** Il n'existe pas au tactile, et le coach travaille
+au téléphone. `triable()` passe par les événements pointeur, qui couvrent souris et
+doigt sans dépendance ni bibliothèque à charger — l'app doit rester utilisable hors
+ligne.
+
+**Une poignée dédiée**, pas la ligne entière : attraper la ligne entrerait en conflit
+avec le défilement. La poignée porte `touch-action: none`, ce qui dit au navigateur
+de ne pas interpréter le geste comme un scroll.
+
+**Des identités, pas des positions.** Chaque bloc et chaque exercice reçoit un `_uid`
+au chargement. Après un déplacement, `relireOrdre()` relit le DOM et reconstruit
+`S.ed` à partir de ces identités : une clé fondée sur la position se serait invalidée
+au premier mouvement. Les réglages du bloc — tours, repos — suivent le bloc.
+
+Vérifié sous Node avec un DOM simulé : bloc descendu en dernier, exercice déplacé
+d'un bloc à l'autre, bloc entièrement vidé. Le bouton « monter » disparaît, devenu
+inutile.
+
 ## 9. Parti pris visuel — charte Wellness Sport Club
 
 L'app reprend l'identité de **Wellness Sport Club** (`wellness-sportclub.fr`),
