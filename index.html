@@ -355,6 +355,7 @@ async function api(action, payload = {}) {
     if (/TOKEN/.test(j.error)) return reconnexion();
     throw new Error(j.error);
   }
+  perimer(action);
   return j.data;
 }
 
@@ -402,14 +403,35 @@ function cache(cle, valeur) {
 }
 
 /**
+ * Plusieurs lectures en une seule invocation. Chaque sous-appel a son propre
+ * résultat : `[{ok, data}|{ok:false, error}]`. On rend directement les données,
+ * en remontant la première erreur — l'appelant n'a pas à démêler le protocole.
+ */
+async function apiLot(appels) {
+  const r = await api('lot', { appels });
+  // Un lot peut contenir des écritures : chacune périme ce qu'elle touche.
+  appels.forEach(a => perimer(a.action));
+  const rate = r.find(x => !x.ok);
+  if (rate) throw new Error(rate.error);
+  return r.map(x => x.data);
+}
+
+/**
  * Lecture avec affichage immédiat : si une copie existe, l'appelant la reçoit
  * tout de suite et `apresCoup` est rappelé quand la version fraîche arrive.
  * C'est ce qui fait la différence entre une app qui répond et une app qui rame :
  * Apps Script met une à deux secondes, le cache répond en zéro.
  */
+const FRAICHEUR = 20000;   // en deçà, la copie est réputée bonne
+
 async function lireVite(action, payload, cleCache, apresCoup) {
   const c = cache(cleCache);
   if (!c) return (await lire(action, payload, cleCache)).d;
+
+  // Sans cette fenêtre, le rafraîchissement rappelait la vue, qui relançait un
+  // rafraîchissement : deux requêtes par affichage au lieu d'une.
+  if (Date.now() - (c.ts || 0) < FRAICHEUR) return c.v;
+
   lire(action, payload, cleCache)
     .then(r => { if (r.frais && JSON.stringify(r.d) !== JSON.stringify(c.v)) apresCoup(r.d); })
     .catch(() => {});
@@ -434,6 +456,34 @@ async function lire(action, payload, cleCache) {
     if (!c) throw new Error('HORS_LIGNE_SANS_CACHE');
     return { d: c.v, frais: false };
   }
+}
+
+/**
+ * Copies à jeter quand telle action est écrite : une modification de fiche
+ * périme la liste des athlètes autant que la fiche elle-même.
+ */
+const PERIME = {
+  pratiquantSave: ['athletes', 'fiche:'], pratiquantCreer: ['athletes'],
+  photoSave: ['athletes', 'fiche:'], photoSuppr: ['athletes', 'fiche:'],
+  attribuer: ['athletes', 'fiche:', 'accueil', 'mesProgrammes'],
+  attributionMaj: ['athletes', 'fiche:'], attributionSuppr: ['athletes', 'fiche:', 'accueil'],
+  programmeSave: ['accueil', 'mesProgrammes'], programmeJour: ['accueil', 'mesProgrammes'],
+  exerciceSave: ['catalogue'], exerciceSuppr: ['catalogue'],
+  modeleSave: ['modeles'], modeleSuppr: ['modeles'], modeleJourSave: ['modeles'],
+  terminer: ['accueil', 'athletes'], serie: ['accueil'],
+  activiteSave: ['accueil'], activiteSuppr: ['accueil'],
+  maintenance: ['catalogue', 'modeles', 'athletes', 'accueil']
+};
+
+/** Jette les copies périmées par une écriture. */
+function perimer(action) {
+  const cles = PERIME[action];
+  if (!cles) return;
+  const c = lireJSON(CLE_CACHE, {});
+  Object.keys(c).forEach(k => {
+    if (cles.some(p => k === p || (p.endsWith(':') && k.indexOf(p) === 0))) delete c[k];
+  });
+  ecrireJSON(CLE_CACHE, c);
 }
 
 /**
@@ -856,7 +906,8 @@ async function vueMesProgrammes() {
     <div id="zone"><div class="empty">Chargement…</div></div>`;
   $('#retourAccueil').onclick = () => { S.vue = 'accueil'; rendre(); };
 
-  const list = await api('mesProgrammes');
+  const list = await lireVite('mesProgrammes', {}, 'mesProgrammes',
+    () => { if (S.vue === 'programmes') vueMesProgrammes(); });
   $('#zone').innerHTML = list.map(pr => `
     <details class="pli" ${pr.statut === 'En cours' ? 'open' : ''}>
       <summary>
@@ -1473,10 +1524,16 @@ async function vueProgres() {
   if (!S.exos.length && S.jour) await chargerSeance(S.jour);
   if (!S.exos.length) { $('#liste').innerHTML = `<div class="empty">Enregistrez une première séance pour voir vos courbes.</div>`; return; }
 
-  const blocs = await Promise.all(S.exos.map(async e => {
-    let h;
-    try { h = (await lire('historique', { exercice_id:e.exercice_id }, 'hist:' + e.exercice_id)).d; }
-    catch (err) { return ''; }
+  // Un appel par exercice faisait six invocations pour six exercices.
+  let histoires;
+  try {
+    histoires = await apiLot(S.exos.map(e => ({ action:'historique', payload:{ exercice_id:e.exercice_id } })));
+  } catch (err) {
+    $('#liste').innerHTML = `<div class="empty">${err.message}</div>`; return;
+  }
+
+  const blocs = S.exos.map((e, n) => {
+    const h = histoires[n] || [];
     if (!h.length) return '';
 
     const max = Math.max(...h.map(x => x.charge));
@@ -1492,7 +1549,7 @@ async function vueProgres() {
       <div class="sets">${h.slice(0, 6).map(x =>
         `<span class="set">${x.duree_s ? duree(x.duree_s) : x.reps + ' × ' + x.charge + ' kg'}</span>`).join('')}</div>
     </div>`;
-  }));
+  });
   $('#liste').innerHTML = blocs.join('') || `<div class="empty">Rien à afficher pour l'instant.</div>`;
 }
 
@@ -1693,7 +1750,10 @@ function tel(n) {
 }
 
 async function listeAthletes() {
-  const list = await api('coachAthletes');
+  let list;
+  try { list = await lireVite('coachAthletes', {}, 'athletes',
+    () => { if (S.vue === 'athletes' && S.coach && !S.coach.email) listeAthletes(); }); }
+  catch (err) { $('#zone').innerHTML = `<div class="empty">${err.message}</div>`; return; }
   S.athletes = list;
 
   const nouveaux = list.filter(a => a.statut === 'Nouveau').length;
@@ -1798,7 +1858,11 @@ function modalInscrire() {
 
 // ── Fiche d'un pratiquant ────────────────────────────────────
 async function vueFiche() {
-  const f = await api('pratiquant', { email: S.coach.email });
+  const cle = 'fiche:' + S.coach.email;
+  let f;
+  try { f = await lireVite('pratiquant', { email:S.coach.email }, cle,
+    () => { if (S.coach.email && S.coach.sous === 'fiche') vueFiche(); }); }
+  catch (err) { $('#zone').innerHTML = `<div class="empty">${err.message}</div>`; return; }
   S.fiche = f;
   const t = tel(f.telephone);
   const enCours = f.attributions.filter(a => a.statut === 'En cours');
@@ -2145,7 +2209,8 @@ const SEMAINE = ['Lundi', 'Mardi', 'Mercredi', 'Jeudi', 'Vendredi', 'Samedi', 'D
 
 // ── Bibliothèque d'exercices ─────────────────────────────────
 async function vueBibliotheque() {
-  S.cat = await api('catalogue');
+  S.cat = await lireVite('catalogue', {}, 'catalogue',
+    () => { if (S.coach && S.coach.onglet === 'biblio') vueBibliotheque(); });
   peindreBibliotheque();
 }
 
@@ -2544,7 +2609,8 @@ function ordreDifficulte(d) {
 }
 
 async function vueModeles() {
-  S.modeles = await api('modeles');
+  S.modeles = await lireVite('modeles', {}, 'modeles',
+    () => { if (S.vue === 'modeles' && S.coach && !S.coach.modele) vueModeles(); });
   return S.coach.categorie ? peindreCategorie() : peindreCategories();
 }
 
@@ -2704,9 +2770,11 @@ function modalModele(m) {
 
 /** Écran d'un modèle : sa fiche, puis le même éditeur de jours que pour un pratiquant. */
 async function vueModele() {
-  const m = await api('modele', { id: S.coach.modele });
+  const demandes = [{ action:'modele', payload:{ id:S.coach.modele } }];
+  if (!S.cat) demandes.push({ action:'catalogue' });   // le sélecteur d'exercices s'en sert
+  const [m, cat] = await apiLot(demandes);
   S.modele = m;
-  if (!S.cat) S.cat = await api('catalogue');   // le sélecteur d'exercices s'en sert
+  if (cat) S.cat = cat;
   const jours = m.jours.map(j => j.jour);
 
   if (!S.ed || S.ed.cible !== 'modele' || S.ed.modele_id !== m.id ||
@@ -2806,13 +2874,29 @@ function modalMaxi(m) {
 
 // ── Programme d'un pratiquant ────────────────────────────────
 async function vueProgramme() {
-  const atts = await api('attributions', { email: S.coach.email });
+  // Un seul aller-retour : la liste des attributions, le catalogue si on ne
+  // l'a pas encore, et le contenu de l'attribution en cours.
+  const demandes = [{ action:'attributions', payload:{ email:S.coach.email } }];
+  if (!S.cat) demandes.push({ action:'catalogue' });
+  demandes.push({ action:'programme', payload:{ email:S.coach.email, attribution_id:S.attSel || undefined } });
+
+  let reponses;
+  try { reponses = await apiLot(demandes); }
+  catch (err) { $('#zone').innerHTML = `<div class="empty">${err.message}</div>`; return; }
+
+  const atts = reponses[0];
+  if (!S.cat) S.cat = reponses[1];
+  let prog = reponses[reponses.length - 1];
+
   S.atts = atts;
   if (!S.attSel || !atts.some(a => a.id === S.attSel)) {
     const active = atts.find(a => a.statut === 'En cours');
     S.attSel = (active || atts[0] || {}).id || null;
+    // L'attribution visée a changé en cours de route : on va rechercher la bonne.
+    if (S.attSel && (!prog.attribution || prog.attribution.id !== S.attSel)) {
+      prog = await api('programme', { email:S.coach.email, attribution_id:S.attSel });
+    }
   }
-  if (!S.cat) S.cat = await api('catalogue');
 
   if (!S.attSel) {
     $('#zone').innerHTML = `
@@ -2822,7 +2906,6 @@ async function vueProgramme() {
     return;
   }
 
-  const prog = await api('programme', { email: S.coach.email, attribution_id: S.attSel });
   S.prog = prog;
   const att = S.atts.find(a => a.id === S.attSel);
   const jours = prog.jours.map(j => j.jour);

@@ -178,8 +178,29 @@ function doPost(e) {
     .setMimeType(ContentService.MimeType.JSON);
 }
 
+/**
+ * Plusieurs actions dans une seule invocation.
+ * Le coût d'Apps Script est dans l'invocation, pas dans le travail : trois appels
+ * en série coûtent trois fois le plancher de latence, un lot n'en coûte qu'un.
+ * Chaque sous-appel réussit ou échoue pour son compte, l'un ne fait pas tomber
+ * les autres.
+ */
+function lot_(appels, user, profil, estCoach) {
+  if (!appels || !appels.length) throw new Error('LOT_VIDE');
+  if (appels.length > 12) throw new Error('LOT_TROP_LONG');
+  return appels.map(function (a) {
+    if (a.action === 'lot') return { ok: false, error: 'LOT_IMBRIQUE' };
+    try {
+      return { ok: true, data: route_(a.action, a.payload || {}, user, profil, estCoach) };
+    } catch (err) {
+      return { ok: false, error: String(err && err.message ? err.message : err) };
+    }
+  });
+}
+
 function route_(action, p, user, profil, estCoach) {
   switch (action) {
+    case 'lot':            return lot_(p.appels, user, profil, estCoach);
     case 'bootstrap':      return bootstrap_(user, profil, estCoach);
     case 'seance':         return getSeance_(user.email, p.jour);
     case 'demarrer':       return demarrerSeance_(user.email, p.jour);
@@ -348,27 +369,67 @@ function ajouterColonnesManquantes_(sh, colonnes) {
  * Toute écriture oublie l'onglet concerné.
  */
 const MEMO = {};
-function oublier_(tab) { delete MEMO[tab]; CACHE_TABS.indexOf(tab) !== -1 && cacheOublier_(tab); }
+function oublier_(tab) { delete MEMO[tab]; if (cacheUtile_(tab)) cacheOublier_(tab); }
 
 /**
- * Onglets stables et coûteux : leur contenu change rarement et pèse lourd.
- * On les garde d'une requête à l'autre dans le cache du script, cinq minutes,
- * invalidés dès qu'on y écrit.
+ * Tous les onglets passent par le cache du script, cinq minutes, invalidés dès
+ * qu'on y écrit. Le serveur ne touche plus au tableur qu'à l'écriture, ou quand
+ * le cache est froid.
+ *
+ * Deux exceptions : les photos, trop lourdes pour un cache dont chaque entrée
+ * plafonne à 100 ko, et l'onglet Import qui est un sas de passage.
+ * Les onglets volumineux sont découpés en tranches ; au-delà de six, on renonce
+ * plutôt que de multiplier les allers-retours au cache.
  */
-const CACHE_TABS = ['Exercices', 'Modeles', 'ModeleLignes'];
+const SANS_CACHE = ['Photos', 'Import'];
+const TRANCHE = 90000, TRANCHES_MAX = 6;
 
 function cacheOublier_(tab) {
-  try { CacheService.getScriptCache().remove('tab_' + tab); } catch (e) {}
+  try {
+    const c = CacheService.getScriptCache();
+    const cles = ['tab_' + tab + '_n'];
+    for (let i = 0; i < TRANCHES_MAX; i++) cles.push('tab_' + tab + '_' + i);
+    c.removeAll(cles);
+  } catch (e) {}
 }
+
+function cacheLire_(tab) {
+  try {
+    const c = CacheService.getScriptCache();
+    const n = Number(c.get('tab_' + tab + '_n'));
+    if (!n) return null;
+    const cles = [];
+    for (let i = 0; i < n; i++) cles.push('tab_' + tab + '_' + i);
+    const parts = c.getAll(cles);
+    let brut = '';
+    for (let i = 0; i < n; i++) {
+      if (parts[cles[i]] === undefined) return null;   // tranche expirée : tout est caduc
+      brut += parts[cles[i]];
+    }
+    return JSON.parse(brut);
+  } catch (e) { return null; }
+}
+
+function cacheEcrire_(tab, valeur) {
+  try {
+    const brut = JSON.stringify(valeur);
+    const n = Math.ceil(brut.length / TRANCHE) || 1;
+    if (n > TRANCHES_MAX) return;
+    const paquet = { };
+    paquet['tab_' + tab + '_n'] = String(n);
+    for (let i = 0; i < n; i++) paquet['tab_' + tab + '_' + i] = brut.substr(i * TRANCHE, TRANCHE);
+    CacheService.getScriptCache().putAll(paquet, 300);
+  } catch (e) {}
+}
+
+const cacheUtile_ = tab => SANS_CACHE.indexOf(tab) === -1;
 
 function lire_(tab) {
   if (MEMO[tab]) return MEMO[tab];
 
-  if (CACHE_TABS.indexOf(tab) !== -1) {
-    try {
-      const brut = CacheService.getScriptCache().get('tab_' + tab);
-      if (brut) return (MEMO[tab] = JSON.parse(brut));
-    } catch (e) {}
+  if (cacheUtile_(tab)) {
+    const froid = cacheLire_(tab);
+    if (froid) return (MEMO[tab] = froid);
   }
 
   const sh = SpreadsheetApp.getActive().getSheetByName(tab);
@@ -382,13 +443,7 @@ function lire_(tab) {
     return o;
   });
 
-  if (CACHE_TABS.indexOf(tab) !== -1) {
-    try {
-      const brut = JSON.stringify(out);
-      // Le cache du script plafonne à 100 ko par entrée : au-delà, on s'en passe.
-      if (brut.length < 90000) CacheService.getScriptCache().put('tab_' + tab, brut, 300);
-    } catch (e) {}
-  }
+  if (cacheUtile_(tab)) cacheEcrire_(tab, out);
   return (MEMO[tab] = out);
 }
 
