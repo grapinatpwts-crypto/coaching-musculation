@@ -812,6 +812,16 @@ au téléphone. `triable()` passe par les événements pointeur, qui couvrent so
 doigt sans dépendance ni bibliothèque à charger — l'app doit rester utilisable hors
 ligne.
 
+**Écouter le document, pas capturer le pointeur.** La première version appelait
+`setPointerCapture` sur la poignée ; son échec interrompait le gestionnaire avant
+même d'installer les écouteurs, et la poignée ne répondait à rien. `pointermove` et
+`pointerup` sont désormais écoutés sur le document, qui voit tout — le doigt quitte
+la poignée dès le premier centimètre de toute façon.
+
+**Une poignée nommée par ce qu'elle déplace.** `[data-poignee="bloc"]` ou
+`"exercice"`. Un sélecteur descendant attrapait les poignées d'exercices depuis le
+bloc parent, et le second appel écrasait les liaisons du premier.
+
 **Une poignée dédiée**, pas la ligne entière : attraper la ligne entrerait en conflit
 avec le défilement. La poignée porte `touch-action: none`, ce qui dit au navigateur
 de ne pas interpréter le geste comme un scroll.
