@@ -1447,8 +1447,19 @@ function tempo(c) {
   return p ? PHASES.map((l, i) => `${p[i]} s ${l}`).join(' · ') : '';
 }
 
+/**
+ * Normalise une cadence saisie. Quatre chiffres collés suffisent — « 1320 »
+ * devient « 1-3-2-0 » — parce que les tirets sont évidents et pénibles à taper
+ * sur un clavier de téléphone. Un temps à deux chiffres, comme un maintien de
+ * 10 secondes, demande les tirets : « 1-10-1-0 ».
+ */
+function normaliserCadence(v) {
+  const t = String(v || '').trim();
+  return /^\d{4}$/.test(t) ? t.split('').join('-') : t;
+}
+
 function cadence4(c) {
-  const p = String(c).split('-').map(x => Number(x.trim()));
+  const p = normaliserCadence(c).split('-').map(x => Number(x.trim()));
   return p.length === 4 && p.every(n => !isNaN(n) && n >= 0) ? p : null;
 }
 
@@ -2626,7 +2637,9 @@ function modalLigne(bi, ei) {
     </div>
     <p class="consigne">Un pourcentage l'emporte sur la charge fixe : la charge est
       recalculée à chaque séance depuis le 1RM du pratiquant, mesuré ou estimé.</p>
-    <div class="champ"><label>Cadence</label><input class="f" id="lCad" value="${e.cadence || ''}" placeholder="1-0-3-1"></div>
+    <div class="champ"><label>Cadence</label>
+      <input class="f" id="lCad" value="${e.cadence || ''}" inputmode="numeric"
+        placeholder="1031" autocomplete="off"></div>
     <p class="tempo" id="apercu"></p>
     ${dernier ? '' : `<div class="champ"><label>Pause avant l'exercice suivant (s)</label>
       <input class="f" id="lPau" type="number" min="0" step="5" value="${e.pause_s || 0}"></div>`}
@@ -2640,10 +2653,22 @@ function modalLigne(bi, ei) {
 
   const cad = m.querySelector('#lCad');
   const rafraichir = () => {
-    m.querySelector('#apercu').innerHTML = cad.value.trim()
-      ? tempo(cad.value.trim()) + courbeCadence(cad.value.trim(), true) : '';
+    const v = normaliserCadence(cad.value);
+    m.querySelector('#apercu').innerHTML = v ? tempo(v) + courbeCadence(v, true)
+      : `Quatre temps : montée, position haute, descente, position basse.
+         Tapez « 1031 », les tirets s'ajoutent seuls.`;
   };
-  cad.oninput = rafraichir; rafraichir();
+  // Le champ n'est réécrit qu'une fois les quatre chiffres posés, et seulement
+  // si le curseur est au bout : sinon on le déplacerait en pleine frappe.
+  cad.oninput = () => {
+    const v = normaliserCadence(cad.value);
+    if (v !== cad.value && document.activeElement === cad && cad.selectionStart === cad.value.length) {
+      cad.value = v;
+    }
+    rafraichir();
+  };
+  cad.onblur = () => { cad.value = normaliserCadence(cad.value); rafraichir(); };
+  rafraichir();
 
   m.querySelector('#lAnn').onclick = m.fermer;
   const lc = m.querySelector('#lCom');
@@ -2653,7 +2678,7 @@ function modalLigne(bi, ei) {
     e.duree_s = m.querySelector('#lDur').value.trim();
     e.charge_cible = Number(m.querySelector('#lChg').value) || 0;
     e.pct_rm = Number(m.querySelector('#lPct').value) || 0;
-    e.cadence = cad.value.trim();
+    e.cadence = normaliserCadence(cad.value);
     e.note = m.querySelector('#lNote').value.trim();
     if (!dernier) e.pause_s = Number(m.querySelector('#lPau').value) || 0;
     m.fermer(); peindreEditeur();

@@ -781,7 +781,10 @@ function repsMoyennes_(v) {
 
 /** Secondes d'une répétition d'après la cadence. Faute de cadence, une valeur par défaut. */
 function tempoSecondes_(cadence) {
-  const p = String(cadence || '').split('-').map(function (x) { return Number(x.trim()); });
+  // « 1320 » vaut « 1-3-2-0 » : le coach peut saisir les quatre chiffres collés.
+  const brut = String(cadence || '').trim();
+  const lu = /^\d{4}$/.test(brut) ? brut.split('').join('-') : brut;
+  const p = lu.split('-').map(function (x) { return Number(x.trim()); });
   if (p.length !== 4 || p.some(isNaN)) return CONFIG.TEMPO_DEFAUT_S;
   const t = p[0] + p[1] + p[2] + p[3];
   return t > 0 ? t : CONFIG.TEMPO_DEFAUT_S;

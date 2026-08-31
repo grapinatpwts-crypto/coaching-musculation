@@ -139,6 +139,12 @@ temps mort. Un bloc à un seul exercice ne connaît que `repos_s`, comportement 
 **montée · position haute · descente · position basse**.
 « 1-0-3-1 » = montée en 1 s, pas d'arrêt en haut, descente en 3 s, 1 s en bas.
 
+**Les tirets se tapent tout seuls.** Quatre chiffres collés suffisent : « 1031 »
+devient « 1-0-3-1 ». Les tirets sont évidents et pénibles à saisir sur un clavier de
+téléphone. Un temps à deux chiffres — un maintien de 10 secondes — demande encore les
+tirets : « 1-10-1-0 ». Le champ n'est réécrit qu'une fois les quatre chiffres posés,
+et seulement si le curseur est au bout, pour ne pas le déplacer en pleine frappe.
+
 Affichée en pastille sur la carte et en toutes lettres dans la saisie, accompagnée
 d'une **courbe** : le temps en abscisse, la position de la charge en ordonnée, une
 ligne rouge entre les deux guides. La pente donne la vitesse, le plat donne l'arrêt.
