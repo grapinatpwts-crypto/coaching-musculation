@@ -1180,9 +1180,11 @@ function majPendule(clos, total) {
       a.textContent = S.dureeEstimee ? `Programme · ${dureeTexte(S.dureeEstimee)}` : 'Programme';
       return;
     }
+    // Écoulé et prévu se lisent dans la même unité, séparés d'une barre : « 135 min »
+    // à côté de « 1 heure prévue » disait deux fois la même chose, dans deux formats.
     const min = S.debut ? Math.max(0, Math.round((Date.now() - new Date(S.debut)) / 60000)) : 0;
-    a.textContent = `Séance en cours · ${min} min${
-      S.dureeEstimee ? ' · ' + dureeTexte(S.dureeEstimee) + ' prévue' : ''} · ${clos}/${total} exercices`;
+    a.textContent = `Séance · ${dureeTexte(min) || '0 min'}${
+      S.dureeEstimee ? ' / ' + dureeTexte(S.dureeEstimee) : ''} · ${clos}/${total} exercices`;
   };
   peindre();
   if (S.seanceId) S.pendule = setInterval(peindre, 60000);
