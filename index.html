@@ -246,12 +246,12 @@ header h2{font-size:30px;text-transform:uppercase;line-height:1}
 .card .done.full{background:var(--brand);border-color:var(--brand);color:var(--on-brand)}
 
 /* Disques — élément signature */
-.bar{display:flex;align-items:center;gap:1.5px;margin-top:7px;height:20px}
-.bar i{display:block;width:7px;border-radius:2px;border:1px solid rgba(0,0,0,.35)}
-/* Le fût de la barre, puis les disques, puis la bague : le chargement se fait
-   à l'extrémité, jamais au milieu. */
-.bar .fut{width:30px;height:3.5px;background:var(--p2);border-radius:2px;border:0;margin-right:1px}
-.bar .bague{width:4px;height:11px;background:var(--p2);border-radius:1px;border:0;margin-left:1.5px}
+/* La barre entière : bague, disques, fût, disques, bague. Symétrique, et
+   chargée du plus lourd contre le fût vers le plus léger à l'extérieur. */
+.bar{display:flex;align-items:center;gap:1.5px;margin-top:8px;height:22px}
+.bar .d{display:block;width:7px;border-radius:2px;border:1px solid rgba(0,0,0,.35)}
+.bar .fut{width:26px;height:4px;background:var(--p2);border-radius:2px;border:0;margin:0 1.5px}
+.bar .bague{width:3.5px;height:12px;background:var(--dust);border-radius:1px;border:0}
 
 /* Panneau de saisie */
 #logger{position:fixed;inset:0;background:var(--iron);z-index:20;display:flex;flex-direction:column;
@@ -1077,25 +1077,33 @@ function courbeProgression(pts) {
 
 /** Décompose une charge en disques olympiques colorés (barre de 20 kg). */
 /**
- * Un côté de la barre, vu de profil : le fût part de la gauche, les disques se
- * chargent à son extrémité — le plus lourd contre le fût, les petits vers le
- * bout — et la bague de serrage ferme le tout. C'est l'ordre dans lequel on
- * charge réellement, et il se lit sans réfléchir en salle.
+ * La barre entière, vue de profil : bague, disques, fût, disques, bague.
+ * Les disques sont chargés comme on les charge vraiment — le plus lourd contre
+ * le fût, les plus petits vers l'extérieur — et le dessin est symétrique,
+ * puisqu'une barre l'est.
  */
 function disques(kg) {
   const parCote = (Number(kg) - (S.moi.barKg || 20)) / 2;
   if (!(parCote > 0)) return '';
-  const dispo = [[25,'var(--p25)',18],[20,'var(--p20)',17],[15,'var(--p15)',15],
+  const dispo = [[25,'var(--p25)',20],[20,'var(--p20)',18],[15,'var(--p15)',16],
                  [10,'var(--p10)',13],[5,'var(--p5)',10],[2.5,'var(--p2)',8],[1.25,'var(--p2)',6]];
 
-  let reste = parCote, pose = [];
+  // Du plus lourd au plus léger : l'ordre dans lequel on enfile les disques.
+  let reste = parCote;
+  const pose = [];
   dispo.forEach(([p, c, h]) => {
-    while (reste >= p - 0.01) { pose.push(`<i style="background:${c};height:${h}px"></i>`); reste -= p; }
+    while (reste >= p - 0.01) {
+      pose.push(`<i class="d" style="background:${c};height:${h}px"></i>`);
+      reste -= p;
+    }
   });
 
+  const gauche = pose.slice().reverse().join('');   // de l'extérieur vers le centre
+  const droite = pose.join('');
   const detail = parCote + ' kg par côté sur une barre de ' + (S.moi.barKg || 20) + ' kg';
-  return `<span class="bar" role="img" aria-label="${detail}" title="${detail}">
-    <i class="fut"></i>${pose.join('')}<i class="bague"></i></span>`;
+
+  return `<span class="bar" role="img" aria-label="${detail}" title="${detail}"
+    ><i class="bague"></i>${gauche}<i class="fut"></i>${droite}<i class="bague"></i></span>`;
 }
 
 // ── Saisie des séries ────────────────────────────────────────

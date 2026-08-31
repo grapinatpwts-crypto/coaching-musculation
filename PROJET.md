@@ -846,11 +846,16 @@ couleurs réglementaires** (25 rouge, 20 bleu, 15 jaune, 10 vert, 5 blanc), calc
 par côté sur une barre de 20 kg. Fonction `disques()` dans `index.html`.
 Ces couleurs sont normatives, pas décoratives : elles ne suivent pas la charte.
 
-Le dessin montre **un côté de la barre vu de profil** : le fût part de la gauche,
-les disques se chargent à son extrémité — le plus lourd contre le fût, les petits
-vers le bout — et la bague de serrage ferme le tout. C'est l'ordre dans lequel on
-charge réellement. Une première version plaçait les disques au milieu du fût, ce qui
-ne correspond à aucune barre.
+Le dessin montre **la barre entière**, symétrique : bague, disques, fût, disques,
+bague. Les disques sont chargés comme on les charge vraiment — le plus lourd contre
+le fût, les plus petits vers l'''extérieur.
+
+    100 kg   |oO————Oo|      40 par côté : 25 + 15
+    130 kg   |·OO————OO·|    55 par côté : 25 + 25 + 5
+
+Deux versions ont raté avant celle-ci : la première posait les disques au milieu du
+fût, la seconde ne dessinait qu'''un côté. Une barre est symétrique et se charge par
+les bouts, les deux comptent.
 
 ## 10. Prochaines étapes
 
