@@ -2089,43 +2089,46 @@ function triable(conteneur, selecteurItem, nomPoignee, onFin) {
   // La poignée porte le nom de ce qu'elle déplace. Sans ça, « .bloc [data-poignee] »
   // attrapait aussi les poignées des exercices qu'il contient, et le second appel
   // écrasait le premier : on croyait déplacer un exercice, on déplaçait son bloc.
-  conteneur.querySelectorAll(`[data-poignee="${nomPoignee}"]`)
-    .forEach(poignee => {
-      const item = poignee.closest(selecteurItem);
-      if (!item) return;
+  conteneur.querySelectorAll(`[data-poignee="${nomPoignee}"]`).forEach(poignee => {
+    const item = poignee.closest(selecteurItem);
+    if (!item) return;
 
-      poignee.onpointerdown = ev => {
-        ev.preventDefault();
-        ev.stopPropagation();
-        item.classList.add('deplace');
-        poignee.setPointerCapture(ev.pointerId);
-        if (navigator.vibrate) navigator.vibrate(12);
+    poignee.onpointerdown = ev => {
+      ev.preventDefault();
+      ev.stopPropagation();
+      item.classList.add('deplace');
+      if (navigator.vibrate) navigator.vibrate(12);
 
-        poignee.onpointermove = e => {
-          // L'élément suit le DOM, pas le doigt : il reste sous le pointeur et
-          // masquerait ses voisins. On l'efface le temps de regarder dessous.
-          item.style.pointerEvents = 'none';
-          const sous = document.elementFromPoint(e.clientX, e.clientY);
-          item.style.pointerEvents = '';
-          const cible = sous && sous.closest(selecteurItem);
-          if (!cible || cible === item || !conteneur.contains(cible)) return;
-          const r = cible.getBoundingClientRect();
-          const apres = e.clientY > r.top + r.height / 2;
-          cible.parentNode.insertBefore(item, apres ? cible.nextSibling : cible);
-        };
-
-        const finir = () => {
-          poignee.onpointermove = null;
-          poignee.onpointerup = null;
-          poignee.onpointercancel = null;
-          item.classList.remove('deplace');
-          item.style.pointerEvents = '';
-          onFin();
-        };
-        poignee.onpointerup = finir;
-        poignee.onpointercancel = finir;
+      // On écoute sur le document plutôt que de compter sur la capture de
+      // pointeur : le doigt quitte vite la poignée, et setPointerCapture n'est
+      // pas fiable partout. Le document, lui, voit tout.
+      const bouger = e => {
+        // L'élément suit le DOM, pas le doigt : il reste sous le pointeur et
+        // masquerait ses voisins. On l'efface le temps de regarder dessous.
+        item.style.pointerEvents = 'none';
+        const sous = document.elementFromPoint(e.clientX, e.clientY);
+        item.style.pointerEvents = '';
+        const cible = sous && sous.closest(selecteurItem);
+        if (!cible || cible === item || !conteneur.contains(cible)) return;
+        const r = cible.getBoundingClientRect();
+        const apres = e.clientY > r.top + r.height / 2;
+        cible.parentNode.insertBefore(item, apres ? cible.nextSibling : cible);
       };
-    });
+
+      const finir = () => {
+        document.removeEventListener('pointermove', bouger);
+        document.removeEventListener('pointerup', finir);
+        document.removeEventListener('pointercancel', finir);
+        item.classList.remove('deplace');
+        item.style.pointerEvents = '';
+        onFin();
+      };
+
+      document.addEventListener('pointermove', bouger);
+      document.addEventListener('pointerup', finir);
+      document.addEventListener('pointercancel', finir);
+    };
+  });
 }
 
 function modal(titre, corps) {
