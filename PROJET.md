@@ -88,6 +88,7 @@ côté, zone sûre respectée). Régénérables : voir § 9.
 | `Seances` | id, email, date, jour, duree_min, ressenti, notes, exercices_finis |
 | `Activites` | id, email, date, sport, duree_min, distance_km, effort, notes, cree_le |
 | `Photos` | email, image, maj_le |
+| `Commentaires` | id, email, exercice_id, auteur, texte, date, lu |
 | `Series` | id, seance_id, email, exercice_id, serie_num, reps, **duree_s**, charge, horodatage |
 
 Sept exercices d'exemple créés par `setup()` : EX001 développé couché, EX002 squat,
@@ -716,6 +717,35 @@ assiduité, et c'est une information qu'aucune séance prescrite ne donne.
 La messagerie mérite un mot : c'est un canal de plus à surveiller, un historique de
 plus à conserver, et une conversation qui n'existe nulle part ailleurs. Le bouton
 **Prévenir** (§ 8 duodecies) fait le travail avec les outils que tout le monde a déjà.
+
+## 8 septendecies. La note du coach et le fil de l'exercice
+
+Deux choses distinctes, souvent confondues.
+
+**La note** est une consigne. Le coach l'écrit sur une ligne de programme, elle fait
+partie de la prescription et se lit avec l'exercice — en liseré rouge sur la carte,
+en grand dans l'écran de saisie, signée de son prénom. Colonne `note` de
+`Programmes` et `ModeleLignes`, donc elle survit à la copie modèle → attribution.
+
+Elle se distingue de la `consigne` du catalogue : celle-ci décrit le mouvement pour
+tout le monde, la note s'adresse à **une personne sur cet exercice**. « Ne descends
+pas plus bas que la parallèle tant que ton genou tire » n'a de sens que pour un seul
+pratiquant.
+
+**Le fil** est une conversation. Coach et pratiquant écrivent tour à tour, attachés à
+l'exercice. Bulles rouges pour l'un, grises pour l'autre. Un compteur signale ce qui
+attend une réponse : sur la carte de l'exercice côté pratiquant, sur la ligne de
+l'athlète côté coach. Ouvrir le fil vaut lecture.
+
+### Pourquoi ce n'est pas la messagerie qu'on a refusée
+
+Une messagerie est un canal parallèle : un endroit de plus à surveiller, une
+conversation qui flotte hors de tout contexte. Ici le propos reste **collé au
+mouvement dont il parle**. On rouvre le développé couché six mois plus tard et on
+retrouve la remarque sur l'épaule qui coinçait, à côté des charges de l'époque.
+
+C'est aussi pour ça qu'il n'y a pas de notification : le mot attend sur l'exercice,
+et se voit au moment où on en a besoin — quand on est devant la barre.
 
 ## 9. Parti pris visuel — charte Wellness Sport Club
 

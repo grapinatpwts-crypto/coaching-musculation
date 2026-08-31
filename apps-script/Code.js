@@ -32,6 +32,7 @@ const TABS = {
   IMPORT: 'Import',
   ACTIVITES: 'Activites',
   PHOTOS: 'Photos',
+  COMMENTAIRES: 'Commentaires',
   PROGRAMMES: 'Programmes',
   SEANCES: 'Seances',
   SERIES: 'Series'
@@ -73,7 +74,7 @@ const SCHEMA = {
   Exercices: ['id', 'nom', 'nom_en', 'groupe', 'equipement', 'consigne', 'photo', 'video'],
   // Modèles : programmes génériques, sans pratiquant. Le coach les compose une fois.
   Modeles: ['id', 'nom', 'categorie', 'difficulte', 'description', 'duree_semaines', 'statut', 'source', 'video', 'cree_le'],
-  ModeleLignes: ['id', 'modele_id', 'jour', 'bloc', 'ordre', 'exercice_id', 'series', 'reps_cible', 'duree_s', 'charge_cible', 'pct_rm', 'cadence', 'pause_s', 'repos_s'],
+  ModeleLignes: ['id', 'modele_id', 'jour', 'bloc', 'ordre', 'exercice_id', 'series', 'reps_cible', 'duree_s', 'charge_cible', 'pct_rm', 'cadence', 'pause_s', 'repos_s', 'note'],
   // Maxis : le 1RM connu d'un pratiquant sur un exercice. Sert à traduire un
   // pourcentage en kilos. Sans entrée ici, le 1RM est estimé depuis l'historique.
   Maxis: ['id', 'email', 'exercice_id', 'rm_kg', 'date', 'source'],
@@ -93,9 +94,12 @@ const SCHEMA = {
   // Photos à part : une image encodée pèse quelques kilo-octets, on ne veut pas
   // la traîner à chaque lecture de la fiche d'un pratiquant.
   Photos: ['email', 'image', 'maj_le'],
+  // Commentaires : un fil par exercice et par pratiquant. Ce n'est pas une
+  // messagerie — le propos reste attaché au mouvement dont il parle.
+  Commentaires: ['id', 'email', 'exercice_id', 'auteur', 'texte', 'date', 'lu'],
   // Programmes : les lignes RÉELLES d'une attribution, personnalisables sans
   // toucher au modèle dont elles sont issues.
-  Programmes: ['id', 'attribution_id', 'email', 'jour', 'bloc', 'ordre', 'exercice_id', 'series', 'reps_cible', 'duree_s', 'charge_cible', 'pct_rm', 'cadence', 'pause_s', 'repos_s'],
+  Programmes: ['id', 'attribution_id', 'email', 'jour', 'bloc', 'ordre', 'exercice_id', 'series', 'reps_cible', 'duree_s', 'charge_cible', 'pct_rm', 'cadence', 'pause_s', 'repos_s', 'note'],
   Seances: ['id', 'email', 'date', 'jour', 'duree_min', 'ressenti', 'notes', 'exercices_finis'],
   Series: ['id', 'seance_id', 'email', 'exercice_id', 'serie_num', 'reps', 'duree_s', 'charge', 'horodatage']
 };
@@ -185,6 +189,10 @@ function route_(action, p, user, profil, estCoach) {
     case 'reprendreExercice': return reprendreExercice_(user.email, p);
     case 'historique':     return historique_(user.email, p.exercice_id);
     case 'ajuster':        return ajuster_(user.email, p);
+    case 'commentaires':   return commentaires_(cibleEmail_(user, p, estCoach), p.exercice_id);
+    case 'commenter':      return commenter_(user, p, estCoach);
+    case 'commentairesLus':return commentairesLus_(user, p, estCoach);
+    case 'nonLus':         return nonLus_(user, estCoach);
     case 'activites':      return activites_(cibleEmail_(user, p, estCoach), p);
     case 'accueil':        return accueil_(user.email);
     case 'mesProgrammes':  return mesProgrammes_(user.email);
@@ -733,6 +741,9 @@ function ligneExercice_(l, bloc, exercices, series, maxis, ajustes) {
     // pause_s : temps mort APRÈS cet exercice, à l'intérieur du bloc.
     // À distinguer de repos_s, qui est le repos de fin de tour, porté par le bloc.
     pause_s: Number(l.pause_s) || 0,
+    // La note du coach : la consigne propre à CE pratiquant sur CET exercice,
+    // par-dessus la consigne générale du catalogue.
+    note: l.note || '',
     pct_rm: pct,
     rm: rm ? rm.kg : 0,
     rm_source: rm ? rm.source : '',
@@ -955,7 +966,8 @@ function grouperEnJours_(lignes, noms) {
       charge_cible: Number(l.charge_cible) || 0,
       pct_rm: Number(String(l.pct_rm).replace('%', '')) || 0,
       cadence: l.cadence || '',
-      pause_s: Number(l.pause_s) || 0
+      pause_s: Number(l.pause_s) || 0,
+      note: l.note || ''
     });
   });
   jours.forEach(function (j) { delete j._n; });
@@ -981,7 +993,8 @@ function aplatirBlocs_(blocs, jour, base) {
         pct_rm: Number(String(e.pct_rm).replace('%', '')) || 0,
         cadence: e.cadence || '',
         pause_s: Number(e.pause_s) || 0,
-        repos_s: Number(b.repos_s) || 90
+        repos_s: Number(b.repos_s) || 90,
+        note: e.note || ''
       };
       Object.keys(base.champs).forEach(function (k) { r[k] = base.champs[k]; });
       rangs.push(r);
@@ -1156,7 +1169,7 @@ function attribuer_(p) {
         bloc: l.bloc, ordre: l.ordre, exercice_id: l.exercice_id,
         series: l.series, reps_cible: l.reps_cible, duree_s: l.duree_s,
         charge_cible: l.charge_cible, pct_rm: l.pct_rm, cadence: l.cadence,
-        pause_s: l.pause_s, repos_s: l.repos_s
+        pause_s: l.pause_s, repos_s: l.repos_s, note: l.note
       };
     });
     copiees = ajouterPlusieurs_(TABS.PROGRAMMES, rangs);
@@ -1312,6 +1325,108 @@ function maxiSuppr_(p) {
     return String(m.email).toLowerCase() === email && String(m.exercice_id) === ex;
   });
   return { supprimes: n };
+}
+
+// ─────────────────────────────────────────────────────────────
+// 7 septies. COMMENTAIRES SUR LES EXERCICES
+// ─────────────────────────────────────────────────────────────
+//
+// Le coach écrit une NOTE sur une ligne de programme : c'est une consigne, elle
+// fait partie de la prescription et se lit avec l'exercice.
+// Coach et pratiquant échangent ensuite des COMMENTAIRES attachés à l'exercice.
+// Ce n'est pas une messagerie : le propos reste collé au mouvement dont il parle,
+// et se retrouve six mois plus tard en rouvrant le même exercice.
+
+/** Fil d'un exercice pour un pratiquant, du plus ancien au plus récent. */
+function commentaires_(email, exerciceId) {
+  if (!exerciceId) throw new Error('EXERCICE_REQUIS');
+  return lire_(TABS.COMMENTAIRES)
+    .filter(function (c) {
+      return String(c.email).toLowerCase() === email &&
+             String(c.exercice_id) === String(exerciceId);
+    })
+    .map(function (c) {
+      return {
+        id: c.id, auteur: c.auteur, texte: c.texte, date: c.date,
+        lu: c.lu === true || c.lu === 'VRAI'
+      };
+    })
+    .sort(function (a, b) { return new Date(a.date) - new Date(b.date); });
+}
+
+/**
+ * Poster un commentaire. Le coach vise un pratiquant par `email` ; un pratiquant
+ * écrit toujours sur son propre fil, quel que soit ce qu'il envoie.
+ */
+function commenter_(user, p, estCoach) {
+  const texte = String(p.texte || '').trim();
+  if (!texte) throw new Error('TEXTE_VIDE');
+  if (texte.length > 2000) throw new Error('TEXTE_TROP_LONG');
+  if (!p.exercice_id) throw new Error('EXERCICE_REQUIS');
+
+  const email = estCoach && p.email ? String(p.email).toLowerCase() : user.email;
+  if (!findPratiquant_(email)) throw new Error('PRATIQUANT_INCONNU');
+
+  ajouter_(TABS.COMMENTAIRES, {
+    id: uid_('CM'), email: email, exercice_id: p.exercice_id,
+    auteur: estCoach ? 'coach' : 'pratiquant',
+    texte: texte, date: new Date(), lu: false
+  });
+  return { poste: true };
+}
+
+/** Marque comme lus les messages écrits par l'autre partie sur ce fil. */
+function commentairesLus_(user, p, estCoach) {
+  const email = estCoach && p.email ? String(p.email).toLowerCase() : user.email;
+  const autre = estCoach ? 'pratiquant' : 'coach';
+
+  const lock = LockService.getScriptLock();
+  lock.waitLock(20000);
+  try {
+    const sh = feuille_(TABS.COMMENTAIRES);
+    const vals = sh.getDataRange().getValues();
+    if (vals.length < 2) return { lus: 0 };
+    const head = vals[0];
+    const ie = head.indexOf('email'), ix = head.indexOf('exercice_id');
+    const ia = head.indexOf('auteur'), il = head.indexOf('lu');
+    let n = 0;
+    for (let r = 1; r < vals.length; r++) {
+      if (String(vals[r][ie]).toLowerCase() !== email) continue;
+      if (p.exercice_id && String(vals[r][ix]) !== String(p.exercice_id)) continue;
+      if (String(vals[r][ia]) !== autre) continue;
+      if (vals[r][il] === true) continue;
+      vals[r][il] = true; n++;
+    }
+    if (n) sh.getRange(1, 1, vals.length, head.length).setValues(vals);
+    return { lus: n };
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+/**
+ * Combien de commentaires attendent une réponse, et sur quels exercices.
+ * Le coach reçoit le compte par pratiquant ; le pratiquant, le sien.
+ */
+function nonLus_(user, estCoach) {
+  const tous = lire_(TABS.COMMENTAIRES).filter(function (c) {
+    return c.lu !== true && c.lu !== 'VRAI';
+  });
+  if (!estCoach) {
+    const miens = tous.filter(function (c) {
+      return String(c.email).toLowerCase() === user.email && c.auteur === 'coach';
+    });
+    const exos = {};
+    miens.forEach(function (c) { exos[c.exercice_id] = (exos[c.exercice_id] || 0) + 1; });
+    return { total: miens.length, exercices: exos };
+  }
+  const parEmail = {};
+  tous.filter(function (c) { return c.auteur === 'pratiquant'; })
+      .forEach(function (c) {
+        const e = String(c.email).toLowerCase();
+        parEmail[e] = (parEmail[e] || 0) + 1;
+      });
+  return { total: Object.keys(parEmail).length ? tous.length : 0, parEmail: parEmail };
 }
 
 // ─────────────────────────────────────────────────────────────
@@ -1578,6 +1693,7 @@ function coachAthletes_() {
   const modeles = {};
   lire_(TABS.MODELES).forEach(function (m) { modeles[String(m.id)] = m; });
   const images = photos_();
+  const attente = nonLus_({ email: '' }, true).parEmail || {};
 
   return lire_(TABS.PRATIQUANTS)
     .filter(function (p) {
@@ -1610,6 +1726,7 @@ function coachAthletes_() {
       return {
         email: p.email, nom: p.nom || email.split('@')[0],
         photo: images[email] || '',
+        commentaires: attente[email] || 0,
         statut: etat, telephone: p.telephone || '', objectif: p.objectif || '',
         nbSeances: mesSeances.length, derniere: derniere,
         joursDepuis: derniere ? Math.floor((Date.now() - new Date(derniere)) / 86400000) : null,

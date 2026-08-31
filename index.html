@@ -168,6 +168,18 @@ header h2{font-size:30px;text-transform:uppercase;line-height:1}
 .prog{display:block;width:100%;height:auto;max-width:340px;margin:10px 0 4px}
 .vignette{width:52px;height:52px;object-fit:cover;border-radius:9px;background:#2A2A2A;flex:0 0 auto}
 .vo{font-size:12.5px;font-weight:400;color:var(--dust)}
+/* La note du coach : sa voix, distincte de la consigne générique du catalogue */
+.note-coach{border-left:3px solid var(--brand);padding:6px 0 6px 11px;margin-top:9px;
+  font-size:13.5px;line-height:1.5;color:var(--chalk);white-space:pre-wrap}
+.note-coach.grande{font-size:15px;margin:4px 0 14px;padding:10px 0 10px 13px}
+.note-coach .eyebrow{display:block;margin-bottom:4px}
+.fil{display:flex;flex-direction:column;gap:10px;margin:6px 0 14px;max-height:46vh;overflow-y:auto}
+.bulle{padding:11px 13px;border-radius:12px;font-size:14.5px;line-height:1.5;white-space:pre-wrap}
+.bulle.coach{background:var(--brand);color:var(--on-brand);border-bottom-left-radius:4px;align-self:flex-start;max-width:88%}
+.bulle.moi{background:#2A2A2A;color:var(--chalk);border-bottom-right-radius:4px;align-self:flex-end;max-width:88%}
+.bulle .qui{font-size:10.5px;letter-spacing:.1em;text-transform:uppercase;opacity:.75;display:block;margin-bottom:3px}
+.pastille-cm{background:var(--brand);color:var(--on-brand);border-radius:999px;
+  font-size:11px;font-weight:700;padding:2px 7px;white-space:nowrap}
 .video{position:relative;width:100%;aspect-ratio:16/9;margin:14px 0 4px;
   border-radius:10px;overflow:hidden;background:#000}
 .video iframe{position:absolute;inset:0;width:100%;height:100%;border:0}
@@ -595,6 +607,7 @@ function ouvrirApp(moi) {
   S.jour = S.jour || moi.jours[0] || null;
   majBandeau();
   viderFile();
+  majPastilles();
   rendre();
 }
 
@@ -971,6 +984,9 @@ function duree(sec) {
   return n >= 60 ? `${Math.floor(n / 60)}:${String(n % 60).padStart(2, '0')}` : `${n} s`;
 }
 
+/** Commentaires non lus sur un exercice, pour celui qui regarde. */
+const enAttente = id => ((S.nonLus || {}).exercices || {})[id] || 0;
+
 /** Carte d'un exercice. series et repos_s sont hérités de son bloc. */
 function carte(e) {
   const n = (S.faits[e.exercice_id] || []).length;
@@ -985,6 +1001,9 @@ function carte(e) {
       <div class="meta">${e.series} × ${cible}${chargeTexte(e) ? ' · ' + chargeTexte(e) : ''}${
         fini && n < e.series ? ' · arrêté à ' + n : ''}${
         !fini && e.dernier && e.charge_cible ? ' · dernière fois ' + e.dernier.charge + ' kg' : ''}</div>
+      ${enAttente(e.exercice_id) ? `<span class="pastille-cm">${enAttente(e.exercice_id)} mot${
+        enAttente(e.exercice_id) > 1 ? 's' : ''} de ${S.moi.coach || 'votre coach'}</span>` : ''}
+      ${e.note ? `<div class="note-coach">${e.note}</div>` : ''}
       ${e.cadence ? `<div class="cadbloc"><span class="cadence">${e.cadence}</span>${courbeCadence(e.cadence, false)}</div>` : ''}
       ${e.charge_cible ? disques(e.charge_cible) : ''}
     </div>
@@ -1087,7 +1106,10 @@ async function ouvrirLogger(i) {
     ${e.nom_en ? `<p class="vo">${e.nom_en}</p>` : ''}
     ${N > 1 ? `<span class="eyebrow">Bloc ${b.bloc} · exercice ${e._e + 1} sur ${N}</span>` : ''}
     ${e.photo ? `<img class="illu" src="${e.photo}" alt="" loading="lazy">` : ''}
+    ${e.note ? `<div class="note-coach grande"><span class="eyebrow">Note de ${S.moi.coach || 'votre coach'}</span>${e.note}</div>` : ''}
     <p class="consigne">${e.consigne || ''}</p>
+    <div class="barre" style="margin-top:10px"><button class="btn ${enAttente(e.exercice_id) ? 'plein' : ''}" id="commenter" style="flex:1">Commentaires${
+      enAttente(e.exercice_id) ? ' · ' + enAttente(e.exercice_id) + ' à lire' : ''}</button></div>
     ${e.cadence ? `<div class="tempo"><strong>Cadence ${e.cadence}</strong><br>${tempo(e.cadence)}
       ${courbeCadence(e.cadence, true)}</div>` : ''}
     <div class="sets" id="sets"></div>
@@ -1146,6 +1168,7 @@ async function ouvrirLogger(i) {
   }
   L.querySelectorAll('[data-c]').forEach(x => x.onclick = () => { charge = Math.max(0, charge + Number(x.dataset.c)); maj(); });
   L.querySelector('.close').onclick = () => { clearInterval(chrono); L.classList.add('hidden'); vueSeance(); };
+  L.querySelector('#commenter').onclick = () => modalCommentaires(e.exercice_id, e.nom, null);
 
   const ouvert = x => S.finis.indexOf(x.exercice_id) === -1;
 
@@ -1293,6 +1316,73 @@ function modalFinSeance() {
       vueSeance();
     } catch (err) { toast(err.message); this.disabled = false; }
   };
+}
+
+/**
+ * Fil de commentaires d'un exercice. Le même écran sert au coach et au
+ * pratiquant : seul change le côté où s'affichent les bulles et l'email visé.
+ * `email` n'est renseigné que par le coach ; un pratiquant écrit sur son fil.
+ */
+async function modalCommentaires(exerciceId, nomExercice, email) {
+  const w = modal(nomExercice, `
+    <div id="fil" class="fil"><div class="empty" style="padding:14px 0">Chargement…</div></div>
+    <div class="champ"><textarea class="f" id="cmTexte" rows="3"
+      placeholder="${email ? 'Un mot pour votre pratiquant…' : 'Une question, une sensation, une gêne…'}"></textarea></div>
+    <div class="barre" style="margin-top:0">
+      <button class="btn" id="cmAnn">Fermer</button>
+      <button class="btn plein" id="cmOk" style="flex:1">Envoyer</button></div>`);
+
+  const peindre = async () => {
+    let fil;
+    try { fil = await api('commentaires', { exercice_id: exerciceId, email }); }
+    catch (err) { w.querySelector('#fil').innerHTML = `<div class="empty">${err.message}</div>`; return; }
+
+    const jeSuisCoach = !!S.moi.estCoach;
+    w.querySelector('#fil').innerHTML = fil.length
+      ? fil.map(c => {
+          const demoi = (c.auteur === 'coach') === jeSuisCoach;
+          return `<div class="bulle ${demoi ? 'moi' : 'coach'}">
+            <span class="qui">${c.auteur === 'coach' ? (S.moi.coach || 'Coach') : 'Pratiquant'} · ${
+              new Date(c.date).toLocaleDateString('fr-FR', { day:'numeric', month:'short' })}</span>
+            ${c.texte}</div>`;
+        }).join('')
+      : `<div class="empty" style="padding:14px 0">Rien pour l'instant.<br>${
+          email ? 'Écrivez la première remarque.' : 'Posez votre première question.'}</div>`;
+    w.querySelector('#fil').scrollTop = 99999;
+
+    // Ouvrir le fil vaut lecture.
+    api('commentairesLus', { exercice_id: exerciceId, email }).catch(() => {});
+  };
+  await peindre();
+
+  w.querySelector('#cmAnn').onclick = () => {
+    w.fermer();
+    api('nonLus').then(n => {
+      S.nonLus = n;
+      if (S.vue === 'seance') vueSeance();
+      if (S.vue === 'athletes' && S.coach && !S.coach.email) listeAthletes();
+    }).catch(() => {});
+  };
+  w.querySelector('#cmOk').onclick = async function () {
+    const t = w.querySelector('#cmTexte').value.trim();
+    if (!t) return;
+    this.disabled = true;
+    try {
+      await api('commenter', { exercice_id: exerciceId, texte: t, email });
+      w.querySelector('#cmTexte').value = '';
+      await peindre();
+    } catch (err) { toast(err.message === 'TEXTE_TROP_LONG' ? 'Message trop long' : err.message); }
+    this.disabled = false;
+  };
+}
+
+/** Rafraîchit les compteurs de commentaires en attente, sans bloquer l'écran. */
+function majPastilles() {
+  api('nonLus').then(n => {
+    S.nonLus = n;
+    if (S.vue === 'athletes' && S.coach && !S.coach.email) listeAthletes();
+    if (S.vue === 'accueil') { const b = $('#pastilleAccueil'); if (b) b.textContent = n.total || ''; }
+  }).catch(() => {});
 }
 
 // ── Minuteurs : pause dans le bloc, repos de fin de tour ──────
@@ -1600,6 +1690,7 @@ function carteAthlete(a) {
     <div class="ath-tete">
       ${avatar(a)}
       <strong>${a.nom}</strong>
+      ${a.commentaires ? `<span class="pastille-cm">${a.commentaires}</span>` : ''}
       <span class="chip ${a.statut.toLowerCase().replace('é','e')}">${a.statut}</span>
     </div>
     ${a.programme
@@ -2057,6 +2148,7 @@ function peindreEditeur() {
                 e.pct_rm ? ' · ' + e.pct_rm + ' % du max' : (e.charge_cible ? ' · ' + e.charge_cible + ' kg' : '')}${
                 e.cadence ? ' · ' + e.cadence : ''}${
                 j < b.exercices.length - 1 && e.pause_s ? ' · pause ' + e.pause_s + ' s' : ''}</div>
+              ${e.note ? `<div class="note-coach">${e.note}</div>` : ''}
             </div>
             <button class="poignee" data-mv="${i}.${j}.-1" aria-label="Monter">↑</button>
             <button class="poignee" data-ed="${i}.${j}" aria-label="Modifier">✎</button>
@@ -2140,8 +2232,13 @@ function modalLigne(bi, ei) {
     <p class="tempo" id="apercu"></p>
     ${dernier ? '' : `<div class="champ"><label>Pause avant l'exercice suivant (s)</label>
       <input class="f" id="lPau" type="number" min="0" step="5" value="${e.pause_s || 0}"></div>`}
+    <div class="champ"><label>Note pour le pratiquant</label>
+      <textarea class="f" id="lNote" rows="3"
+        placeholder="Ce que vous lui diriez à l'oreille pendant la série">${e.note || ''}</textarea></div>
     <div class="barre"><button class="btn" id="lAnn">Annuler</button>
-      <button class="btn plein" id="lOk" style="flex:1">Appliquer</button></div>`);
+      <button class="btn plein" id="lOk" style="flex:1">Appliquer</button></div>
+    ${S.ed.cible === 'programme' ? `<div class="barre">
+      <button class="btn" id="lCom" style="flex:1">Commentaires avec le pratiquant</button></div>` : ''}`);
 
   const cad = m.querySelector('#lCad');
   const rafraichir = () => {
@@ -2151,12 +2248,15 @@ function modalLigne(bi, ei) {
   cad.oninput = rafraichir; rafraichir();
 
   m.querySelector('#lAnn').onclick = m.fermer;
+  const lc = m.querySelector('#lCom');
+  if (lc) lc.onclick = () => modalCommentaires(e.exercice_id, e.nom, S.ed.email);
   m.querySelector('#lOk').onclick = () => {
     e.reps_cible = m.querySelector('#lReps').value.trim();
     e.duree_s = m.querySelector('#lDur').value.trim();
     e.charge_cible = Number(m.querySelector('#lChg').value) || 0;
     e.pct_rm = Number(m.querySelector('#lPct').value) || 0;
     e.cadence = cad.value.trim();
+    e.note = m.querySelector('#lNote').value.trim();
     if (!dernier) e.pause_s = Number(m.querySelector('#lPau').value) || 0;
     m.fermer(); peindreEditeur();
   };
