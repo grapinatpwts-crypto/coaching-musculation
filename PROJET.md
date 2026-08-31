@@ -857,6 +857,11 @@ inutile.
 Les trois constantes sont dans `CONFIG`. C'est une estimation de planification, pas
 une promesse : elle ignore le temps passé à discuter ou à attendre un banc.
 
+Elle s'affiche **arrondie à cinq minutes** et formulée, jamais annoncée comme un
+calcul : 61 minutes devient « 1 heure », 95 devient « 1 h 35 ». Le mot « environ »
+est inutile — personne ne prend une durée de séance pour une promesse à la minute,
+et l'arrondi le dit déjà.
+
 La durée s'affiche sur l'accueil, sur l'écran de séance, dans l'éditeur et sur les
 programmes. `dureeJour()` la recalcule côté client pour le jour en cours d'édition,
 que le serveur ne connaît pas encore.

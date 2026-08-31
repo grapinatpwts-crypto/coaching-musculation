@@ -795,7 +795,7 @@ async function vueAccueil() {
         <div class="body">
           <div class="nom gros">${a.prochaine.jour}</div>
           <div class="meta">${quand(a.prochaine.dans)}${
-            a.prochaine.duree_estimee ? ' · environ ' + a.prochaine.duree_estimee + ' min' : ''}</div>
+            a.prochaine.duree_estimee ? ' · ' + dureeTexte(a.prochaine.duree_estimee) : ''}</div>
         </div>
         <span class="fleche-carte">›</span>
       </button>`
@@ -940,7 +940,7 @@ async function vueMesProgrammes() {
           <div class="nom">${j.jour}</div>
           <div class="meta">${j.blocs.length} bloc${j.blocs.length > 1 ? 's' : ''} · ${
             j.blocs.reduce((t, b) => t + b.exercices.length, 0)} exercices${
-            j.duree_estimee ? ' · environ ' + j.duree_estimee + ' min' : ''}</div>
+            j.duree_estimee ? ' · ' + dureeTexte(j.duree_estimee) : ''}</div>
         </div>
       </div>`).join('') || `<div class="empty" style="padding:14px 0">Aucun jour composé.</div>`}
     </details>`).join('') || `<div class="empty">Aucun programme pour l'instant.</div>`;
@@ -1106,6 +1106,20 @@ function duree(sec) {
  */
 const TEMPO_DEFAUT = 3, TRANSITION_MIN = 4, ECHAUFFEMENT_MIN = 10;
 
+/**
+ * Une estimation ne mérite pas d'être précise à la minute : « 61 min » se lit
+ * comme un calcul, « 1 heure » comme une durée. Arrondi à cinq minutes, ce qui
+ * reste assez fin pour distinguer une séance de 40 d'une de 45.
+ */
+function dureeTexte(min) {
+  const m = Math.round((Number(min) || 0) / 5) * 5;
+  if (!m) return '';
+  if (m < 60) return m + ' min';
+  const h = Math.floor(m / 60), reste = m % 60;
+  if (!reste) return h === 1 ? '1 heure' : h + ' heures';
+  return h + ' h ' + String(reste).padStart(2, '0');
+}
+
 function dureeJour(blocs) {
   if (!blocs || !blocs.length) return 0;
   const reps = v => {
@@ -1152,12 +1166,12 @@ function majPendule(clos, total) {
     const a = $('#avancement');
     if (!a) { clearInterval(S.pendule); return; }
     if (!S.seanceId) {
-      a.textContent = S.dureeEstimee ? `Programme · environ ${S.dureeEstimee} min` : 'Programme';
+      a.textContent = S.dureeEstimee ? `Programme · ${dureeTexte(S.dureeEstimee)}` : 'Programme';
       return;
     }
     const min = S.debut ? Math.max(0, Math.round((Date.now() - new Date(S.debut)) / 60000)) : 0;
     a.textContent = `Séance en cours · ${min} min${
-      S.dureeEstimee ? ' sur ' + S.dureeEstimee + ' prévues' : ''} · ${clos}/${total} exercices`;
+      S.dureeEstimee ? ' · ' + dureeTexte(S.dureeEstimee) + ' prévue' : ''} · ${clos}/${total} exercices`;
   };
   peindre();
   if (S.seanceId) S.pendule = setInterval(peindre, 60000);
@@ -2511,7 +2525,7 @@ function peindreEditeur() {
 
   z.innerHTML = `
     <div class="eyebrow" style="margin:4px 0 12px">${ed.jour}${ed.neuf ? ' · nouveau' : ''}${
-      dureeJour(ed.blocs) ? ' · environ ' + dureeJour(ed.blocs) + ' min' : ''}</div>
+      dureeJour(ed.blocs) ? ' · ' + dureeTexte(dureeJour(ed.blocs)) : ''}</div>
     ${ed.blocs.map((b, i) => `
       <div class="bloc" data-buid="${b._uid}">
         <div class="entete">
