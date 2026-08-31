@@ -144,7 +144,7 @@ header h2{font-size:30px;text-transform:uppercase;line-height:1}
 .ligne.cliquable{cursor:pointer}
 /* La prise doit être une cible franche, et ne pas déclencher le défilement */
 .prise{touch-action:none;cursor:grab;user-select:none;letter-spacing:-2px;
-  font-size:16px;color:var(--dust);flex:0 0 auto}
+  font-size:17px;color:var(--dust);flex:0 0 auto;padding:8px 6px;line-height:1}
 .prise:active{cursor:grabbing;color:var(--brand-ink)}
 .deplace{opacity:.55;outline:2px dashed var(--brand-ink);outline-offset:2px;border-radius:10px}
 .bloc.deplace{background:#1F1F1F}
@@ -2071,7 +2071,7 @@ function lignesCliquables(zone, selecteur, action) {
   zone.querySelectorAll(selecteur).forEach(l => {
     l.classList.add('cliquable');
     l.onclick = ev => {
-      if (ev.target.closest('button, a, input, label, select, textarea')) return;
+      if (ev.target.closest('button, a, input, label, select, textarea, [data-poignee]')) return;
       action(l);
     };
   });
@@ -2085,8 +2085,11 @@ function lignesCliquables(zone, selecteur, action) {
  *
  * L'élément est déplacé dans le DOM en direct ; `onFin` relit l'ordre obtenu.
  */
-function triable(conteneur, selecteurItem, onFin) {
-  conteneur.querySelectorAll(selecteurItem + ' > [data-poignee], ' + selecteurItem + ' [data-poignee]')
+function triable(conteneur, selecteurItem, nomPoignee, onFin) {
+  // La poignée porte le nom de ce qu'elle déplace. Sans ça, « .bloc [data-poignee] »
+  // attrapait aussi les poignées des exercices qu'il contient, et le second appel
+  // écrasait le premier : on croyait déplacer un exercice, on déplaçait son bloc.
+  conteneur.querySelectorAll(`[data-poignee="${nomPoignee}"]`)
     .forEach(poignee => {
       const item = poignee.closest(selecteurItem);
       if (!item) return;
@@ -2099,7 +2102,11 @@ function triable(conteneur, selecteurItem, onFin) {
         if (navigator.vibrate) navigator.vibrate(12);
 
         poignee.onpointermove = e => {
+          // L'élément suit le DOM, pas le doigt : il reste sous le pointeur et
+          // masquerait ses voisins. On l'efface le temps de regarder dessous.
+          item.style.pointerEvents = 'none';
           const sous = document.elementFromPoint(e.clientX, e.clientY);
+          item.style.pointerEvents = '';
           const cible = sous && sous.closest(selecteurItem);
           if (!cible || cible === item || !conteneur.contains(cible)) return;
           const r = cible.getBoundingClientRect();
@@ -2112,6 +2119,7 @@ function triable(conteneur, selecteurItem, onFin) {
           poignee.onpointerup = null;
           poignee.onpointercancel = null;
           item.classList.remove('deplace');
+          item.style.pointerEvents = '';
           onFin();
         };
         poignee.onpointerup = finir;
@@ -2271,7 +2279,7 @@ function peindreEditeur() {
     ${ed.blocs.map((b, i) => `
       <div class="bloc" data-buid="${b._uid}">
         <div class="entete">
-          <span class="poignee prise" data-poignee title="Déplacer le bloc" aria-label="Déplacer le bloc ${i + 1}">⠿</span>
+          <span class="poignee prise" data-poignee="bloc" title="Déplacer le bloc" aria-label="Déplacer le bloc ${i + 1}">⠿</span>
           <span class="eyebrow">Bloc ${i + 1}</span>
           <input class="f" style="width:58px;text-align:center;padding:8px 4px;min-height:38px"
             type="number" min="1" data-b="${i}" data-k="series" value="${b.series}">
@@ -2283,7 +2291,7 @@ function peindreEditeur() {
         </div>
         ${b.exercices.map((e, j) => `
           <div class="ligne" data-ed="${i}.${j}" data-uid="${e._uid}">
-            <span class="poignee prise" data-poignee title="Déplacer" aria-label="Déplacer ${e.nom}">⠿</span>
+            <span class="poignee prise" data-poignee="exercice" title="Déplacer" aria-label="Déplacer ${e.nom}">⠿</span>
             <div class="g">
               <div class="nom">${e.nom}</div>
               <div class="meta">${(e.duree_s ? duree(e.duree_s) : e.reps_cible) || '—'}${
@@ -2313,8 +2321,8 @@ function peindreEditeur() {
     ed.blocs[i].exercices.splice(j, 1); peindreEditeur();
   });
   // Un exercice peut passer d'un bloc à l'autre : le conteneur est tout l'éditeur.
-  triable(z, '.ligne[data-uid]', relireOrdre);
-  triable(z, '.bloc[data-buid]', relireOrdre);
+  triable(z, '.ligne[data-uid]', 'exercice', relireOrdre);
+  triable(z, '.bloc[data-buid]', 'bloc', relireOrdre);
   lignesCliquables(z, '[data-ed]', l => {
     const [i, j] = l.dataset.ed.split('.').map(Number);
     modalLigne(i, j);
