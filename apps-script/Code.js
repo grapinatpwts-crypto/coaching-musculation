@@ -18,7 +18,11 @@ const CONFIG = {
   // Adresse publique de l'app, glissée dans les messages de notification
   APP_URL: 'https://grapinatpwts-crypto.github.io/coaching-musculation/',
   // Poids de la barre olympique, pour l'affichage des disques
-  BAR_KG: 20
+  BAR_KG: 20,
+  // Estimation de la durée d'une séance
+  ECHAUFFEMENT_MIN: 10,   // avant la première série
+  TRANSITION_MIN: 4,      // entre deux blocs : trouver le poste, charger la barre
+  TEMPO_DEFAUT_S: 3       // durée d'une répétition quand aucune cadence n'est donnée
 };
 
 const TABS = {
@@ -100,7 +104,7 @@ const SCHEMA = {
   // Programmes : les lignes RÉELLES d'une attribution, personnalisables sans
   // toucher au modèle dont elles sont issues.
   Programmes: ['id', 'attribution_id', 'email', 'jour', 'bloc', 'ordre', 'exercice_id', 'series', 'reps_cible', 'duree_s', 'charge_cible', 'pct_rm', 'cadence', 'pause_s', 'repos_s', 'note'],
-  Seances: ['id', 'email', 'date', 'jour', 'duree_min', 'ressenti', 'notes', 'exercices_finis'],
+  Seances: ['id', 'email', 'date', 'jour', 'duree_min', 'duree_prevue', 'ressenti', 'notes', 'exercices_finis'],
   Series: ['id', 'seance_id', 'email', 'exercice_id', 'serie_num', 'reps', 'duree_s', 'charge', 'horodatage']
 };
 
@@ -217,6 +221,7 @@ function route_(action, p, user, profil, estCoach) {
     case 'activites':      return activites_(cibleEmail_(user, p, estCoach), p);
     case 'accueil':        return accueil_(user.email);
     case 'mesProgrammes':  return mesProgrammes_(user.email);
+    case 'stats':          return statistiques_(cibleEmail_(user, p, estCoach), p.semaines);
     case 'activiteSave':   return activiteSave_(user.email, p);
     case 'activiteSuppr':  return activiteSuppr_(user.email, p.id);
     case 'calendrier':     return calendrier_(cibleEmail_(user, p, estCoach), p);
@@ -720,6 +725,7 @@ function getSeance_(email, jour) {
   return {
     seance_id: ouverte ? ouverte.id : null,
     debut: ouverte ? ouverte.date : null,
+    duree_estimee: estimerDuree_(blocs),
     faits: faits,
     finis: finis,
     blocs: blocs
@@ -760,6 +766,64 @@ function reprendreExercice_(email, p) {
   const finis = listeFinis_(s).filter(function (x) { return x !== String(p.exercice_id); });
   majLigne_(TABS.SEANCES, 'id', p.seance_id, { exercices_finis: finis.join(',') });
   return { finis: finis };
+}
+
+/** Milieu d'une fourchette de répétitions : « 8-10 » vaut 9, « max » vaut 10. */
+function repsMoyennes_(v) {
+  const t = repsTexte_(v).trim().toLowerCase();
+  if (!t) return 0;
+  if (t === 'max') return 10;
+  const bornes = t.match(/\d+/g);
+  if (!bornes) return 0;
+  const n = bornes.map(Number);
+  return n.length > 1 ? (n[0] + n[n.length - 1]) / 2 : n[0];
+}
+
+/** Secondes d'une répétition d'après la cadence. Faute de cadence, une valeur par défaut. */
+function tempoSecondes_(cadence) {
+  const p = String(cadence || '').split('-').map(function (x) { return Number(x.trim()); });
+  if (p.length !== 4 || p.some(isNaN)) return CONFIG.TEMPO_DEFAUT_S;
+  const t = p[0] + p[1] + p[2] + p[3];
+  return t > 0 ? t : CONFIG.TEMPO_DEFAUT_S;
+}
+
+/**
+ * Durée estimée d'une séance, en minutes.
+ *
+ * Une série dure ce que durent ses répétitions à la cadence prescrite, ou la
+ * durée tenue pour un exercice au temps. S'y ajoutent les pauses à l'intérieur
+ * du bloc, les repos entre les tours — un de moins que de tours, le dernier
+ * repos étant absorbé par le passage au bloc suivant — puis le temps de changer
+ * de poste, et l'échauffement une seule fois.
+ *
+ * C'est une estimation de planification, pas une promesse : elle ignore le
+ * temps qu'on passe à discuter, à attendre un banc ou à recharger la barre plus
+ * lourd que prévu.
+ */
+function estimerDuree_(blocs) {
+  if (!blocs || !blocs.length) return 0;
+  let secondes = 0;
+
+  blocs.forEach(function (b) {
+    const tours = Number(b.series) || 1;
+    let tour = 0;   // durée d'un tour du bloc
+
+    (b.exercices || []).forEach(function (e, i) {
+      const duree = String(e.duree_s || '').toLowerCase();
+      if (duree === 'max') tour += 45;
+      else if (Number(e.duree_s) > 0) tour += Number(e.duree_s);
+      else tour += repsMoyennes_(e.reps_cible) * tempoSecondes_(e.cadence);
+
+      // La pause ne s'applique qu'entre deux exercices du même bloc.
+      if (i < (b.exercices || []).length - 1) tour += Number(e.pause_s) || 0;
+    });
+
+    secondes += tours * tour + Math.max(0, tours - 1) * (Number(b.repos_s) || 0);
+  });
+
+  secondes += Math.max(0, blocs.length - 1) * CONFIG.TRANSITION_MIN * 60;
+  secondes += CONFIG.ECHAUFFEMENT_MIN * 60;
+  return Math.round(secondes / 60);
 }
 
 /** Numéro de bloc. Sans colonne « bloc », chaque ligne forme son propre bloc. */
@@ -867,12 +931,16 @@ function demarrerSeance_(email, jour) {
   const ouverte = seanceOuverte_(email, jour);
   if (ouverte) return { seance_id: ouverte.id, reprise: true };   // pas de doublon
 
+  // On fige la durée prévue au démarrage : le programme peut changer ensuite,
+  // et la comparaison n'aurait plus de sens.
+  const contenu = getSeance_(email, jour);
   const id = uid_('SE');
   ajouter_(TABS.SEANCES, {
     id: id, email: email, date: new Date(), jour: jour,
-    duree_min: '', ressenti: '', notes: ''
+    duree_min: '', duree_prevue: contenu.duree_estimee || '',
+    ressenti: '', notes: ''
   });
-  return { seance_id: id };
+  return { seance_id: id, duree_estimee: contenu.duree_estimee };
 }
 
 function logSerie_(email, p) {
@@ -1075,7 +1143,10 @@ function grouperEnJours_(lignes, noms) {
       note: l.note || ''
     });
   });
-  jours.forEach(function (j) { delete j._n; });
+  jours.forEach(function (j) {
+    delete j._n;
+    j.duree_estimee = estimerDuree_(j.blocs);
+  });
   return jours;
 }
 
@@ -1648,7 +1719,10 @@ function accueil_(email) {
 
   return {
     jours: jours,
-    prochaine: prochaine,
+    prochaine: prochaine ? {
+      jour: prochaine.jour, dans: prochaine.dans,
+      duree_estimee: estimerDuree_((getSeance_(email, prochaine.jour) || {}).blocs || [])
+    } : null,
     programme: att ? {
       id: att.id, nom: att.nom, date_debut: att.date_debut,
       duree_semaines: Number(att.duree_semaines) || 0
@@ -1667,6 +1741,87 @@ function seanceTerminee_(seances, jour) {
     return String(s.jour) === String(jour) && new Date(s.date) >= minuit &&
            s.duree_min !== '' && s.duree_min !== null && s.duree_min !== undefined;
   });
+}
+
+/**
+ * Assiduité et régularité.
+ *
+ * Deux choses différentes, et le coach a besoin des deux :
+ *  - l'assiduité répond « en fait-il assez ? », par le compte de séances ;
+ *  - la régularité répond « à quel rythme ? », par l'écart entre deux séances.
+ *
+ * Quelqu'un qui fait huit séances en dix jours puis rien pendant trois semaines
+ * est assidu sur le papier et irrégulier dans les faits. C'est la régularité qui
+ * prédit la progression.
+ */
+function statistiques_(email, semaines) {
+  const n = Number(semaines) || 12;
+  const depuis = new Date(Date.now() - n * 7 * 86400000);
+
+  const seances = lire_(TABS.SEANCES)
+    .filter(function (s) {
+      return String(s.email).toLowerCase() === email && new Date(s.date) >= depuis;
+    })
+    .sort(function (a, b) { return new Date(a.date) - new Date(b.date); });
+
+  const activites = lire_(TABS.ACTIVITES).filter(function (a) {
+    return String(a.email).toLowerCase() === email && new Date(a.date) >= depuis;
+  });
+
+  // Séances par semaine, de la plus ancienne à la plus récente.
+  const parSemaine = [];
+  for (let i = n - 1; i >= 0; i--) {
+    const fin = new Date(Date.now() - i * 7 * 86400000);
+    const deb = new Date(fin.getTime() - 7 * 86400000);
+    parSemaine.push({
+      seances: seances.filter(function (s) { const d = new Date(s.date); return d > deb && d <= fin; }).length,
+      activites: activites.filter(function (a) { const d = new Date(a.date); return d > deb && d <= fin; }).length
+    });
+  }
+
+  // Écarts entre deux séances consécutives.
+  const ecarts = [];
+  for (let i = 1; i < seances.length; i++) {
+    ecarts.push((new Date(seances[i].date) - new Date(seances[i - 1].date)) / 86400000);
+  }
+  const moyenne = function (t) {
+    return t.length ? t.reduce(function (a, b) { return a + b; }, 0) / t.length : 0;
+  };
+  const ecartMoyen = moyenne(ecarts);
+
+  // Régularité : plus les écarts se ressemblent, plus le rythme est tenu.
+  // On rapporte l'écart-type à la moyenne, et on ramène le tout entre 0 et 100.
+  let regularite = null;
+  if (ecarts.length >= 3 && ecartMoyen > 0) {
+    const variance = moyenne(ecarts.map(function (e) { return (e - ecartMoyen) * (e - ecartMoyen); }));
+    const dispersion = Math.sqrt(variance) / ecartMoyen;
+    regularite = Math.round(Math.max(0, Math.min(1, 1 - dispersion)) * 100);
+  }
+
+  // Durée réelle contre durée prévue, sur les séances closes qui portent les deux.
+  const closes = seances.filter(function (s) {
+    return Number(s.duree_min) > 0 && Number(s.duree_prevue) > 0;
+  });
+  const reel = moyenne(closes.map(function (s) { return Number(s.duree_min); }));
+  const prevu = moyenne(closes.map(function (s) { return Number(s.duree_prevue); }));
+
+  const derniere = seances.length ? seances[seances.length - 1].date : null;
+
+  return {
+    semaines: n,
+    parSemaine: parSemaine,
+    total: seances.length,
+    totalActivites: activites.length,
+    parSemaineMoyen: Math.round(seances.length / n * 10) / 10,
+    ecartMoyen: Math.round(ecartMoyen * 10) / 10,
+    ecartMax: ecarts.length ? Math.round(Math.max.apply(null, ecarts)) : 0,
+    regularite: regularite,
+    dureeReelle: Math.round(reel),
+    dureePrevue: Math.round(prevu),
+    ecartDuree: prevu ? Math.round((reel - prevu) / prevu * 100) : null,
+    nbComparees: closes.length,
+    joursDepuis: derniere ? Math.floor((Date.now() - new Date(derniere)) / 86400000) : null
+  };
 }
 
 /** Historique complet des programmes du pratiquant, pour lui-même. */

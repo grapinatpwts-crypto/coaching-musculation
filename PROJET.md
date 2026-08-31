@@ -89,7 +89,7 @@ côté, zone sûre respectée). Régénérables : voir § 9.
 | `Attributions` | id, email, modele_id, nom, date_debut, date_fin, statut, **paye**, notes, cree_le |
 | `Maxis` | id, email, exercice_id, rm_kg, date, source |
 | `Programmes` | id, **attribution_id**, email, jour, bloc, ordre, exercice_id, series, reps_cible, duree_s, charge_cible, **pct_rm**, cadence, pause_s, repos_s |
-| `Seances` | id, email, date, jour, duree_min, ressenti, notes, exercices_finis |
+| `Seances` | id, email, date, jour, duree_min, **duree_prevue**, ressenti, notes, exercices_finis |
 | `Activites` | id, email, date, sport, duree_min, distance_km, effort, notes, cree_le |
 | `Photos` | email, image, maj_le |
 | `Commentaires` | id, email, exercice_id, auteur, texte, date, lu |
@@ -838,6 +838,58 @@ au premier mouvement. Les réglages du bloc — tours, repos — suivent le bloc
 Vérifié sous Node avec un DOM simulé : bloc descendu en dernier, exercice déplacé
 d'un bloc à l'autre, bloc entièrement vidé. Le bouton « monter » disparaît, devenu
 inutile.
+
+## 8 vicies bis. Le temps
+
+### Estimer la durée d'une séance
+
+`estimerDuree_()` additionne, en secondes :
+
+- chaque série, soit les répétitions × la cadence — une fourchette « 8-10 » compte
+  pour 9, « max » pour 10, une cadence absente vaut 3 s par répétition ;
+- les exercices au temps, à leur durée, « max » comptant pour 45 s ;
+- les pauses à l'intérieur du bloc, entre deux exercices seulement ;
+- les repos entre les tours, **un de moins que de tours** : le dernier repos est
+  absorbé par le passage au bloc suivant ;
+- **4 minutes par changement de bloc** — trouver le poste, charger la barre ;
+- **10 minutes d'échauffement**, une seule fois.
+
+Les trois constantes sont dans `CONFIG`. C'est une estimation de planification, pas
+une promesse : elle ignore le temps passé à discuter ou à attendre un banc.
+
+La durée s'affiche sur l'accueil, sur l'écran de séance, dans l'éditeur et sur les
+programmes. `dureeJour()` la recalcule côté client pour le jour en cours d'édition,
+que le serveur ne connaît pas encore.
+
+### Démarrer et suivre
+
+Un bouton **Démarrer la séance** ouvre la séance explicitement, au lieu de la créer
+en douce à la première série. Le bandeau devient alors un pendule : *23 min sur
+43 prévues · 2/5 exercices*. Il bat à la minute — la seconde n'apprendrait rien et
+réveillerait l'écran pour rien.
+
+`demarrerSeance_` fige `duree_prevue` au démarrage : le programme peut changer
+ensuite, la comparaison n'aurait plus de sens.
+
+### Assiduité et régularité
+
+Deux mesures distinctes, et le coach a besoin des deux.
+
+**L'assiduité** répond « en fait-il assez ? » : nombre de séances, moyenne par
+semaine, histogramme sur douze semaines où les activités libres se distinguent des
+séances du programme.
+
+**La régularité** répond « à quel rythme ? ». On mesure l'écart entre séances
+consécutives, et on rapporte sa dispersion à sa moyenne : plus les écarts se
+ressemblent, plus la note est haute. Elle n'est pas calculée sous trois écarts.
+
+La distinction n'est pas théorique. Vérifié : douze séances régulières donnent 80,
+les **mêmes douze séances** tassées au début puis plus rien donnent 0. L'assiduité
+est identique, la progression ne le sera pas.
+
+**Le temps réel contre le prévu** complète le tableau. Un dépassement systématique
+dit que les repos sont trop courts sur le papier ou qu'on traîne entre les exercices ;
+une séance plus rapide que prévu dit des repos écourtés ou des séries sautées.
 
 ## 9. Parti pris visuel — charte Wellness Sport Club
 

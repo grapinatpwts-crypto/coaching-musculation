@@ -112,6 +112,17 @@ header h2{font-size:30px;text-transform:uppercase;line-height:1}
 .chip.libre{background:rgba(224,82,83,.15);color:var(--brand-ink)}
 .legende{font-size:12px;color:var(--dust);margin:12px 0 4px;display:flex;gap:14px;flex-wrap:wrap}
 .stat{display:flex;gap:18px;flex-wrap:wrap;margin-top:6px}
+/* Un bâton par semaine : séances du programme et activités libres empilées */
+.histo{display:flex;align-items:flex-end;gap:3px;height:56px;margin:12px 0 8px}
+.sem{flex:1;height:100%;display:flex;flex-direction:column;justify-content:flex-end;gap:1px}
+.sem i{display:block;width:100%;border-radius:2px 2px 0 0;min-height:0}
+.sem .s{background:var(--brand)}
+.sem .a{background:var(--brand-ink);opacity:.45;border-radius:0 0 2px 2px}
+.histo + .legende{display:flex;gap:16px;font-size:11.5px;flex-wrap:wrap;margin-top:0}
+.legende i{display:inline-block;width:9px;height:9px;border-radius:2px;margin-right:5px}
+.legende .pt-s{background:var(--brand)}
+.legende .pt-a{background:var(--brand-ink);opacity:.45}
+.num.vif{color:var(--brand-ink)}
 .stat b{font-family:'Bebas Neue',Impact,sans-serif;font-size:26px;font-weight:400;display:block;line-height:1}
 .stat span{font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:var(--dust)}
 
@@ -446,7 +457,9 @@ async function lire(action, payload, cleCache) {
   try {
     const d = await api(action, payload);
     cache(cleCache, d);
-    S.horsLigne = false;
+    // Le drapeau était levé sans que le bandeau soit redessiné : « Hors ligne »
+    // restait affiché indéfiniment après la moindre coupure.
+    if (S.horsLigne) { S.horsLigne = false; majBandeau(); }
     return { d, frais: true };
   } catch (err) {
     if (!estReseau(err)) throw err;
@@ -573,15 +586,18 @@ function majBandeau() {
     document.body.appendChild(b);
     b.onclick = viderFile;
   }
-  if (!file.length && !S.horsLigne) { b.classList.add('hidden'); return; }
+  // On n'affiche « Hors ligne » que si le navigateur le confirme : un appel
+  // raté peut venir du serveur, pas du réseau, et laisser un bandeau menteur.
+  const coupe = S.horsLigne && !enLigne();
+  if (!file.length && !coupe) { b.classList.add('hidden'); return; }
   b.classList.remove('hidden');
-  b.className = file.length ? 'attente' : 'attente vide';
+  b.className = 'attente';
   b.innerHTML = file.length
     ? `<span class="pastille"></span>${file.length} en attente · sera envoyé au retour du réseau`
     : `<span class="pastille"></span>Hors ligne`;
 }
 
-window.addEventListener('online', viderFile);
+window.addEventListener('online', () => { S.horsLigne = false; majBandeau(); viderFile(); });
 window.addEventListener('offline', () => { S.horsLigne = true; majBandeau(); });
 setInterval(viderFile, 20000);
 
@@ -728,6 +744,7 @@ $('#nav').addEventListener('click', e => {
 const VUES_COACH = ['athletes', 'modeles', 'biblio', 'reglages'];
 
 async function rendre() {
+  clearInterval(S.pendule);
   $('#logger').classList.add('hidden');   // l'overlay ne doit pas survivre à un changement de vue
   if (VUES_COACH.indexOf(S.vue) !== -1) {
     S.coach = S.coach || { onglet:'athletes', email:null, nom:'', sous:'fiche', modele:null, categorie:null };
@@ -777,7 +794,8 @@ async function vueAccueil() {
       <button class="card grande" id="allerSeance">
         <div class="body">
           <div class="nom gros">${a.prochaine.jour}</div>
-          <div class="meta">${quand(a.prochaine.dans)}</div>
+          <div class="meta">${quand(a.prochaine.dans)}${
+            a.prochaine.duree_estimee ? ' · environ ' + a.prochaine.duree_estimee + ' min' : ''}</div>
         </div>
         <span class="fleche-carte">›</span>
       </button>`
@@ -921,7 +939,8 @@ async function vueMesProgrammes() {
         <div class="g">
           <div class="nom">${j.jour}</div>
           <div class="meta">${j.blocs.length} bloc${j.blocs.length > 1 ? 's' : ''} · ${
-            j.blocs.reduce((t, b) => t + b.exercices.length, 0)} exercices</div>
+            j.blocs.reduce((t, b) => t + b.exercices.length, 0)} exercices${
+            j.duree_estimee ? ' · environ ' + j.duree_estimee + ' min' : ''}</div>
         </div>
       </div>`).join('') || `<div class="empty" style="padding:14px 0">Aucun jour composé.</div>`}
     </details>`).join('') || `<div class="empty">Aucun programme pour l'instant.</div>`;
@@ -962,17 +981,34 @@ async function vueSeance() {
         <span class="eyebrow">Bloc ${b.bloc} · superset</span>
         <span class="bloc-info">${b.series} tours · ${b.repos_s} s</span>
       </div>${cartes}</div>`;
-  }).join('') + (S.seanceId ? `<div class="barre">
-      <button class="btn plein" id="finSeance" style="flex:1">Terminer la séance</button></div>` : '');
+  }).join('') + (S.seanceId
+    ? `<div class="barre"><button class="btn plein" id="finSeance" style="flex:1">Terminer la séance</button></div>`
+    : `<div class="barre"><button class="btn plein" id="debutSeance" style="flex:1">Démarrer la séance</button></div>`);
 
   const total = S.exos.length;
   const clos = S.exos.filter(x => S.finis.indexOf(x.exercice_id) !== -1 ||
     (S.faits[x.exercice_id] || []).length >= x.series).length;
-  $('#avancement').textContent = S.seanceId
-    ? `Séance en cours · ${clos}/${total} exercices` : 'Programme';
+  majPendule(clos, total);
 
   const fs = $('#finSeance');
   if (fs) fs.onclick = modalFinSeance;
+  const ds = $('#debutSeance');
+  if (ds) ds.onclick = async function () {
+    this.disabled = true; this.textContent = 'Démarrage…';
+    try {
+      const r = await api('demarrer', { jour: S.jour });
+      S.seanceId = r.seance_id;
+      S.debut = new Date().toISOString();
+      cache('accueil', undefined);
+      vueSeance();
+    } catch (err) {
+      if (!estReseau(err)) { toast(err.message); this.disabled = false; this.textContent = 'Démarrer la séance'; return; }
+      S.seanceId = seanceLocale(); S.debut = new Date().toISOString();
+      file.push({ action:'demarrer', payload:{ jour:S.jour }, local:S.seanceId, ts:Date.now() });
+      ecrireJSON(CLE_FILE, file); S.horsLigne = true; majBandeau();
+      vueSeance();
+    }
+  };
   $('#liste').querySelectorAll('[data-i]').forEach(c =>
     c.onclick = () => ouvrirLogger(Number(c.dataset.i)));
   $('#liste').querySelectorAll('[data-rep]').forEach(b => b.onclick = async function (ev) {
@@ -996,6 +1032,7 @@ async function chargerSeance(jour) {
   const blocs = r.blocs || [];
   S.seanceId = r.seance_id || null;
   S.debut = r.debut || null;
+  S.dureeEstimee = r.duree_estimee || 0;
   S.faits = r.faits || {};
   S.finis = r.finis || [];
   S.exos = []; S.blocs = blocs;
@@ -1059,6 +1096,71 @@ function duree(sec) {
   if (sec === 'max' || sec === 'MAX') return 'max';
   const n = Number(sec) || 0;
   return n >= 60 ? `${Math.floor(n / 60)}:${String(n % 60).padStart(2, '0')}` : `${n} s`;
+}
+
+/**
+ * Estimation locale, pour l'éditeur : le serveur ne connaît pas encore le jour
+ * qu'on est en train de composer. Même règle que `estimerDuree_` côté serveur —
+ * répétitions à la cadence, pauses, repos entre tours, changement de poste,
+ * échauffement une fois.
+ */
+const TEMPO_DEFAUT = 3, TRANSITION_MIN = 4, ECHAUFFEMENT_MIN = 10;
+
+function dureeJour(blocs) {
+  if (!blocs || !blocs.length) return 0;
+  const reps = v => {
+    const t = String(v || '').trim().toLowerCase();
+    if (!t) return 0;
+    if (t === 'max') return 10;
+    const n = (t.match(/\d+/g) || []).map(Number);
+    return n.length ? (n.length > 1 ? (n[0] + n[n.length - 1]) / 2 : n[0]) : 0;
+  };
+  const tempo = c => {
+    const p = String(c || '').split('-').map(x => Number(x.trim()));
+    if (p.length !== 4 || p.some(isNaN)) return TEMPO_DEFAUT;
+    const t = p[0] + p[1] + p[2] + p[3];
+    return t > 0 ? t : TEMPO_DEFAUT;
+  };
+
+  let sec = 0;
+  blocs.forEach(b => {
+    const tours = Number(b.series) || 1;
+    let tour = 0;
+    (b.exercices || []).forEach((e, i) => {
+      const d = String(e.duree_s || '').toLowerCase();
+      tour += d === 'max' ? 45 : Number(e.duree_s) > 0 ? Number(e.duree_s)
+                                                       : reps(e.reps_cible) * tempo(e.cadence);
+      if (i < b.exercices.length - 1) tour += Number(e.pause_s) || 0;
+    });
+    sec += tours * tour + Math.max(0, tours - 1) * (Number(b.repos_s) || 0);
+  });
+  sec += Math.max(0, blocs.length - 1) * TRANSITION_MIN * 60 + ECHAUFFEMENT_MIN * 60;
+  return Math.round(sec / 60);
+}
+
+/**
+ * Bandeau d'avancement : le temps écoulé face au temps prévu, et les exercices
+ * bouclés. Le pendule bat chaque minute tant que la séance est ouverte —
+ * chaque seconde n'apprendrait rien et réveillerait l'écran pour rien.
+ */
+function majPendule(clos, total) {
+  const z = $('#avancement');
+  if (!z) return;
+  clearInterval(S.pendule);
+
+  const peindre = () => {
+    const a = $('#avancement');
+    if (!a) { clearInterval(S.pendule); return; }
+    if (!S.seanceId) {
+      a.textContent = S.dureeEstimee ? `Programme · environ ${S.dureeEstimee} min` : 'Programme';
+      return;
+    }
+    const min = S.debut ? Math.max(0, Math.round((Date.now() - new Date(S.debut)) / 60000)) : 0;
+    a.textContent = `Séance en cours · ${min} min${
+      S.dureeEstimee ? ' sur ' + S.dureeEstimee + ' prévues' : ''} · ${clos}/${total} exercices`;
+  };
+  peindre();
+  if (S.seanceId) S.pendule = setInterval(peindre, 60000);
 }
 
 /** Commentaires non lus sur un exercice, pour celui qui regarde. */
@@ -1515,12 +1617,70 @@ function bip() {
   } catch (e) {}
 }
 
+/**
+ * Assiduité et régularité, rendues côté client.
+ * Assiduité : combien. Régularité : à quel rythme. Quelqu'un qui fait huit
+ * séances en dix jours puis rien pendant trois semaines est assidu et
+ * irrégulier — et c'est la régularité qui prédit la progression.
+ */
+function blocStats(st) {
+  if (!st || !st.total) return `<div class="empty">Pas encore assez de séances pour dire quoi que ce soit.</div>`;
+
+  const max = Math.max(1, ...st.parSemaine.map(x => x.seances + x.activites));
+  const barres = st.parSemaine.map((x, i) => `
+    <div class="sem" title="semaine ${i + 1} : ${x.seances} séance(s), ${x.activites} activité(s)">
+      <i class="s" style="height:${x.seances / max * 100}%"></i>
+      <i class="a" style="height:${x.activites / max * 100}%"></i>
+    </div>`).join('');
+
+  const jugement = st.regularite === null ? ''
+    : st.regularite >= 70 ? 'rythme tenu'
+    : st.regularite >= 40 ? 'rythme irrégulier'
+    : 'très irrégulier';
+
+  return `
+    <div class="card" style="display:block">
+      <div class="eyebrow">Sur ${st.semaines} semaines</div>
+      <div class="histo">${barres}</div>
+      <div class="legende">
+        <span><i class="pt-s"></i> séances du programme</span>
+        <span><i class="pt-a"></i> activités libres</span>
+      </div>
+      <div class="stat" style="margin-top:14px">
+        <div><b class="num">${st.parSemaineMoyen}</b><span>par semaine</span></div>
+        <div><b class="num">${st.ecartMoyen || '—'}</b><span>jours d'écart</span></div>
+        ${st.regularite !== null
+          ? `<div><b class="num">${st.regularite}</b><span>régularité</span></div>` : ''}
+      </div>
+      ${st.regularite !== null ? `<div class="meta bas" style="margin-top:8px">${jugement}${
+        st.ecartMax > st.ecartMoyen * 2 ? ` · plus longue coupure : ${st.ecartMax} jours` : ''}</div>` : ''}
+    </div>
+
+    ${st.nbComparees ? `<div class="card" style="display:block">
+      <div class="eyebrow">Temps passé</div>
+      <div class="stat" style="margin-top:10px">
+        <div><b class="num">${st.dureeReelle}</b><span>min en vrai</span></div>
+        <div><b class="num">${st.dureePrevue}</b><span>min prévues</span></div>
+        <div><b class="num ${st.ecartDuree > 0 ? 'vif' : ''}">${st.ecartDuree > 0 ? '+' : ''}${st.ecartDuree} %</b><span>écart</span></div>
+      </div>
+      <div class="meta bas" style="margin-top:8px">${
+        Math.abs(st.ecartDuree) <= 15 ? 'Les séances tiennent dans le temps prévu.'
+        : st.ecartDuree > 0 ? 'Les séances débordent : repos trop courts sur le papier, ou temps perdu entre les exercices.'
+        : 'Les séances vont plus vite que prévu : repos écourtés, ou séries non faites.'
+      } Sur ${st.nbComparees} séance${st.nbComparees > 1 ? 's' : ''} close${st.nbComparees > 1 ? 's' : ''}.</div>
+    </div>` : ''}`;
+}
+
 // ── Vue progrès ──────────────────────────────────────────────
 async function vueProgres() {
   const app = $('#app');
   app.innerHTML = `<header><h2>Progrès</h2>
     <button class="quitter" id="quitter" >Se déconnecter</button></header>
-    <div id="liste"><div class="empty">Chargement…</div></div>`;
+    <div id="stats"></div><div id="liste"><div class="empty">Chargement…</div></div>`;
+
+  lireVite('stats', {}, 'stats', d => { const z = $('#stats'); if (z) z.innerHTML = blocStats(d); })
+    .then(d => { const z = $('#stats'); if (z) z.innerHTML = blocStats(d); })
+    .catch(() => {});
   if (!S.exos.length && S.jour) await chargerSeance(S.jour);
   if (!S.exos.length) { $('#liste').innerHTML = `<div class="empty">Enregistrez une première séance pour voir vos courbes.</div>`; return; }
 
@@ -1915,6 +2075,9 @@ async function vueFiche() {
         <button class="poignee" data-prevenir="${a.id}" aria-label="Prévenir">✉</button>
       </div>`).join('') || `<div class="empty" style="padding:18px 0">Aucun programme donné.</div>`}
 
+    <div class="eyebrow" style="margin:22px 0 10px">Assiduité</div>
+    <div id="statsAthlete"><div class="empty" style="padding:14px 0">Chargement…</div></div>
+
     ${(f.activites || []).length ? `
       <div class="eyebrow" style="margin:22px 0 10px">Activités hors programme · ${f.activites.length}</div>
       <p class="consigne" style="margin-bottom:10px">Ce que le pratiquant fait de lui-même.
@@ -1933,6 +2096,10 @@ async function vueFiche() {
 
     ${f.notes ? `<div class="eyebrow" style="margin:22px 0 8px">Notes</div>
       <p class="consigne">${f.notes}</p>` : ''}`;
+
+  api('stats', { email: f.email })
+    .then(st => { const z = $('#statsAthlete'); if (z) z.innerHTML = blocStats(st); })
+    .catch(() => { const z = $('#statsAthlete'); if (z) z.innerHTML = ''; });
 
   $('#editFiche').onclick = () => modalFiche(f);
   $('#photo').onclick = () => modalPhoto(f.email);
@@ -2343,7 +2510,8 @@ function peindreEditeur() {
   const ed = S.ed;
 
   z.innerHTML = `
-    <div class="eyebrow" style="margin:4px 0 12px">${ed.jour}${ed.neuf ? ' · nouveau' : ''}</div>
+    <div class="eyebrow" style="margin:4px 0 12px">${ed.jour}${ed.neuf ? ' · nouveau' : ''}${
+      dureeJour(ed.blocs) ? ' · environ ' + dureeJour(ed.blocs) + ' min' : ''}</div>
     ${ed.blocs.map((b, i) => `
       <div class="bloc" data-buid="${b._uid}">
         <div class="entete">
