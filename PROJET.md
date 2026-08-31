@@ -1,7 +1,11 @@
 # Coaching Fitness — état du projet
 
-Document de reprise. À déposer à la racine du dépôt : il donne tout le contexte
-nécessaire pour continuer le travail dans Claude Code sans repartir de zéro.
+Document de reprise : **comment l'app fonctionne**. Il donne tout le contexte
+nécessaire pour continuer le travail sans repartir de zéro.
+
+Pour **pourquoi elle est ainsi et où elle va** — les principes, ce qui reste avant
+d'ouvrir aux 40 pratiquants, et les idées gardées dont le local-first — voir
+[PRODUCTION.md](PRODUCTION.md).
 
 ---
 
