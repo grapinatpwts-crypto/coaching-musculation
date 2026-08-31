@@ -71,7 +71,7 @@ const SPORTS = [
 const ETATS = { NOUVEAU: 'Nouveau', ACTIF: 'Actif', INACTIF: 'Inactif', ARCHIVE: 'Archivé' };
 
 /** Actions qui écrivent pour le compte d'un pratiquant : refusées si Inactif. */
-const ECRITURES_PRATIQUANT = ['demarrer', 'serie', 'terminer', 'finirExercice',
+const ECRITURES_PRATIQUANT = ['demarrer', 'serie', 'terminer', 'annuler', 'finirExercice',
                               'reprendreExercice', 'ajuster'];
 
 const SCHEMA = {
@@ -213,6 +213,7 @@ function route_(action, p, user, profil, estCoach) {
     case 'demarrer':       return demarrerSeance_(user.email, p.jour);
     case 'serie':          return logSerie_(user.email, p);
     case 'terminer':       return terminerSeance_(user.email, p);
+    case 'annuler':        return annulerSeance_(user.email, p.seance_id);
     case 'finirExercice':  return finirExercice_(user.email, p);
     case 'reprendreExercice': return reprendreExercice_(user.email, p);
     case 'historique':     return historique_(user.email, p.exercice_id);
@@ -760,6 +761,25 @@ function finirExercice_(email, p) {
   if (finis.indexOf(String(p.exercice_id)) === -1) finis.push(String(p.exercice_id));
   majLigne_(TABS.SEANCES, 'id', p.seance_id, { exercices_finis: finis.join(',') });
   return { finis: finis };
+}
+
+/**
+ * Annule une séance : la ligne et toutes ses séries disparaissent.
+ * C'est pour la séance démarrée par erreur, ou celle qu'on a laissée ouverte et
+ * qu'on ne fera pas. Une séance qu'on a vraiment faite, même à moitié, se clôt
+ * — elle a sa place dans l'historique.
+ */
+function annulerSeance_(email, id) {
+  if (!id) throw new Error('SEANCE_MANQUANTE');
+  seanceParId_(email, id);   // lève si la séance n'est pas la sienne
+
+  const series = supprimerLignes_(TABS.SERIES, function (x) {
+    return String(x.seance_id) === String(id) && String(x.email).toLowerCase() === email;
+  });
+  supprimerLignes_(TABS.SEANCES, function (x) {
+    return String(x.id) === String(id) && String(x.email).toLowerCase() === email;
+  });
+  return { supprime: true, series: series };
 }
 
 /** Rouvre un exercice clos par erreur. */

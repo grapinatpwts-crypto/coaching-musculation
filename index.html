@@ -389,7 +389,8 @@ const CLE_CACHE = 'muscu.cache';
 const CLE_MAP   = 'muscu.map';
 
 /** Actions rejouables sans risque : elles décrivent un fait, pas un état global. */
-const DIFFERABLES = ['demarrer', 'serie', 'finirExercice', 'reprendreExercice', 'terminer'];
+const DIFFERABLES = ['demarrer', 'serie', 'finirExercice', 'reprendreExercice',
+                     'terminer', 'annuler'];
 
 const lireJSON = (cle, defaut) => {
   try { return JSON.parse(localStorage.getItem(cle)) ?? defaut; } catch (e) { return defaut; }
@@ -483,7 +484,8 @@ const PERIME = {
   programmeSave: ['accueil', 'mesProgrammes'], programmeJour: ['accueil', 'mesProgrammes'],
   exerciceSave: ['catalogue'], exerciceSuppr: ['catalogue'],
   modeleSave: ['modeles'], modeleSuppr: ['modeles'], modeleJourSave: ['modeles'],
-  terminer: ['accueil', 'athletes'], serie: ['accueil'],
+  terminer: ['accueil', 'athletes', 'seance:'], serie: ['accueil'],
+  annuler: ['accueil', 'athletes', 'seance:'],
   activiteSave: ['accueil'], activiteSuppr: ['accueil'],
   maintenance: ['catalogue', 'modeles', 'athletes', 'accueil']
 };
@@ -524,6 +526,18 @@ async function ecrire(action, payload) {
 /** Identifiant provisoire quand la séance n'a pas pu être créée côté serveur. */
 function seanceLocale() {
   return 'LOC-' + Date.now().toString(36).toUpperCase();
+}
+
+/**
+ * Retire de la file tout ce qui concerne une séance qu'on vient d'annuler.
+ * Sans cela on rejouerait des séries sur une séance qui n'existe plus.
+ */
+function purgerFile(id) {
+  const reste = file.filter(e => e.local !== id &&
+    String((e.payload || {}).seance_id || '') !== id);
+  file.length = 0;
+  reste.forEach(e => file.push(e));
+  ecrireJSON(CLE_FILE, file);
 }
 
 /**
@@ -1529,6 +1543,7 @@ function modalFinSeance() {
   const clos = S.exos.filter(x => S.finis.indexOf(x.exercice_id) !== -1 ||
     (S.faits[x.exercice_id] || []).length >= x.series).length;
   const mins = S.debut ? Math.max(1, Math.round((Date.now() - new Date(S.debut)) / 60000)) : '';
+  const faites = Object.keys(S.faits).reduce((n, k) => n + (S.faits[k] || []).length, 0);
 
   const w = modal('Terminer la séance', `
     <p class="consigne">${clos} exercice${clos > 1 ? 's' : ''} sur ${total}${
@@ -1543,9 +1558,14 @@ function modalFinSeance() {
     <div class="champ"><label>Notes</label>
       <textarea class="f" id="fNot" rows="3" placeholder="Douleur, sensation, matériel occupé…"></textarea></div>
     <div class="barre"><button class="btn" id="fAnn">Continuer la séance</button>
-      <button class="btn plein" id="fOk" style="flex:1">Terminer</button></div>`);
+      <button class="btn plein" id="fOk" style="flex:1">Terminer</button></div>
+    <div class="barre"><button class="btn danger" id="fDel" style="flex:1">Annuler la séance</button></div>
+    <p class="consigne" style="font-size:13px;margin-top:-4px">Annuler efface la séance et ${
+      faites ? `les ${faites} série${faites > 1 ? 's' : ''} déjà enregistrée${faites > 1 ? 's' : ''}` :
+      'ne garde rien'} — pour une séance démarrée par erreur.</p>`);
 
   w.querySelector('#fAnn').onclick = w.fermer;
+  w.querySelector('#fDel').onclick = annulerSeance(w, faites);
   w.querySelector('#fOk').onclick = async function () {
     this.disabled = true;
     try {
@@ -1560,6 +1580,34 @@ function modalFinSeance() {
       toast('Séance enregistrée');
       S.seanceId = null; S.debut = null; S.faits = {}; S.finis = []; S.cal = null;
       cache('accueil', undefined);   // la prochaine séance a changé
+      try { S.moi = await api('bootstrap'); sauverSession(); } catch (err) {}
+      vueSeance();
+    } catch (err) { toast(err.message); this.disabled = false; }
+  };
+}
+
+/**
+ * Annulation d'une séance. Deux temps dès qu'il y a des séries à perdre : le
+ * bouton demande confirmation avant de partir. Une séance jamais montée au
+ * serveur ne s'annule pas, elle se retire simplement de la file.
+ */
+function annulerSeance(w, faites) {
+  return async function () {
+    if (faites && this.dataset.sur !== 'oui') {
+      this.dataset.sur = 'oui';
+      this.textContent = 'Confirmer la suppression';
+      return;
+    }
+    this.disabled = true;
+    const id = S.seanceId;
+    try {
+      purgerFile(id);
+      const distant = mapSeances[id] || (String(id).indexOf('LOC-') === 0 ? null : id);
+      if (distant) await ecrire('annuler', { seance_id: distant });
+      w.fermer();
+      toast('Séance annulée');
+      S.seanceId = null; S.debut = null; S.faits = {}; S.finis = []; S.cal = null;
+      cache('accueil', undefined); cache('seance:' + S.jour, undefined);
       try { S.moi = await api('bootstrap'); sauverSession(); } catch (err) {}
       vueSeance();
     } catch (err) { toast(err.message); this.disabled = false; }
