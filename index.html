@@ -246,9 +246,12 @@ header h2{font-size:30px;text-transform:uppercase;line-height:1}
 .card .done.full{background:var(--brand);border-color:var(--brand);color:var(--on-brand)}
 
 /* Disques — élément signature */
-.bar{display:flex;align-items:center;gap:2px;margin-top:7px;height:16px}
+.bar{display:flex;align-items:center;gap:1.5px;margin-top:7px;height:20px}
 .bar i{display:block;width:7px;border-radius:2px;border:1px solid rgba(0,0,0,.35)}
-.bar .rod{width:14px;height:3px;background:var(--p2);border-radius:2px;border:0}
+/* Le fût de la barre, puis les disques, puis la bague : le chargement se fait
+   à l'extrémité, jamais au milieu. */
+.bar .fut{width:30px;height:3.5px;background:var(--p2);border-radius:2px;border:0;margin-right:1px}
+.bar .bague{width:4px;height:11px;background:var(--p2);border-radius:1px;border:0;margin-left:1.5px}
 
 /* Panneau de saisie */
 #logger{position:fixed;inset:0;background:var(--iron);z-index:20;display:flex;flex-direction:column;
@@ -388,6 +391,21 @@ function cache(cle, valeur) {
   if (valeur === undefined) return c[cle];
   c[cle] = { v: valeur, ts: Date.now() };
   ecrireJSON(CLE_CACHE, c);
+}
+
+/**
+ * Lecture avec affichage immédiat : si une copie existe, l'appelant la reçoit
+ * tout de suite et `apresCoup` est rappelé quand la version fraîche arrive.
+ * C'est ce qui fait la différence entre une app qui répond et une app qui rame :
+ * Apps Script met une à deux secondes, le cache répond en zéro.
+ */
+async function lireVite(action, payload, cleCache, apresCoup) {
+  const c = cache(cleCache);
+  if (!c) return (await lire(action, payload, cleCache)).d;
+  lire(action, payload, cleCache)
+    .then(r => { if (r.frais && JSON.stringify(r.d) !== JSON.stringify(c.v)) apresCoup(r.d); })
+    .catch(() => {});
+  return c.v;
 }
 
 /**
@@ -688,7 +706,7 @@ async function vueAccueil() {
     </header><div id="zone"><div class="empty">Chargement…</div></div>`;
 
   let a;
-  try { a = (await lire('accueil', {}, 'accueil')).d; }
+  try { a = await lireVite('accueil', {}, 'accueil', () => { if (S.vue === 'accueil') vueAccueil(); }); }
   catch (err) { $('#zone').innerHTML = `<div class="empty">Impossible de charger.<br>${err.message}</div>`; return; }
   S.accueil = a;
 
@@ -1058,16 +1076,26 @@ function courbeProgression(pts) {
 }
 
 /** Décompose une charge en disques olympiques colorés (barre de 20 kg). */
+/**
+ * Un côté de la barre, vu de profil : le fût part de la gauche, les disques se
+ * chargent à son extrémité — le plus lourd contre le fût, les petits vers le
+ * bout — et la bague de serrage ferme le tout. C'est l'ordre dans lequel on
+ * charge réellement, et il se lit sans réfléchir en salle.
+ */
 function disques(kg) {
-  const parSide = (Number(kg) - (S.moi.barKg || 20)) / 2;
-  if (!(parSide > 0)) return '';
-  const dispo = [[25,'var(--p25)',15],[20,'var(--p20)',14],[15,'var(--p15)',13],
-                 [10,'var(--p10)',11],[5,'var(--p5)',9],[2.5,'var(--p2)',7],[1.25,'var(--p2)',5]];
-  let reste = parSide, html = '<span class="bar"><i class="rod"></i>';
+  const parCote = (Number(kg) - (S.moi.barKg || 20)) / 2;
+  if (!(parCote > 0)) return '';
+  const dispo = [[25,'var(--p25)',18],[20,'var(--p20)',17],[15,'var(--p15)',15],
+                 [10,'var(--p10)',13],[5,'var(--p5)',10],[2.5,'var(--p2)',8],[1.25,'var(--p2)',6]];
+
+  let reste = parCote, pose = [];
   dispo.forEach(([p, c, h]) => {
-    while (reste >= p - 0.01) { html += `<i style="background:${c};height:${h}px"></i>`; reste -= p; }
+    while (reste >= p - 0.01) { pose.push(`<i style="background:${c};height:${h}px"></i>`); reste -= p; }
   });
-  return html + '<i class="rod"></i></span>';
+
+  const detail = parCote + ' kg par côté sur une barre de ' + (S.moi.barKg || 20) + ' kg';
+  return `<span class="bar" role="img" aria-label="${detail}" title="${detail}">
+    <i class="fut"></i>${pose.join('')}<i class="bague"></i></span>`;
 }
 
 // ── Saisie des séries ────────────────────────────────────────
@@ -1662,6 +1690,11 @@ async function listeAthletes() {
       `<div class="empty">Aucun pratiquant inscrit.</div>`}</div>`;
 
   $('#inscrire').onclick = modalInscrire;
+
+  // Les photos arrivent après : la liste s'affiche sans attendre quelques
+  // centaines de kilo-octets d'images.
+  if (S.photos) remplirPhotos();
+  else api('photos').then(ph => { S.photos = ph; remplirPhotos(); }).catch(() => {});
   $('#zone').querySelectorAll('[data-email]').forEach(b => b.onclick = () => {
     S.coach.email = b.dataset.email;
     S.coach.nom = b.dataset.nom;
@@ -1678,6 +1711,19 @@ function avatar(a, taille) {
   const ini = (a.nom || a.email || '?').split(/[\s.@_-]+/).filter(Boolean)
     .slice(0, 2).map(m => m[0].toUpperCase()).join('');
   return `<span class="${c} vide">${ini || '?'}</span>`;
+}
+
+/** Glisse les photos déjà chargées dans les pastilles de la liste. */
+function remplirPhotos() {
+  document.querySelectorAll('.athlete[data-email]').forEach(b => {
+    const url = (S.photos || {})[b.dataset.email.toLowerCase()];
+    const av = b.querySelector('.avatar');
+    if (url && av && av.tagName !== 'IMG') {
+      const img = document.createElement('img');
+      img.className = 'avatar'; img.src = url; img.alt = '';
+      av.replaceWith(img);
+    }
+  });
 }
 
 function carteAthlete(a) {
@@ -1958,7 +2004,7 @@ async function envoyerPhoto(fichier, email) {
     const url = await reduireImage(fichier, 256, 44000);
     await api('photoSave', { email, image: url });
     toast('Photo enregistrée');
-    S.athletes = null;
+    S.athletes = null; S.photos = null;
     vueFiche();
   } catch (err) {
     toast(err.message === 'IMAGE_TROP_LOURDE' ? 'Image trop lourde, essayez-en une autre'
@@ -2734,12 +2780,22 @@ async function vueProgramme() {
 /** Donner un programme : depuis un modèle, ou vierge pour du sur-mesure. */
 async function modalAttribuer() {
   const mods = await api('modeles');
+  const cats = [...new Set(mods.map(m => (m.categorie || '').trim()).filter(Boolean))].sort();
+  const difs = [...new Set(mods.map(m => (m.difficulte || '').trim()).filter(Boolean))]
+    .sort((a, b) => ordreDifficulte(a) - ordreDifficulte(b));
+
   const w = modal('Donner un programme', `
-    <div class="champ"><label>Modèle de départ</label>
-      <select class="f" id="aMod">
+    <div class="duo">
+      <div class="champ"><label>Catégorie</label>
+        <select class="f" id="fCat"><option value="">Toutes</option>
+          ${cats.map(c => `<option>${c}</option>`).join('')}</select></div>
+      <div class="champ"><label>Difficulté</label>
+        <select class="f" id="fDif"><option value="">Toutes</option>
+          ${difs.map(d => `<option>${d}</option>`).join('')}</select></div>
+    </div>
+    <div class="champ"><label>Modèle de départ · <span id="fCompte">${mods.length}</span></label>
+      <select class="f" id="aMod" size="7">
         <option value="">— Sur mesure, page blanche —</option>
-        ${mods.map(m => `<option value="${m.id}">${m.nom}${m.categorie ? ' · ' + m.categorie : ''}${
-          m.difficulte ? ' · ' + m.difficulte : ''}</option>`).join('')}
       </select></div>
     <div class="champ"><label>Nom donné au pratiquant</label>
       <input class="f" id="aNom" placeholder="Laisser vide pour reprendre le nom du modèle"></div>
@@ -2749,6 +2805,21 @@ async function modalAttribuer() {
       ne touche pas le modèle, et le programme en cours est clos automatiquement.</p>
     <div class="barre"><button class="btn" id="aAnn">Annuler</button>
       <button class="btn plein" id="aOk" style="flex:1">Attribuer</button></div>`);
+
+  // Les deux filtres sont facultatifs et se combinent.
+  const filtrer = () => {
+    const c = w.querySelector('#fCat').value, d = w.querySelector('#fDif').value;
+    const vus = mods.filter(m => (!c || (m.categorie || '').trim() === c)
+                              && (!d || (m.difficulte || '').trim() === d))
+                    .sort((a, b) => a.nom.localeCompare(b.nom, 'fr'));
+    w.querySelector('#fCompte').textContent = vus.length;
+    w.querySelector('#aMod').innerHTML = `<option value="">— Sur mesure, page blanche —</option>` +
+      vus.map(m => `<option value="${m.id}">${m.nom}${
+        m.duree_semaines ? ' · ' + m.duree_semaines + ' sem.' : ''} · ${m.nbJours} j</option>`).join('');
+  };
+  w.querySelector('#fCat').onchange = filtrer;
+  w.querySelector('#fDif').onchange = filtrer;
+  filtrer();
 
   w.querySelector('#aAnn').onclick = w.fermer;
   w.querySelector('#aOk').onclick = async function () {

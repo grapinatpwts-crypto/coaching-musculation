@@ -747,6 +747,46 @@ retrouve la remarque sur l'épaule qui coinçait, à côté des charges de l'ép
 C'est aussi pour ça qu'il n'y a pas de notification : le mot attend sur l'exercice,
 et se voit au moment où on en a besoin — quand on est devant la barre.
 
+## 8 octodecies. Vitesse
+
+Chaque action passe par Apps Script, qui met une à deux secondes rien qu'à répondre.
+Le reste venait de nous : une action lisait **3 à 9 onglets entiers**, parfois deux
+fois le même.
+
+| Action | Lectures avant | Après |
+|---|---|---|
+| `getSeance_` | 9 | 6 |
+| `programme_` | 5 | 2 |
+| `accueil_` | 6 | 4 |
+| `coachAthletes_` | 7 | 5, et sans les photos |
+
+Quatre mesures, de la plus rentable à la moins visible.
+
+**Mémoire de requête.** `lire_` ne lit un onglet qu'une fois par requête. Toute
+écriture oublie l'onglet concerné.
+
+**Cache des onglets stables.** `Exercices`, `Modeles` et `ModeleLignes` changent
+rarement et pèsent lourd — le catalogue fait 171 lignes avec consignes et adresses
+d'images. Ils sont gardés cinq minutes dans le cache du script, invalidés à
+l'écriture. Au-delà de 90 ko, on s'en passe : une entrée de cache plafonne à 100 ko.
+
+**En-têtes vérifiés une fois.** `feuille_` complétait les colonnes manquantes à
+chaque écriture, donc relisait la ligne de titres à chaque fois.
+
+**Photos différées.** Elles ne partent plus avec la liste des athlètes : la liste
+s'affiche avec les initiales, les images arrivent ensuite en une requête. Quelques
+centaines de kilo-octets quittent le chemin critique.
+
+**Affichage immédiat.** `lireVite()` rend la copie en cache tout de suite et
+rafraîchit derrière : l'accueil s'affiche instantanément, puis se corrige si le
+serveur dit autre chose. C'est ce qui change le plus la sensation.
+
+### Le plafond connu
+
+Les photos vivent dans le classeur, ce qui évitait tout service externe. À quelques
+dizaines de pratiquants, lire l'onglet `Photos` charge toutes les images d'un coup.
+Au-delà de cent, il faudra les déplacer — Drive, ou un onglet par tranche.
+
 ## 9. Parti pris visuel — charte Wellness Sport Club
 
 L'app reprend l'identité de **Wellness Sport Club** (`wellness-sportclub.fr`),
@@ -805,6 +845,12 @@ entre deux séries.
 couleurs réglementaires** (25 rouge, 20 bleu, 15 jaune, 10 vert, 5 blanc), calculés
 par côté sur une barre de 20 kg. Fonction `disques()` dans `index.html`.
 Ces couleurs sont normatives, pas décoratives : elles ne suivent pas la charte.
+
+Le dessin montre **un côté de la barre vu de profil** : le fût part de la gauche,
+les disques se chargent à son extrémité — le plus lourd contre le fût, les petits
+vers le bout — et la bague de serrage ferme le tout. C'est l'ordre dans lequel on
+charge réellement. Une première version plaçait les disques au milieu du fût, ce qui
+ne correspond à aucune barre.
 
 ## 10. Prochaines étapes
 

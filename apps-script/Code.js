@@ -204,6 +204,7 @@ function route_(action, p, user, profil, estCoach) {
     case 'pratiquant':     return guardCoach_(estCoach, function () { return pratiquant_(p.email); });
     case 'pratiquantSave': return guardCoach_(estCoach, function () { return pratiquantSave_(p); });
     case 'pratiquantCreer':return guardCoach_(estCoach, function () { return pratiquantCreer_(p); });
+    case 'photos':         return guardCoach_(estCoach, photos_);
     case 'photoSave':      return guardCoach_(estCoach, function () { return photoSave_(p); });
     case 'photoSuppr':     return guardCoach_(estCoach, function () { return photoSuppr_(p.email); });
     case 'messageType':    return guardCoach_(estCoach, function () { return messageType_(p); });
@@ -282,6 +283,9 @@ function verifyToken_(idToken) {
  */
 const COLONNES_TEXTE = ['reps_cible', 'cadence', 'duree_s', 'pct_rm'];
 
+/** En-têtes déjà vérifiés pendant cette requête. */
+const VERIFIES = {};
+
 function forcerTexte_(sh, head) {
   const n = Math.max(sh.getMaxRows() - 1, 1);
   COLONNES_TEXTE.forEach(function (c) {
@@ -301,9 +305,13 @@ function feuille_(tab) {
     forcerTexte_(sh, SCHEMA[tab]);
     return sh;
   }
-  if (sh && SCHEMA[tab]) {
+  // Une requête ne vérifie l'en-tête qu'une fois par onglet : sans ça, chaque
+  // écriture relisait la ligne de titres pour rien.
+  if (sh && SCHEMA[tab] && !VERIFIES[tab]) {
+    VERIFIES[tab] = true;
     if (ajouterColonnesManquantes_(sh, SCHEMA[tab])) {
       forcerTexte_(sh, sh.getRange(1, 1, 1, sh.getLastColumn()).getValues()[0]);
+      oublier_(tab);
     }
   }
   return sh;
@@ -333,17 +341,55 @@ function ajouterColonnesManquantes_(sh, colonnes) {
   return manquantes.length;
 }
 
+/**
+ * Mémoire de la requête. Une action lit souvent le même onglet plusieurs fois —
+ * getSeance_ relisait Series et Attributions deux fois — et chaque lecture coûte
+ * un aller-retour au tableur. On ne lit qu'une fois par requête.
+ * Toute écriture oublie l'onglet concerné.
+ */
+const MEMO = {};
+function oublier_(tab) { delete MEMO[tab]; CACHE_TABS.indexOf(tab) !== -1 && cacheOublier_(tab); }
+
+/**
+ * Onglets stables et coûteux : leur contenu change rarement et pèse lourd.
+ * On les garde d'une requête à l'autre dans le cache du script, cinq minutes,
+ * invalidés dès qu'on y écrit.
+ */
+const CACHE_TABS = ['Exercices', 'Modeles', 'ModeleLignes'];
+
+function cacheOublier_(tab) {
+  try { CacheService.getScriptCache().remove('tab_' + tab); } catch (e) {}
+}
+
 function lire_(tab) {
+  if (MEMO[tab]) return MEMO[tab];
+
+  if (CACHE_TABS.indexOf(tab) !== -1) {
+    try {
+      const brut = CacheService.getScriptCache().get('tab_' + tab);
+      if (brut) return (MEMO[tab] = JSON.parse(brut));
+    } catch (e) {}
+  }
+
   const sh = SpreadsheetApp.getActive().getSheetByName(tab);
-  if (!sh) return [];                       // onglet pas encore créé : rien à lire
+  if (!sh) return (MEMO[tab] = []);          // onglet pas encore créé : rien à lire
   const values = sh.getDataRange().getValues();
-  if (values.length < 2) return [];
+  if (values.length < 2) return (MEMO[tab] = []);
   const head = values.shift();
-  return values.map(function (row) {
+  const out = values.map(function (row) {
     const o = {};
     head.forEach(function (h, i) { o[h] = row[i]; });
     return o;
   });
+
+  if (CACHE_TABS.indexOf(tab) !== -1) {
+    try {
+      const brut = JSON.stringify(out);
+      // Le cache du script plafonne à 100 ko par entrée : au-delà, on s'en passe.
+      if (brut.length < 90000) CacheService.getScriptCache().put('tab_' + tab, brut, 300);
+    } catch (e) {}
+  }
+  return (MEMO[tab] = out);
 }
 
 function ajouter_(tab, obj) {
@@ -353,6 +399,7 @@ function ajouter_(tab, obj) {
     const sh = feuille_(tab);
     const head = sh.getRange(1, 1, 1, sh.getLastColumn()).getValues()[0];
     sh.appendRow(head.map(function (h) { return obj[h] !== undefined ? obj[h] : ''; }));
+    oublier_(tab);
   } finally {
     lock.releaseLock();
   }
@@ -370,6 +417,7 @@ function ajouterPlusieurs_(tab, objs) {
       return head.map(function (h) { return o[h] !== undefined ? o[h] : ''; });
     });
     sh.getRange(sh.getLastRow() + 1, 1, rangs.length, head.length).setValues(rangs);
+    oublier_(tab);
     return rangs.length;
   } finally {
     lock.releaseLock();
@@ -389,6 +437,7 @@ function majLigne_(tab, cleCol, cleVal, patch) {
         head.forEach(function (h, c) {
           if (patch[h] !== undefined) sh.getRange(r + 1, c + 1).setValue(patch[h]);
         });
+        oublier_(tab);
         return true;
       }
     }
@@ -416,6 +465,7 @@ function supprimerLignes_(tab, predicat) {
       head.forEach(function (h, i) { o[h] = vals[r][i]; });
       if (predicat(o)) { sh.deleteRow(r + 1); n++; }
     }
+    if (n) oublier_(tab);
     return n;
   } finally {
     lock.releaseLock();
@@ -1692,7 +1742,9 @@ function coachAthletes_() {
   const atts = lire_(TABS.ATTRIBUTIONS);
   const modeles = {};
   lire_(TABS.MODELES).forEach(function (m) { modeles[String(m.id)] = m; });
-  const images = photos_();
+  // Les photos ne sont plus jointes ici : quelques kilo-octets par athlète
+  // gonflaient la réponse alors que la liste s'affiche très bien sans, le temps
+  // qu'elles arrivent. L'app les demande ensuite, en une fois.
   const attente = nonLus_({ email: '' }, true).parEmail || {};
 
   return lire_(TABS.PRATIQUANTS)
@@ -1725,7 +1777,6 @@ function coachAthletes_() {
 
       return {
         email: p.email, nom: p.nom || email.split('@')[0],
-        photo: images[email] || '',
         commentaires: attente[email] || 0,
         statut: etat, telephone: p.telephone || '', objectif: p.objectif || '',
         nbSeances: mesSeances.length, derniere: derniere,
