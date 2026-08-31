@@ -358,6 +358,14 @@ header h2{font-size:30px;text-transform:uppercase;line-height:1}
 .empty{color:var(--dust);text-align:center;padding:48px 20px;line-height:1.6}
 .toast{position:fixed;top:16px;left:50%;transform:translateX(-50%);background:var(--plate);border:1px solid var(--edge);
   padding:11px 16px;border-radius:10px;font-size:14px;z-index:50}
+/* Historique : une ligne par exercice, les chiffres passent dessous si ça serre */
+.hist{margin-top:12px;border-top:1px solid var(--edge)}
+.hist-ex{display:flex;flex-wrap:wrap;gap:2px 12px;justify-content:space-between;
+  align-items:baseline;padding:7px 0;border-bottom:1px solid var(--edge);font-size:14px}
+.hist-ex:last-child{border-bottom:0}
+.hist-ex .qui{font-weight:600;min-width:0}
+.hist-ex .chiffres{color:var(--dust);font-variant-numeric:tabular-nums;white-space:nowrap}
+
 /* Choix d'apparence : trois cibles pleine largeur, la retenue est encadrée */
 .choix{display:flex;flex-direction:column;gap:9px;margin-bottom:6px}
 .opt{display:flex;flex-direction:column;gap:2px;align-items:flex-start;text-align:left;width:100%;
@@ -2503,10 +2511,62 @@ function modalFiche(f) {
 
 async function vueHistoriqueAthlete() {
   const d = await api('coachDetail', { email: S.coach.email });
-  $('#zone').innerHTML = d.map(s => `<div class="card" style="display:block">
-      <div class="nom">${new Date(s.date).toLocaleDateString('fr-FR')} · ${s.jour}</div>
-      <div class="sets">${s.series.map(x => `<span class="set">${x.exercice} ${x.reps}×${x.charge}kg</span>`).join('')}</div>
-    </div>`).join('') || `<div class="empty">Aucune séance enregistrée.</div>`;
+  $('#zone').innerHTML = d.length
+    ? d.map(carteHistorique).join('')
+    : `<div class="empty">Rien d'enregistré pour l'instant.<br>
+        Les séances et les activités libres apparaîtront ici.</div>`;
+}
+
+/** « 8 × 60 kg », ou « 8 reps » au poids du corps. */
+function serieTexte(x) {
+  return x.charge ? `${x.reps} × ${x.charge} kg` : `${x.reps} reps`;
+}
+
+/**
+ * Les séries d'un exercice. Quand elles sont toutes identiques — le cas courant —
+ * on écrit « 4 séries · 8 × 60 kg » plutôt que la même chose quatre fois.
+ */
+function seriesTexte(series) {
+  if (!series.length) return '';
+  const premier = serieTexte(series[0]);
+  if (series.length > 1 && series.every(x => serieTexte(x) === premier))
+    return `${series.length} séries · ${premier}`;
+  return series.map(serieTexte).join(' · ');
+}
+
+/** Une journée d'historique : séance du programme, ou activité libre. */
+function carteHistorique(s) {
+  const quand = new Date(s.date).toLocaleDateString('fr-FR',
+    { weekday: 'long', day: 'numeric', month: 'long' });
+  const notes = s.notes ? `<p class="consigne" style="margin-top:10px">« ${s.notes} »</p>` : '';
+
+  if (s.type === 'activite') return `<div class="card libre" style="display:block">
+      <div class="entete" style="margin-bottom:4px">
+        <span class="chip libre">Activité</span>
+        <span class="meta" style="flex:1;text-align:right">${quand}</span>
+      </div>
+      <div class="nom">${s.sport}</div>
+      <div class="sets">
+        ${s.duree_min ? `<span class="set">${dureeTexte(s.duree_min)}</span>` : ''}
+        ${s.distance_km ? `<span class="set">${s.distance_km} km</span>` : ''}
+        ${s.effort ? `<span class="set">effort ${s.effort}/10</span>` : ''}
+      </div>${notes}</div>`;
+
+  return `<div class="card" style="display:block">
+      <div class="entete" style="margin-bottom:4px">
+        <span class="eyebrow">${quand}</span>
+      </div>
+      <div class="nom">${s.jour || 'Séance'}</div>
+      <div class="sets">
+        <span class="set">${s.nbSeries} série${s.nbSeries > 1 ? 's' : ''}</span>
+        ${s.volume ? `<span class="set">${s.volume.toLocaleString('fr-FR')} kg soulevés</span>` : ''}
+        ${s.duree_min ? `<span class="set">${dureeTexte(s.duree_min)}</span>` : ''}
+        ${s.ressenti ? `<span class="set">${s.ressenti}</span>` : ''}
+      </div>
+      ${s.exercices && s.exercices.length ? `<div class="hist">${s.exercices.map(e =>
+        `<div class="hist-ex"><span class="qui">${e.exercice}</span>
+          <span class="chiffres">${seriesTexte(e.series)}</span></div>`).join('')}</div>` : ''}
+      ${notes}</div>`;
 }
 
 // ── Fenêtre modale ───────────────────────────────────────────

@@ -1033,6 +1033,11 @@ function historique_(email, exerciceId) {
 // ─────────────────────────────────────────────────────────────
 // 7. LOGIQUE MÉTIER — coach
 // ─────────────────────────────────────────────────────────────
+/**
+ * Historique d'un pratiquant, vu du coach : séances et activités libres mêlées,
+ * du plus récent au plus ancien. Les séries sont regroupées par exercice, dans
+ * l'ordre où il les a travaillés — une liste à plat de vingt séries ne se lit pas.
+ */
 function coachDetail_(email) {
   const cible = String(email).toLowerCase();
   const exercices = {};
@@ -1042,23 +1047,50 @@ function coachDetail_(email) {
     return String(s.email).toLowerCase() === cible;
   });
 
-  return lire_(TABS.SEANCES)
+  const seances = lire_(TABS.SEANCES)
     .filter(function (s) { return String(s.email).toLowerCase() === cible; })
-    .sort(function (a, b) { return new Date(b.date) - new Date(a.date); })
-    .slice(0, 15)
     .map(function (s) {
+      const miennes = series
+        .filter(function (x) { return String(x.seance_id) === String(s.id); })
+        .sort(function (a, b) { return Number(a.serie_num) - Number(b.serie_num); });
+
+      let volume = 0;
+      const ordre = [], parEx = {};
+      miennes.forEach(function (x) {
+        const reps = Number(x.reps) || 0, charge = Number(x.charge) || 0;
+        volume += reps * charge;
+        const k = String(x.exercice_id);
+        if (!parEx[k]) {
+          parEx[k] = { exercice: exercices[k] || k, series: [] };
+          ordre.push(k);
+        }
+        parEx[k].series.push({ reps: reps, charge: charge });
+      });
+
       return {
-        date: s.date, jour: s.jour, ressenti: s.ressenti, notes: s.notes,
-        series: series
-          .filter(function (x) { return String(x.seance_id) === String(s.id); })
-          .map(function (x) {
-            return {
-              exercice: exercices[x.exercice_id] || x.exercice_id,
-              serie: Number(x.serie_num), reps: Number(x.reps), charge: Number(x.charge)
-            };
-          })
+        type: 'seance', date: s.date, jour: s.jour,
+        duree_min: Number(s.duree_min) || 0,
+        ressenti: s.ressenti || '', notes: s.notes || '',
+        nbSeries: miennes.length, volume: Math.round(volume),
+        exercices: ordre.map(function (k) { return parEx[k]; })
       };
     });
+
+  const libres = lire_(TABS.ACTIVITES)
+    .filter(function (a) { return String(a.email).toLowerCase() === cible; })
+    .map(function (a) {
+      return {
+        type: 'activite', date: a.date, sport: a.sport || 'Activité',
+        duree_min: Number(a.duree_min) || 0,
+        distance_km: Number(a.distance_km) || 0,
+        effort: Number(a.effort) || 0,
+        notes: a.notes || ''
+      };
+    });
+
+  return seances.concat(libres)
+    .sort(function (a, b) { return new Date(b.date) - new Date(a.date); })
+    .slice(0, 25);
 }
 
 // ─────────────────────────────────────────────────────────────
