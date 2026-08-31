@@ -852,7 +852,9 @@ inutile.
 `estimerDuree_()` additionne, en secondes :
 
 - chaque série, soit les répétitions × la cadence — une fourchette « 8-10 » compte
-  pour 9, « max » pour 10, une cadence absente vaut 3 s par répétition ;
+  pour 9, « max » pour 10, une cadence absente vaut **2 s par répétition**, soit le
+  tempo naturel : une seconde de montée, une de descente. Rien n'est inscrit dans le
+  champ pour autant, l'absence de cadence reste l'absence de cadence ;
 - les exercices au temps, à leur durée, « max » comptant pour 45 s ;
 - les pauses à l'intérieur du bloc, entre deux exercices seulement ;
 - les repos entre les tours, **un de moins que de tours** : le dernier repos est
@@ -869,7 +871,9 @@ est inutile — personne ne prend une durée de séance pour une promesse à la 
 et l'arrondi le dit déjà.
 
 La durée s'affiche sur l'accueil, sur l'écran de séance, dans l'éditeur et sur les
-programmes. `dureeJour()` la recalcule côté client pour le jour en cours d'édition,
+programmes. **Chaque bloc affiche aussi la sienne**, sans l'échauffement ni le
+changement de poste qui n'appartiennent à aucun bloc en particulier : c'est ce qui
+permet de voir d'un coup d'œil quel bloc pèse dans la séance. `dureeJour()` la recalcule côté client pour le jour en cours d'édition,
 que le serveur ne connaît pas encore.
 
 ### Démarrer et suivre

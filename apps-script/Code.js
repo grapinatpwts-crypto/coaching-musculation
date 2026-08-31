@@ -22,7 +22,10 @@ const CONFIG = {
   // Estimation de la durée d'une séance
   ECHAUFFEMENT_MIN: 10,   // avant la première série
   TRANSITION_MIN: 4,      // entre deux blocs : trouver le poste, charger la barre
-  TEMPO_DEFAUT_S: 3       // durée d'une répétition quand aucune cadence n'est donnée
+  // Sans cadence prescrite, une répétition compte pour 2 s : c'est le tempo
+  // naturel, 1 s de montée et 1 s de descente. Rien n'est écrit dans le champ
+  // pour autant — l'absence de cadence reste l'absence de cadence.
+  TEMPO_DEFAUT_S: 2
 };
 
 const TABS = {

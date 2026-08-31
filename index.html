@@ -1104,7 +1104,38 @@ function duree(sec) {
  * répétitions à la cadence, pauses, repos entre tours, changement de poste,
  * échauffement une fois.
  */
-const TEMPO_DEFAUT = 3, TRANSITION_MIN = 4, ECHAUFFEMENT_MIN = 10;
+// Sans cadence prescrite, une répétition compte pour 2 s : le tempo naturel,
+// une seconde de montée et une de descente. Rien n'est inscrit dans le champ
+// pour autant — l'absence de cadence reste l'absence de cadence.
+const TEMPO_DEFAUT = 2, TRANSITION_MIN = 4, ECHAUFFEMENT_MIN = 10;
+
+const repsMoyennes = v => {
+  const t = String(v || '').trim().toLowerCase();
+  if (!t) return 0;
+  if (t === 'max') return 10;
+  const n = (t.match(/\d+/g) || []).map(Number);
+  return n.length ? (n.length > 1 ? (n[0] + n[n.length - 1]) / 2 : n[0]) : 0;
+};
+
+const tempoSecondes = c => {
+  const p = normaliserCadence(c).split('-').map(x => Number(x.trim()));
+  if (p.length !== 4 || p.some(isNaN)) return TEMPO_DEFAUT;
+  const t = p[0] + p[1] + p[2] + p[3];
+  return t > 0 ? t : TEMPO_DEFAUT;
+};
+
+/** Durée d'un bloc seul, en secondes : ses tours et ses repos, rien d'autour. */
+function dureeBloc(b) {
+  const tours = Number(b.series) || 1;
+  let tour = 0;
+  (b.exercices || []).forEach((e, i) => {
+    const d = String(e.duree_s || '').toLowerCase();
+    tour += d === 'max' ? 45 : Number(e.duree_s) > 0 ? Number(e.duree_s)
+                                                     : repsMoyennes(e.reps_cible) * tempoSecondes(e.cadence);
+    if (i < b.exercices.length - 1) tour += Number(e.pause_s) || 0;
+  });
+  return tours * tour + Math.max(0, tours - 1) * (Number(b.repos_s) || 0);
+}
 
 /**
  * Une estimation ne mérite pas d'être précise à la minute : « 61 min » se lit
@@ -1120,35 +1151,12 @@ function dureeTexte(min) {
   return h + ' h ' + String(reste).padStart(2, '0');
 }
 
+/** Durée d'un jour entier : les blocs, les changements de poste, l'échauffement. */
 function dureeJour(blocs) {
   if (!blocs || !blocs.length) return 0;
-  const reps = v => {
-    const t = String(v || '').trim().toLowerCase();
-    if (!t) return 0;
-    if (t === 'max') return 10;
-    const n = (t.match(/\d+/g) || []).map(Number);
-    return n.length ? (n.length > 1 ? (n[0] + n[n.length - 1]) / 2 : n[0]) : 0;
-  };
-  const tempo = c => {
-    const p = String(c || '').split('-').map(x => Number(x.trim()));
-    if (p.length !== 4 || p.some(isNaN)) return TEMPO_DEFAUT;
-    const t = p[0] + p[1] + p[2] + p[3];
-    return t > 0 ? t : TEMPO_DEFAUT;
-  };
-
-  let sec = 0;
-  blocs.forEach(b => {
-    const tours = Number(b.series) || 1;
-    let tour = 0;
-    (b.exercices || []).forEach((e, i) => {
-      const d = String(e.duree_s || '').toLowerCase();
-      tour += d === 'max' ? 45 : Number(e.duree_s) > 0 ? Number(e.duree_s)
-                                                       : reps(e.reps_cible) * tempo(e.cadence);
-      if (i < b.exercices.length - 1) tour += Number(e.pause_s) || 0;
-    });
-    sec += tours * tour + Math.max(0, tours - 1) * (Number(b.repos_s) || 0);
-  });
-  sec += Math.max(0, blocs.length - 1) * TRANSITION_MIN * 60 + ECHAUFFEMENT_MIN * 60;
+  const sec = blocs.reduce((t, b) => t + dureeBloc(b), 0)
+    + Math.max(0, blocs.length - 1) * TRANSITION_MIN * 60
+    + ECHAUFFEMENT_MIN * 60;
   return Math.round(sec / 60);
 }
 
@@ -2550,6 +2558,8 @@ function peindreEditeur() {
           <span style="font-size:12px;color:var(--dust)">s</span>
           <button class="poignee" data-delbloc="${i}" aria-label="Supprimer le bloc">✕</button>
         </div>
+        ${b.exercices.length ? `<div class="meta" style="margin:-4px 0 8px 2px">${
+          dureeTexte(Math.round(dureeBloc(b) / 60)) || 'moins d\'une minute'}</div>` : ''}
         ${b.exercices.map((e, j) => `
           <div class="ligne" data-ed="${i}.${j}" data-uid="${e._uid}">
             <span class="poignee prise" data-poignee="exercice" title="Déplacer" aria-label="Déplacer ${e.nom}">⠿</span>
