@@ -11,20 +11,60 @@
 <link rel="apple-touch-icon" href="icon-192.png">
 <link rel="icon" href="favicon.ico" sizes="any">
 <title>Coaching Fitness</title>
+<script>
+/* Avant tout rendu, sinon l'écran clignote en sombre puis passe en clair.
+   Trois valeurs : sombre (défaut), clair, auto — auto suit le téléphone. */
+(function () {
+  var t = 'sombre';
+  try { var v = localStorage.getItem('muscu.theme'); if (v === 'clair' || v === 'auto') t = v; } catch (e) {}
+  var r = document.documentElement;
+  r.setAttribute('data-theme', t);
+  var clair = t === 'clair' ||
+    (t === 'auto' && window.matchMedia('(prefers-color-scheme: light)').matches);
+  if (t === 'auto' && clair) r.classList.add('sys-clair');
+  var m = document.querySelector('meta[name="theme-color"]');
+  if (m) m.setAttribute('content', clair ? '#F7F5F3' : '#151515');
+})();
+</script>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Jost:wght@400;500;600;700&display=swap" rel="stylesheet">
 <style>
 :root{
-  /* Charte Wellness Sport Club — relevée sur wellness-sportclub.fr */
+  /* Charte Wellness Sport Club — relevée sur wellness-sportclub.fr.
+     Sombre par défaut : c'est l'identité de l'app, et une salle est rarement en
+     plein jour. Le thème clair rejoue les mêmes rôles, il n'invente rien. */
   --iron:#151515; --plate:#1E1E1E; --edge:#2E2E2E;
   --chalk:#F4F4F4; --dust:#9A9A9A;
   /* --brand : aplats uniquement (blanc dessus = 7,4:1).
      --brand-ink : version éclaircie, seule lisible en texte sur fond sombre (4,8:1).
      Le rouge officiel #A61E1F ne plafonne qu'à 2,4:1 sur le fond : jamais en texte. */
   --brand:#A61E1F; --brand-ink:#E05253; --on-brand:#FFFFFF;
+  /* Surfaces dérivées : creusée (champs, vignettes), enfoncée (appui), soulevée (glissé) */
+  --sunk:#2A2A2A; --press:#383838; --lift:#1F1F1F;
+  --veil:rgba(0,0,0,.72); --nav-bg:rgba(20,23,28,.94); --relief:none;
+  /* Sémantique, distincte de l'accent de marque */
+  --warn-ink:#E0A94F; --warn-bg:rgba(224,169,79,.16);
+  --ok-ink:#6FBF8E;   --ok-bg:rgba(111,191,142,.15);
+  --bad-ink:#FF7A7A;  --bad-bg:rgba(211,47,47,.16);
   --p25:#D32F2F; --p20:#1E6FD9; --p15:#F5B700; --p10:#3F9E4D; --p5:#E8EAEE; --p2:#9AA3B0;
   --r:14px;
+  color-scheme:dark;
+}
+
+/* Thème clair. Deux portes vers les mêmes jetons : le choix explicite, et
+   « comme le téléphone » — auquel le script d'amorçage pose .sys-clair. */
+:root[data-theme="clair"], :root.sys-clair{
+  --iron:#F7F5F3; --plate:#FFFFFF; --edge:#E4DFDA;
+  --chalk:#191716; --dust:#6B6560;
+  --brand-ink:#A61E1F;      /* sur fond clair, c'est le rouge officiel qui redevient lisible : 7,4:1 */
+  --sunk:#EEEAE6; --press:#DFD9D3; --lift:#F1EDE9;
+  --veil:rgba(24,20,18,.42); --nav-bg:rgba(255,255,255,.94);
+  --relief:0 1px 2px rgba(28,20,18,.07);
+  --warn-ink:#8A5300; --warn-bg:rgba(224,169,79,.22);
+  --ok-ink:#1F7A4D;   --ok-bg:rgba(111,191,142,.26);
+  --bad-ink:#B3261E;  --bad-bg:rgba(211,47,47,.12);
+  color-scheme:light;
 }
 *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
 html,body{margin:0;height:100%}
@@ -77,7 +117,7 @@ header h2{flex:1}
 header h2{font-size:30px;text-transform:uppercase;line-height:1}
 .streak{font-size:13px;color:var(--dust);font-variant-numeric:tabular-nums}
 #reseau{position:fixed;left:0;right:0;bottom:calc(53px + env(safe-area-inset-bottom));
-  background:#2A2A2A;border-top:1px solid var(--edge);color:var(--chalk);font-size:12.5px;
+  background:var(--sunk);border-top:1px solid var(--edge);color:var(--chalk);font-size:12.5px;
   padding:10px 16px;display:flex;align-items:center;gap:9px;z-index:15;cursor:pointer}
 #reseau .pastille{width:7px;height:7px;border-radius:50%;background:var(--brand-ink);
   flex:0 0 auto;animation:pulse 1.8s ease-in-out infinite}
@@ -133,7 +173,7 @@ header h2{font-size:30px;text-transform:uppercase;line-height:1}
 .sous button[aria-pressed="true"]{background:var(--brand);border-color:var(--brand);color:var(--on-brand)}
 
 /* Formulaires d'édition */
-.f{width:100%;background:#2A2A2A;border:1px solid var(--edge);border-radius:9px;color:var(--chalk);
+.f{width:100%;background:var(--sunk);border:1px solid var(--edge);border-radius:9px;color:var(--chalk);
   font-family:inherit;font-size:15px;padding:11px 12px;min-height:44px}
 .f:focus{outline:2px solid var(--brand-ink);outline-offset:1px}
 .champ{margin-bottom:10px}
@@ -158,13 +198,13 @@ header h2{font-size:30px;text-transform:uppercase;line-height:1}
   font-size:17px;color:var(--dust);flex:0 0 auto;padding:8px 6px;line-height:1}
 .prise:active{cursor:grabbing;color:var(--brand-ink)}
 .deplace{opacity:.55;outline:2px dashed var(--brand-ink);outline-offset:2px;border-radius:10px}
-.bloc.deplace{background:#1F1F1F}
-.ligne.cliquable:active{background:#262626}
+.bloc.deplace{background:var(--lift)}
+.ligne.cliquable:active{background:var(--press)}
 .entete{display:flex;align-items:center;gap:10px;margin-bottom:9px}
 .entete .eyebrow{flex:1}
 
 /* Fenêtre modale */
-.modal{position:fixed;inset:0;background:rgba(0,0,0,.72);z-index:40;display:flex;
+.modal{position:fixed;inset:0;background:var(--veil);z-index:40;display:flex;
   align-items:flex-end;justify-content:center}
 .modal .feuille{background:var(--iron);border-top-left-radius:18px;border-top-right-radius:18px;
   width:100%;max-width:560px;max-height:88dvh;overflow-y:auto;padding:18px 18px 28px;
@@ -180,12 +220,12 @@ header h2{font-size:30px;text-transform:uppercase;line-height:1}
 .bloc .card:last-child{margin-bottom:0}
 .pause{font-size:12px;color:var(--dust);padding:1px 0 9px 3px;font-variant-numeric:tabular-nums}
 .cadence{display:inline-block;font-size:11px;font-weight:700;letter-spacing:.09em;padding:3px 7px;
-  border-radius:5px;background:#2A2A2A;color:var(--dust);font-variant-numeric:tabular-nums}
+  border-radius:5px;background:var(--sunk);color:var(--dust);font-variant-numeric:tabular-nums}
 .cadbloc{display:flex;align-items:center;gap:10px;margin-top:8px}
 .cad{display:block;overflow:visible}
 .cad.grand{margin-top:10px;max-width:100%;height:auto}
 .prog{display:block;width:100%;height:auto;max-width:340px;margin:10px 0 4px}
-.vignette{width:52px;height:52px;object-fit:cover;border-radius:9px;background:#2A2A2A;flex:0 0 auto}
+.vignette{width:52px;height:52px;object-fit:cover;border-radius:9px;background:var(--sunk);flex:0 0 auto}
 .vo{font-size:12.5px;font-weight:400;color:var(--dust)}
 /* La note du coach : sa voix, distincte de la consigne générique du catalogue */
 .note-coach{border-left:3px solid var(--brand);padding:6px 0 6px 11px;margin-top:9px;
@@ -195,7 +235,7 @@ header h2{font-size:30px;text-transform:uppercase;line-height:1}
 .fil{display:flex;flex-direction:column;gap:10px;margin:6px 0 14px;max-height:46vh;overflow-y:auto}
 .bulle{padding:11px 13px;border-radius:12px;font-size:14.5px;line-height:1.5;white-space:pre-wrap}
 .bulle.coach{background:var(--brand);color:var(--on-brand);border-bottom-left-radius:4px;align-self:flex-start;max-width:88%}
-.bulle.moi{background:#2A2A2A;color:var(--chalk);border-bottom-right-radius:4px;align-self:flex-end;max-width:88%}
+.bulle.moi{background:var(--sunk);color:var(--chalk);border-bottom-right-radius:4px;align-self:flex-end;max-width:88%}
 .bulle .qui{font-size:10.5px;letter-spacing:.1em;text-transform:uppercase;opacity:.75;display:block;margin-bottom:3px}
 .pastille-cm{background:var(--brand);color:var(--on-brand);border-radius:999px;
   font-size:11px;font-weight:700;padding:2px 7px;white-space:nowrap}
@@ -204,35 +244,35 @@ header h2{font-size:30px;text-transform:uppercase;line-height:1}
 .video iframe{position:absolute;inset:0;width:100%;height:100%;border:0}
 .lien{text-decoration:none;color:var(--brand-ink);display:inline-block}
 .lien:focus-visible{outline:2px solid var(--brand-ink);outline-offset:2px;border-radius:5px}
-.apercu{width:100%;max-width:280px;border-radius:10px;background:#2A2A2A;margin-bottom:10px}
-.illu{width:100%;max-width:300px;border-radius:12px;background:#2A2A2A;margin:2px 0 12px;display:block}
+.apercu{width:100%;max-width:280px;border-radius:10px;background:var(--sunk);margin-bottom:10px}
+.illu{width:100%;max-width:300px;border-radius:12px;background:var(--sunk);margin:2px 0 12px;display:block}
 .perso{font-size:13px;color:var(--brand-ink);font-weight:600;background:none;border:0;
   padding:8px 2px;text-align:left;text-decoration:underline;text-underline-offset:3px}
 /* Accueil coach : une carte par athlète, statut et avancement lisibles d'un coup */
 .ath-tete{display:flex;align-items:center;gap:10px;margin-bottom:5px}
 .avatar{width:38px;height:38px;border-radius:50%;object-fit:cover;flex:0 0 auto;
-  background:#2A2A2A;display:grid;place-items:center;font-size:13px;font-weight:700;
+  background:var(--sunk);display:grid;place-items:center;font-size:13px;font-weight:700;
   color:var(--dust);letter-spacing:.02em}
 .avatar.grand{width:64px;height:64px;font-size:20px}
 .avatar.vide{border:1px solid var(--edge)}
 .ath-tete strong{font-size:17px;flex:1;min-width:0}
 .chip{font-size:11px;font-weight:700;letter-spacing:.06em;padding:4px 9px;border-radius:999px;
   white-space:nowrap;text-transform:uppercase}
-.chip.nouveau{background:rgba(224,169,79,.16);color:#E0A94F}
-.chip.actif{background:rgba(111,191,142,.15);color:#6FBF8E}
-.chip.inactif{background:#2A2A2A;color:var(--dust)}
+.chip.nouveau{background:var(--warn-bg);color:var(--warn-ink)}
+.chip.actif{background:var(--ok-bg);color:var(--ok-ink)}
+.chip.inactif{background:var(--sunk);color:var(--dust)}
 .chip.archive{background:none;border:1px dashed var(--edge);color:var(--dust)}
 /* Accueil : deux grandes cartes, tout le reste en dessous */
 .card.grande{align-items:center}
 .nom.gros{font-size:19px}
 .fleche-carte{font-size:26px;color:var(--dust);flex:0 0 auto;line-height:1}
 .curseur{width:100%;accent-color:var(--brand);height:34px}
-.jauge{height:6px;border-radius:3px;background:#2A2A2A;overflow:hidden;margin:9px 0 7px}
+.jauge{height:6px;border-radius:3px;background:var(--sunk);overflow:hidden;margin:9px 0 7px}
 .jauge i{display:block;height:100%;background:var(--brand);border-radius:3px;
   transition:width .4s ease-out}
 .meta.bas{font-size:12.5px}
-.impaye{color:#E0A94F;font-weight:600}
-.alerte{background:rgba(224,169,79,.13);color:#E0A94F;border-radius:10px;padding:11px 14px;
+.impaye{color:var(--warn-ink);font-weight:600}
+.alerte{background:var(--warn-bg);color:var(--warn-ink);border-radius:10px;padding:11px 14px;
   font-size:13.5px;font-weight:600;margin-bottom:14px}
 .contacts{display:flex;gap:9px;flex-wrap:wrap;margin-top:14px}
 .contact{flex:1;min-width:96px;text-align:center;line-height:44px;padding:0;
@@ -255,6 +295,7 @@ header h2{font-size:30px;text-transform:uppercase;line-height:1}
 
 /* Carte exercice */
 .card{background:var(--plate);border:1px solid var(--edge);border-radius:var(--r);padding:16px;margin-bottom:12px;
+  box-shadow:var(--relief);
   display:flex;align-items:center;gap:14px;width:100%;text-align:left;min-height:76px}
 .card:active{transform:scale(.99)}
 .card .body{flex:1;min-width:0}
@@ -284,8 +325,8 @@ header h2{font-size:30px;text-transform:uppercase;line-height:1}
 .stepper{flex:1;background:var(--plate);border:1px solid var(--edge);border-radius:var(--r);padding:14px 10px;text-align:center}
 .stepper .val{font-size:52px;line-height:1;margin:10px 0}
 .stepper .row{display:flex;gap:8px}
-.stepper .row button{flex:1;height:52px;border-radius:10px;background:#2A2A2A;font-size:20px;font-weight:600}
-.stepper .row button:active{background:#383838}
+.stepper .row button{flex:1;height:52px;border-radius:10px;background:var(--sunk);font-size:20px;font-weight:600}
+.stepper .row button:active{background:var(--press)}
 .chrono .val.court{color:var(--brand-ink)}
 .chrono .row button{height:46px;font-size:15px}
 .tempo{font-size:12.5px;color:var(--dust);line-height:1.5;margin:6px 0 0;font-variant-numeric:tabular-nums}
@@ -306,16 +347,28 @@ header h2{font-size:30px;text-transform:uppercase;line-height:1}
 
 /* Coach */
 .athlete{display:block;text-align:left;width:100%;padding:15px 16px;
-  background:var(--plate);border:1px solid var(--edge);border-radius:var(--r);margin-bottom:10px}
-.tag{font-size:12px;font-weight:700;padding:5px 9px;border-radius:999px;background:#2A2A2A;color:var(--dust);white-space:nowrap}
-.tag.warn{background:rgba(211,47,47,.16);color:#FF7A7A}
-.nav{position:fixed;bottom:0;left:0;right:0;background:rgba(20,23,28,.94);backdrop-filter:blur(8px);
+  background:var(--plate);border:1px solid var(--edge);border-radius:var(--r);margin-bottom:10px;
+  box-shadow:var(--relief)}
+.tag{font-size:12px;font-weight:700;padding:5px 9px;border-radius:999px;background:var(--sunk);color:var(--dust);white-space:nowrap}
+.tag.warn{background:var(--bad-bg);color:var(--bad-ink)}
+.nav{position:fixed;bottom:0;left:0;right:0;background:var(--nav-bg);backdrop-filter:blur(8px);
   border-top:1px solid var(--edge);display:flex;padding-bottom:env(safe-area-inset-bottom)}
 .nav button{flex:1;padding:15px 0;font-size:13px;font-weight:600;color:var(--dust)}
 .nav button[aria-pressed="true"]{color:var(--brand-ink)}
 .empty{color:var(--dust);text-align:center;padding:48px 20px;line-height:1.6}
 .toast{position:fixed;top:16px;left:50%;transform:translateX(-50%);background:var(--plate);border:1px solid var(--edge);
   padding:11px 16px;border-radius:10px;font-size:14px;z-index:50}
+/* Choix d'apparence : trois cibles pleine largeur, la retenue est encadrée */
+.choix{display:flex;flex-direction:column;gap:9px;margin-bottom:6px}
+.opt{display:flex;flex-direction:column;gap:2px;align-items:flex-start;text-align:left;width:100%;
+  padding:14px 15px;background:var(--plate);border:1px solid var(--edge);border-radius:var(--r)}
+.opt[aria-pressed="true"]{border-color:var(--brand);box-shadow:inset 0 0 0 1px var(--brand)}
+.opt-nom{font-size:16px;font-weight:600}
+.opt[aria-pressed="true"] .opt-nom::after{content:' ✓';color:var(--brand-ink)}
+.opt-quoi{font-size:12.5px;color:var(--dust);line-height:1.4}
+#btheme{padding:0;width:34px;height:34px;display:grid;place-items:center}
+#btheme svg{width:15px;height:15px;display:block}
+
 :focus-visible{outline:2px solid var(--brand-ink);outline-offset:2px}
 </style>
 </head>
@@ -326,7 +379,7 @@ header h2{font-size:30px;text-transform:uppercase;line-height:1}
   <h1>Coaching<span>Fitness</span></h1>
   <p>Connectez-vous avec le compte Google que votre coach a inscrit.</p>
   <div id="gbtn"></div>
-  <p id="loginErr" class="hidden" style="color:#FF7A7A"></p>
+  <p id="loginErr" class="hidden" style="color:var(--bad-ink)"></p>
 </section>
 
 <main id="app" class="wrap hidden"></main>
@@ -750,10 +803,67 @@ function reconnexion() {
   throw new Error('SESSION_EXPIREE');
 }
 
-// Le bouton Quitter est réécrit à chaque rendu : on délègue plutôt que de le relier.
+// Les boutons d'en-tête, identiques partout : écrits une fois, insérés par les vues.
+const ENTETE_BOUTONS =
+  '<button class="quitter" id="btheme" aria-label="Apparence" title="Apparence">' +
+    '<svg viewBox="0 0 16 16" aria-hidden="true" focusable="false">' +
+      '<circle cx="8" cy="8" r="6.6" fill="none" stroke="currentColor" stroke-width="1.5"/>' +
+      '<path d="M8 1.4a6.6 6.6 0 0 0 0 13.2z" fill="currentColor"/></svg></button>' +
+  '<button class="quitter" id="quitter">Se déconnecter</button>';
+
+// Ils sont réécrits à chaque rendu : on délègue plutôt que de les relier.
 document.addEventListener('click', e => {
   if (e.target.closest('#quitter')) deconnexion();
+  else if (e.target.closest('#btheme')) modalTheme();
 });
+
+// ── Apparence ────────────────────────────────────────────────
+const CLE_THEME = 'muscu.theme';
+const THEMES = [
+  ['sombre', 'Sombre',              'Le réglage d\'origine.'],
+  ['clair',  'Claire',              'Pour une salle en plein jour.'],
+  ['auto',   'Comme le téléphone',  'Suit le réglage du système, et change avec lui.']
+];
+
+function themeChoisi() {
+  try { const v = localStorage.getItem(CLE_THEME); if (v === 'clair' || v === 'auto') return v; }
+  catch (e) {}
+  return 'sombre';
+}
+
+function appliquerTheme(t) {
+  const r = document.documentElement;
+  r.setAttribute('data-theme', t);
+  const clair = t === 'clair' ||
+    (t === 'auto' && matchMedia('(prefers-color-scheme: light)').matches);
+  r.classList.toggle('sys-clair', t === 'auto' && clair);
+  const m = document.querySelector('meta[name="theme-color"]');
+  if (m) m.setAttribute('content', clair ? '#F7F5F3' : '#151515');
+}
+
+// « Comme le téléphone » doit suivre le téléphone, y compris app ouverte.
+matchMedia('(prefers-color-scheme: light)').addEventListener('change', () => {
+  if (themeChoisi() === 'auto') appliquerTheme('auto');
+});
+
+/** Le choix vit sur l'appareil, pas dans le classeur : le même compte peut vouloir
+ *  du clair sur l'ordinateur du bureau et du sombre sur le téléphone en salle. */
+function modalTheme() {
+  const w = modal('Apparence', `
+    <div class="choix">${THEMES.map(([v, nom, quoi]) => `
+      <button class="opt" data-t="${v}" aria-pressed="${v === themeChoisi()}">
+        <span class="opt-nom">${nom}</span><span class="opt-quoi">${quoi}</span>
+      </button>`).join('')}</div>
+    <p class="consigne">Ce réglage ne vaut que sur cet appareil.</p>
+    <div class="barre"><button class="btn plein" id="tOk" style="flex:1">Fermer</button></div>`);
+
+  w.querySelectorAll('.opt').forEach(b => b.onclick = () => {
+    try { localStorage.setItem(CLE_THEME, b.dataset.t); } catch (e) {}
+    appliquerTheme(b.dataset.t);
+    w.querySelectorAll('.opt').forEach(x => x.setAttribute('aria-pressed', x === b));
+  });
+  w.querySelector('#tOk').onclick = w.fermer;
+}
 
 // ── Navigation ───────────────────────────────────────────────
 $('#nav').addEventListener('click', e => {
@@ -799,7 +909,7 @@ async function vueAccueil() {
         <h2>${salut()} ${(S.moi.nom || '').split(' ')[0]}</h2>
         ${S.moi.coach ? `<span class="signe">coaché par ${S.moi.coach}</span>` : ''}
       </div>
-      <button class="quitter" id="quitter" >Se déconnecter</button>
+      ${ENTETE_BOUTONS}
     </header><div id="zone"><div class="empty">Chargement…</div></div>`;
 
   let a;
@@ -1782,7 +1892,7 @@ function blocStats(st) {
 async function vueProgres() {
   const app = $('#app');
   app.innerHTML = `<header><h2>Progrès</h2>
-    <button class="quitter" id="quitter" >Se déconnecter</button></header>
+    ${ENTETE_BOUTONS}</header>
     <div id="stats"></div><div id="liste"><div class="empty">Chargement…</div></div>`;
 
   lireVite('stats', {}, 'stats', d => { const z = $('#stats'); if (z) z.innerHTML = blocStats(d); })
@@ -1835,7 +1945,7 @@ async function vueCalendrier(email) {
     S.cal = { email: cible, annee: d.getFullYear(), mois: d.getMonth(), seances: null, sel: null };
   }
   $('#app').innerHTML = `<header><h2>Calendrier</h2>
-    <button class="quitter" id="quitter" >Se déconnecter</button></header><div id="calzone"></div>`;
+    ${ENTETE_BOUTONS}</header><div id="calzone"></div>`;
   await peindreCalendrier();
 }
 
@@ -1966,7 +2076,7 @@ async function vueCoach() {
           <h2>${titres[c.onglet] || 'Coach'}</h2>
           ${S.moi.coach ? `<span class="signe">${S.moi.coach}</span>` : ''}
         </div>
-        <button class="quitter" id="quitter" >Se déconnecter</button></header>
+        ${ENTETE_BOUTONS}</header>
       <div id="zone"><div class="empty">Chargement…</div></div>`;
     if (c.onglet === 'biblio') return vueBibliotheque();
     if (c.onglet === 'modeles') return vueModeles();

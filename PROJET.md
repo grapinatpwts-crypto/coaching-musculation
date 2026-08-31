@@ -939,6 +939,35 @@ du blanc dessus. Toute couleur de texte passe par `--brand-ink`. L'ancien parti 
 À noter : **la marque a deux rouges.** Le CSS déclare `#A61E1F`, le fichier du logo
 est peint en `#C22026`. C'est le premier qui fait foi pour l'interface.
 
+### Les deux thèmes
+
+Sombre par défaut — c'est l'identité de l'enseigne, et une salle est rarement en
+plein jour. Un thème clair a été ajouté, réglable par **chaque** utilisateur,
+coach comme pratiquant, par le bouton ◐ de l'en-tête. Trois valeurs : `sombre`,
+`clair`, `auto` (« comme le téléphone »).
+
+Le choix vit dans `localStorage` sous `muscu.theme`, **pas dans le classeur** : le
+même compte peut vouloir du clair sur l'ordinateur et du sombre sur le téléphone
+en salle.
+
+Rien n'est dupliqué : le clair **redéfinit les mêmes jetons**, jamais une règle de
+composant. Deux sélecteurs y mènent — `:root[data-theme="clair"]` pour le choix
+explicite, `:root.sys-clair` que le script d'amorçage pose quand `auto` et que le
+système est en clair. Ce script est **en tête de document**, avant le premier
+pixel : posé plus bas, l'écran clignoterait en sombre avant de virer au clair.
+`matchMedia` reste écouté pour qu'`auto` suive le téléphone app ouverte.
+
+Les couleurs en dur ont dû devenir des jetons pour que le clair existe :
+`--sunk` (champs, vignettes), `--press` (appui), `--lift` (glissé), `--veil`
+(voile des modales), `--nav-bg`, `--relief` (ombre portée, nulle en sombre), et
+le trio sémantique `--warn-ink/-bg`, `--ok-ink/-bg`, `--bad-ink/-bg`, distinct de
+l'accent de marque.
+
+Un renversement à connaître : **`--brand-ink` vaut `#E05253` en sombre et
+`#A61E1F` en clair.** Le rouge officiel, illisible en texte sur fond noir (2,4:1),
+redevient le bon choix sur fond clair (7,4:1). C'est le même rôle, pas la même
+valeur.
+
 ### Typographie
 
 Le site utilise Futura (partout), Bebas (chiffres et dates), Catamaran (corps
