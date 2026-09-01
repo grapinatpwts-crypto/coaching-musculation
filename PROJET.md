@@ -1044,6 +1044,24 @@ réveillerait l'écran pour rien.
 `demarrerSeance_` fige `duree_prevue` au démarrage : le programme peut changer
 ensuite, la comparaison n'aurait plus de sens.
 
+**C'est le seul point d'entrée.** Avant lui, rien de ce qui écrit ne répond :
+pastilles inertes et grisées, « Valider la série » remplacé par « Démarrez la
+séance pour enregistrer », « Terminer cet exercice » désactivé. La séance
+démarrait autrefois toute seule au premier geste qui compte — c'était une
+séance ouverte, et un chronomètre lancé, pour un pouce qui ripe sur un écran de
+cartes serrées. `assurerSeanceActive()` ne démarre donc plus rien : elle refuse
+et le dit. Elle reste appelée avant chaque écriture, en garde-fou — une
+écriture ne doit jamais dépendre du seul état du DOM.
+
+**Et l'annulation est un geste ordinaire.** On démarre par mégarde, on se
+ravise : « Annuler la séance » efface la séance et ses séries tant qu'elle est
+ouverte. Les règles l'autorisaient sur le document mais pas sur ses séries, que
+`supprimerSeance` efface en premier — toute annulation butait sur un « droits
+insuffisants » qui ressemblait à un interdit alors que ce n'en était pas un.
+`maSeanceOuverte()` (`firestore.rules`) ouvre la suppression des séries au
+propriétaire d'une séance encore ouverte. Une séance close reste un historique
+que seul un admin réécrit.
+
 ### Assiduité et régularité
 
 Deux mesures distinctes, et le coach a besoin des deux.

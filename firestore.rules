@@ -38,6 +38,12 @@ service cloud.firestore {
     function statutOk() {
       return monProfil().data.statut != 'Inactif' && monProfil().data.statut != 'Archivé';
     }
+    // Ma séance, encore ouverte : `duree_min` vide est ce qui distingue une séance
+    // en cours d'un historique clos. Sert aux séries, qui n'ont pas d'email à elles.
+    function maSeanceOuverte(seanceId) {
+      return estMoi(get(/databases/$(database)/documents/seances/$(seanceId)).data.email)
+        && get(/databases/$(database)/documents/seances/$(seanceId)).data.duree_min == '';
+    }
 
     // ── Pratiquants ────────────────────────────────────────────────────
     match /pratiquants/{email} {
@@ -139,6 +145,12 @@ service cloud.firestore {
       match /series/{serieId} {
         allow read: if estMoi(get(/databases/$(database)/documents/seances/$(seanceId)).data.email) || estCoach();
         allow create: if estMoi(get(/databases/$(database)/documents/seances/$(seanceId)).data.email) && statutOk();
+        // Annuler une séance encore ouverte est un geste ordinaire — on démarre par
+        // mégarde, on se ravise. Le document `seances` l'autorisait déjà ; ses séries
+        // ne l'autorisaient pas, et `supprimerSeance` les efface en premier : toute
+        // annulation échouait sur un « droits insuffisants ». Une séance close, elle,
+        // reste un historique que seul un admin réécrit.
+        allow delete: if maSeanceOuverte(seanceId) && statutOk();
         allow update, delete: if estAdmin();
       }
     }

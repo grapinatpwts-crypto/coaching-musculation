@@ -364,6 +364,10 @@ header h2{font-size:30px;text-transform:uppercase;line-height:1}
 .valider{width:100%;min-height:60px;border-radius:var(--r);background:var(--brand);color:var(--on-brand);
   font-size:18px;font-weight:700;letter-spacing:.02em;margin-top:16px}
 .valider:disabled{opacity:.45}
+.btn:disabled{opacity:.45}
+/* Une pastille inerte avant le démarrage doit se voir comme telle. La pastille
+   pleine, elle, est désactivée parce qu'elle est finie : elle garde son aplat. */
+.card .done:disabled:not(.full){opacity:.45}
 .sets{display:flex;flex-wrap:wrap;gap:8px;margin-top:14px;min-height:34px}
 .set{background:var(--plate);border:1px solid var(--edge);border-radius:8px;padding:7px 11px;font-size:14px;
   font-variant-numeric:tabular-nums}
@@ -2247,24 +2251,22 @@ function messageDemarrage(err) {
 }
 
 /**
- * S'assure qu'une séance est active pour le jour courant avant d'écrire quoi
- * que ce soit — la démarre au besoin. C'est ici, au premier geste qui compte
- * vraiment (valider une série, clore un exercice), que la séance démarre —
- * jamais au simple fait d'ouvrir le détail d'un exercice.
- * Rend false (et prévient) si une autre séance est restée ouverte ailleurs :
- * l'appelant doit alors abandonner son geste plutôt qu'écrire dans le vide.
+ * Rien ne s'écrit tant que la séance n'a pas été démarrée d'un geste explicite.
+ * Elle démarrait autrefois toute seule au premier geste qui compte — valider
+ * une série, clore un exercice. C'était une séance ouverte pour un pouce qui
+ * ripe : sur un écran de cartes serrées, le mauvais appui est fréquent, et il
+ * lançait un chronomètre que rien n'annonçait. Le bouton « Démarrer la
+ * séance » est désormais le seul point d'entrée ; les commandes qui écrivent
+ * restent inertes avant lui (voir `carte`, `cablerCarte` et `ouvrirLogger`).
+ *
+ * Reste un garde-fou plutôt qu'une décision : les boutons sont déjà désactivés
+ * quand on arrive ici sans séance, mais une écriture ne doit jamais dépendre
+ * du seul état du DOM.
  */
 async function assurerSeanceActive() {
   if (S.seanceId) return true;
-  try {
-    const r = await demarrerSeance(S.jour);
-    S.seanceId = r.seance_id;
-    S.debut = S.debut || new Date().toISOString();
-    return true;
-  } catch (err) {
-    toast(messageDemarrage(err));
-    return false;
-  }
+  toast('Démarrez la séance avant d\'enregistrer quoi que ce soit');
+  return false;
 }
 
 async function vueSeance() {
@@ -2834,6 +2836,7 @@ const enAttente = id => ((S.nonLus || {}).exercices || {})[id] || 0;
 function carte(e, seul) {
   const n = faitsDe(e).length;
   const complet = n >= e.series;
+  const fige = !S.seanceId;
   const fini = S.finis.indexOf(e.ligne_id) !== -1;
   const cible = e.duree_s ? duree(e.duree_s) : e.reps_cible;
   return `<div class="card ${fini ? 'clos' : ''}">
@@ -2855,9 +2858,9 @@ function carte(e, seul) {
     ${fini
       ? `<button class="done full reprendre" data-rep="${e.ligne_id}"
            title="Reprendre cet exercice" aria-label="Reprendre ${e.nom}">↺</button>`
-      : `<button class="done ${complet ? 'full' : ''}" data-valider="${e._i}"${complet ? ' disabled' : ''}
-           aria-label="${complet
-             ? `${e.series} séries faites, rien de plus à valider`
+      : `<button class="done ${complet ? 'full' : ''}" data-valider="${e._i}"${complet || fige ? ' disabled' : ''}
+           aria-label="${complet ? `${e.series} séries faites, rien de plus à valider`
+             : fige ? `${n} sur ${e.series} séries — démarrez la séance pour en valider`
              : `${n} sur ${e.series} séries — appui court : une série de plus, appui long : au maximum`}">${n}/${e.series}</button>`}
   </div>`;
 }
@@ -2879,9 +2882,8 @@ function appuiLong(el, court, long, delai) {
  * Remplace juste la carte d'un exercice après une écriture rapide (pastille),
  * sans recharger tout l'écran : un aller-retour Firestore complet pour
  * changer un badge se voyait — un « Chargement… » plein écran pour ça — et
- * perdait la position du défilement. On ne recharge tout que si c'est cette
- * action qui vient de démarrer la séance : la barre du bas doit alors passer
- * de « Démarrer » à « Terminer », ce qu'une carte seule ne peut pas montrer.
+ * perdait la position du défilement. Une carte suffit toujours : la séance est
+ * forcément déjà démarrée quand on écrit, la barre du bas ne change plus.
  */
 function rafraichirCarte(e) {
   const corps = document.querySelector(`.body[data-i="${e._i}"]`);
@@ -2945,7 +2947,6 @@ async function validerSerieRapide(e) {
   if (enEcriture[e.ligne_id] || auComplet(e)) return;
   enEcriture[e.ligne_id] = true;
   try {
-    const avaitSeance = !!S.seanceId;
     if (!(await assurerSeanceActive())) return;
     const auTemps = !!e.duree_s;
     const cible = auTemps && String(e.duree_s).toLowerCase() !== 'max' ? Number(e.duree_s) : 0;
@@ -2957,7 +2958,7 @@ async function validerSerieRapide(e) {
     await enregistrerSerie(S.seanceId, e.exercice_id, e.ligne_id, p);
     (S.faits[e.ligne_id] = S.faits[e.ligne_id] || [])
       .push(auTemps ? { duree_s:cible, charge } : { reps, charge });
-    if (avaitSeance) rafraichirCarte(e); else vueSeance();
+    rafraichirCarte(e);
   } catch (err) { toast('Non enregistré : ' + err.message); }
   finally { delete enEcriture[e.ligne_id]; }
 }
@@ -2967,7 +2968,6 @@ async function remplirSerieAuMax(e) {
   if (enEcriture[e.ligne_id] || auComplet(e)) return;
   enEcriture[e.ligne_id] = true;
   try {
-    const avaitSeance = !!S.seanceId;
     if (!(await assurerSeanceActive())) return;
     let deja = faitsDe(e).length;
     const manquant = e.series - deja;
@@ -2985,7 +2985,7 @@ async function remplirSerieAuMax(e) {
       (S.faits[e.ligne_id] = S.faits[e.ligne_id] || [])
         .push(auTemps ? { duree_s:cible, charge } : { reps, charge });
     }
-    if (avaitSeance) rafraichirCarte(e); else vueSeance();
+    rafraichirCarte(e);
   } catch (err) { toast('Non enregistré : ' + err.message); }
   finally { delete enEcriture[e.ligne_id]; }
 }
@@ -3133,8 +3133,13 @@ async function ouvrirLogger(i) {
     const btn = L.querySelector('.valider');
     const dejaFaites = faitsDe(e).length;
     const complet = dejaFaites >= e.series;
-    btn.textContent = complet ? `Les ${e.series} séries sont faites` : `Valider la série ${dejaFaites + 1}`;
-    btn.disabled = complet || (auTemps && ecoule === 0);
+    const fige = !S.seanceId;
+    btn.textContent = fige ? 'Démarrez la séance pour enregistrer'
+      : complet ? `Les ${e.series} séries sont faites`
+      : `Valider la série ${dejaFaites + 1}`;
+    btn.disabled = fige || complet || (auTemps && ecoule === 0);
+    const fin = L.querySelector('#finir');
+    if (fin) fin.disabled = fige;
     $('#sets').innerHTML = faitsDe(e).map((x, n) =>
       `<span class="set">${n + 1} · ${x.duree_s ? duree(x.duree_s) : x.reps + ' × ' + x.charge + ' kg'}</span>`).join('');
   };
