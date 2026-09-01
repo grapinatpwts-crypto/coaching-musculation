@@ -2299,21 +2299,9 @@ async function vueSeance() {
   };
   const asa = $('#allerSeanceActive');
   if (asa) asa.onclick = () => { S.jour = S.autreSeanceOuverte.jour; vueSeance(); };
-  $('#liste').querySelectorAll('[data-i]').forEach(c =>
-    c.onclick = () => ouvrirLogger(Number(c.dataset.i)));
-  $('#liste').querySelectorAll('[data-rep]').forEach(b => b.onclick = async function (ev) {
-    ev.stopPropagation();
-    this.disabled = true;
-    const id = this.dataset.rep;
-    try {
-      if (S.seanceId) await reprendreExercice(S.seanceId, id);
-      S.finis = S.finis.filter(x => x !== id);
-      vueSeance();
-    } catch (err) { toast(err.message); this.disabled = false; }
-  });
-  $('#liste').querySelectorAll('[data-valider]').forEach(b => {
-    const e = S.exos[Number(b.dataset.valider)];
-    appuiLong(b, () => validerSerieRapide(e), () => remplirSerieAuMax(e));
+  S.blocs.forEach(b => {
+    const seul = b.exercices.length < 2;
+    b.exercices.forEach(e => cablerCarte(e, seul));
   });
 }
 
@@ -2777,11 +2765,53 @@ function appuiLong(el, court, long, delai) {
 }
 
 /**
+ * Remplace juste la carte d'un exercice après une écriture rapide (pastille),
+ * sans recharger tout l'écran : un aller-retour Firestore complet pour
+ * changer un badge se voyait — un « Chargement… » plein écran pour ça — et
+ * perdait la position du défilement. On ne recharge tout que si c'est cette
+ * action qui vient de démarrer la séance : la barre du bas doit alors passer
+ * de « Démarrer » à « Terminer », ce qu'une carte seule ne peut pas montrer.
+ */
+function rafraichirCarte(e) {
+  const corps = document.querySelector(`.body[data-i="${e._i}"]`);
+  const carteEl = corps && corps.closest('.card');
+  if (!carteEl) return;
+  const seul = S.blocs[e._b].exercices.length < 2;
+  const tmp = document.createElement('div');
+  tmp.innerHTML = carte(e, seul);
+  carteEl.replaceWith(tmp.firstElementChild);
+  cablerCarte(e, seul);
+
+  const total = S.exos.length;
+  const clos = S.exos.filter(x => S.finis.indexOf(x.exercice_id) !== -1 ||
+    (S.faits[x.exercice_id] || []).length >= x.series).length;
+  majPendule(clos, total);
+}
+
+/** Câble une carte déjà dans le DOM : ouvrir le panneau, reprendre, pastille. */
+function cablerCarte(e, seul) {
+  const corps = document.querySelector(`.body[data-i="${e._i}"]`);
+  if (corps) corps.onclick = () => ouvrirLogger(e._i);
+  const rep = document.querySelector(`[data-rep="${e.exercice_id}"]`);
+  if (rep) rep.onclick = async function () {
+    this.disabled = true;
+    try {
+      if (S.seanceId) await reprendreExercice(S.seanceId, e.exercice_id);
+      S.finis = S.finis.filter(x => x !== e.exercice_id);
+      rafraichirCarte(e);
+    } catch (err) { toast(err.message); this.disabled = false; }
+  };
+  const val = document.querySelector(`[data-valider="${e._i}"]`);
+  appuiLong(val, () => validerSerieRapide(e), () => remplirSerieAuMax(e));
+}
+
+/**
  * Une série de plus depuis la pastille, sans ouvrir le panneau — reps/charge
  * par défaut, les mêmes qu'ouvrirLogger propose au départ. Ouvrir le panneau
  * reste le seul moyen d'ajuster reps/charge/durée avant de valider.
  */
 async function validerSerieRapide(e) {
+  const avaitSeance = !!S.seanceId;
   if (!(await assurerSeanceActive())) return;
   const auTemps = !!e.duree_s;
   const cible = auTemps && String(e.duree_s).toLowerCase() !== 'max' ? Number(e.duree_s) : 0;
@@ -2792,12 +2822,15 @@ async function validerSerieRapide(e) {
     const p = { serie_num: (S.faits[e.exercice_id] || []).length + 1, charge };
     if (auTemps) p.duree_s = cible; else p.reps = reps;
     await enregistrerSerie(S.seanceId, e.exercice_id, p);
-    vueSeance();
+    (S.faits[e.exercice_id] = S.faits[e.exercice_id] || [])
+      .push(auTemps ? { duree_s:cible, charge } : { reps, charge });
+    if (avaitSeance) rafraichirCarte(e); else vueSeance();
   } catch (err) { toast('Non enregistré : ' + err.message); }
 }
 
 /** Toutes les séries restantes d'un coup, aux mêmes valeurs par défaut. */
 async function remplirSerieAuMax(e) {
+  const avaitSeance = !!S.seanceId;
   if (!(await assurerSeanceActive())) return;
   let deja = (S.faits[e.exercice_id] || []).length;
   const manquant = e.series - deja;
@@ -2813,8 +2846,10 @@ async function remplirSerieAuMax(e) {
       const p = { serie_num: deja, charge };
       if (auTemps) p.duree_s = cible; else p.reps = reps;
       await enregistrerSerie(S.seanceId, e.exercice_id, p);
+      (S.faits[e.exercice_id] = S.faits[e.exercice_id] || [])
+        .push(auTemps ? { duree_s:cible, charge } : { reps, charge });
     }
-    vueSeance();
+    if (avaitSeance) rafraichirCarte(e); else vueSeance();
   } catch (err) { toast('Non enregistré : ' + err.message); }
 }
 
