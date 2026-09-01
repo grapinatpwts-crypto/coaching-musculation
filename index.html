@@ -418,7 +418,7 @@ import { getAuth, GoogleAuthProvider, signInWithPopup, onAuthStateChanged, signO
 import { initializeFirestore, persistentLocalCache, persistentMultipleTabManager,
          doc, getDoc, getDocs, collection, collectionGroup, query, where, orderBy, limit,
          onSnapshot, setDoc, addDoc, updateDoc, deleteDoc, writeBatch, runTransaction,
-         serverTimestamp, increment }
+         serverTimestamp, increment, arrayUnion, arrayRemove }
   from 'https://www.gstatic.com/firebasejs/12.18.0/firebase-firestore.js';
 
 const app = initializeApp({
@@ -441,7 +441,7 @@ window.FB = {
   auth: getAuth(app), db, GoogleAuthProvider, signInWithPopup, onAuthStateChanged, signOut,
   doc, getDoc, getDocs, collection, collectionGroup, query, where, orderBy, limit,
   onSnapshot, setDoc, addDoc, updateDoc, deleteDoc, writeBatch, runTransaction,
-  serverTimestamp, increment
+  serverTimestamp, increment, arrayUnion, arrayRemove
 };
 </script>
 <script>
@@ -505,19 +505,15 @@ function toast(msg) {
 }
 
 // ── Hors ligne ───────────────────────────────────────────────
-// Une salle en sous-sol coupe le réseau. Deux mécanismes : les lectures sont
-// servies depuis un cache local, les écritures sont mises en file et rejouées
-// dès le retour du réseau. Rien n'est perdu, rien ne bloque la séance.
+// La file d'écriture maison a disparu avec la dernière action qui s'y fiait
+// (voir Étape 5.2 du plan) : `persistentLocalCache` rejoue maintenant les
+// écritures Firestore lui-même au retour du réseau, ID de document généré
+// côté client dès l'appel. Il ne reste ici que le cache de lecture, pour les
+// actions pas encore portées (`accueil`, `mesProgrammes`, `stats`...).
 
-// Les clés de stockage gardent leur préfixe historique : les renommer viderait
-// la file hors ligne et déconnecterait tout le monde, pour rien de visible.
-const CLE_FILE  = 'muscu.file';
+// La clé de stockage garde son préfixe historique : la renommer viderait le
+// cache de tout le monde, pour rien de visible.
 const CLE_CACHE = 'muscu.cache';
-const CLE_MAP   = 'muscu.map';
-
-/** Actions rejouables sans risque : elles décrivent un fait, pas un état global. */
-const DIFFERABLES = ['demarrer', 'serie', 'finirExercice', 'reprendreExercice',
-                     'terminer', 'annuler'];
 
 const lireJSON = (cle, defaut) => {
   try { return JSON.parse(localStorage.getItem(cle)) ?? defaut; } catch (e) { return defaut; }
@@ -525,10 +521,6 @@ const lireJSON = (cle, defaut) => {
 const ecrireJSON = (cle, val) => {
   try { localStorage.setItem(cle, JSON.stringify(val)); } catch (e) {}
 };
-
-let file = lireJSON(CLE_FILE, []);
-let mapSeances = lireJSON(CLE_MAP, {});   // identifiant local → identifiant serveur
-let vidageEnCours = false;
 
 const enLigne = () => navigator.onLine !== false;
 const estReseau = err => err && err.message === 'RESEAU';
@@ -612,17 +604,11 @@ async function lire(action, payload, cleCache) {
  * périme la liste des athlètes autant que la fiche elle-même.
  */
 const PERIME = {
-  pratiquantSave: ['athletes', 'fiche:'], pratiquantCreer: ['athletes'],
+  pratiquantSave: ['athletes', 'fiche:'],
   photoSave: ['athletes', 'fiche:'], photoSuppr: ['athletes', 'fiche:'],
-  attribuer: ['athletes', 'fiche:', 'accueil', 'mesProgrammes'],
-  attributionMaj: ['athletes', 'fiche:'], attributionSuppr: ['athletes', 'fiche:', 'accueil'],
-  programmeSave: ['accueil', 'mesProgrammes'], programmeJour: ['accueil', 'mesProgrammes'],
   exerciceSave: ['catalogue'], exerciceSuppr: ['catalogue'],
-  modeleSave: ['modeles'], modeleSuppr: ['modeles'], modeleJourSave: ['modeles'],
-  terminer: ['accueil', 'athletes', 'seance:'], serie: ['accueil'],
-  annuler: ['accueil', 'athletes', 'seance:'],
-  activiteSave: ['accueil'], activiteSuppr: ['accueil'],
-  maintenance: ['catalogue', 'modeles', 'athletes', 'accueil']
+  modeleSave: ['modeles'], modeleSuppr: ['modeles'],
+  activiteSave: ['accueil'], activiteSuppr: ['accueil']
 };
 
 /** Jette les copies périmées par une écriture. */
@@ -636,119 +622,25 @@ function perimer(action) {
   ecrireJSON(CLE_CACHE, c);
 }
 
-/**
- * Écriture tolérante : on tente, et si le réseau manque on met en file.
- * L'appelant reçoit une réponse immédiate et la séance continue.
- */
-async function ecrire(action, payload) {
-  if (DIFFERABLES.indexOf(action) === -1) return api(action, payload);
-  if (!file.length && enLigne()) {
-    try {
-      const d = await api(action, payload);
-      S.horsLigne = false; majBandeau();
-      return d;
-    } catch (err) {
-      if (!estReseau(err)) throw err;
-    }
-  }
-  file.push({ action, payload, ts: Date.now() });
-  ecrireJSON(CLE_FILE, file);
-  S.horsLigne = true;
-  majBandeau();
-  return { differe: true };
-}
-
-/** Identifiant provisoire quand la séance n'a pas pu être créée côté serveur. */
-function seanceLocale() {
-  return 'LOC-' + Date.now().toString(36).toUpperCase();
-}
-
-/**
- * Retire de la file tout ce qui concerne une séance qu'on vient d'annuler.
- * Sans cela on rejouerait des séries sur une séance qui n'existe plus.
- */
-function purgerFile(id) {
-  const reste = file.filter(e => e.local !== id &&
-    String((e.payload || {}).seance_id || '') !== id);
-  file.length = 0;
-  reste.forEach(e => file.push(e));
-  ecrireJSON(CLE_FILE, file);
-}
-
-/**
- * Rejoue la file dans l'ordre. Une séance créée hors ligne porte un identifiant
- * local : on la crée pour de bon au premier passage, puis on substitue partout.
- */
-async function viderFile() {
-  if (vidageEnCours || !file.length || !enLigne() || !S.token) return;
-  vidageEnCours = true;
-  const avant = file.length;
-
-  try {
-    while (file.length) {
-      const e = file[0];
-      const p = Object.assign({}, e.payload);
-
-      if (p.seance_id && mapSeances[p.seance_id]) p.seance_id = mapSeances[p.seance_id];
-
-      if (e.action === 'demarrer') {
-        const r = await api('demarrer', { jour: p.jour });
-        if (e.local) {
-          mapSeances[e.local] = r.seance_id;
-          ecrireJSON(CLE_MAP, mapSeances);
-          if (S.seanceId === e.local) S.seanceId = r.seance_id;
-        }
-      } else if (String(p.seance_id || '').indexOf('LOC-') === 0) {
-        // La séance n'a jamais été créée : on la crée maintenant.
-        const r = await api('demarrer', { jour: p.jour || S.jour });
-        mapSeances[p.seance_id] = r.seance_id;
-        ecrireJSON(CLE_MAP, mapSeances);
-        if (S.seanceId === p.seance_id) S.seanceId = r.seance_id;
-        p.seance_id = r.seance_id;
-        await api(e.action, p);
-      } else {
-        await api(e.action, p);
-      }
-
-      file.shift();
-      ecrireJSON(CLE_FILE, file);
-      majBandeau();
-    }
-    S.horsLigne = false;
-    majBandeau();
-    if (avant) {
-      toast(avant + (avant > 1 ? ' actions enregistrées' : ' action enregistrée'));
-      if (S.vue === 'seance') vueSeance();
-    }
-  } catch (err) {
-    // Réseau encore absent ou serveur en erreur : on retentera.
-  }
-  vidageEnCours = false;
-}
-
-/** Bandeau discret : état du réseau et nombre d'actions en attente. */
+/** Bandeau discret : signale une lecture servie depuis le cache faute de réseau. */
 function majBandeau() {
   let b = $('#reseau');
   if (!b) {
     b = document.createElement('div');
     b.id = 'reseau';
     document.body.appendChild(b);
-    b.onclick = viderFile;
   }
   // On n'affiche « Hors ligne » que si le navigateur le confirme : un appel
   // raté peut venir du serveur, pas du réseau, et laisser un bandeau menteur.
   const coupe = S.horsLigne && !enLigne();
-  if (!file.length && !coupe) { b.classList.add('hidden'); return; }
+  if (!coupe) { b.classList.add('hidden'); return; }
   b.classList.remove('hidden');
   b.className = 'attente';
-  b.innerHTML = file.length
-    ? `<span class="pastille"></span>${file.length} en attente · sera envoyé au retour du réseau`
-    : `<span class="pastille"></span>Hors ligne`;
+  b.innerHTML = `<span class="pastille"></span>Hors ligne`;
 }
 
-window.addEventListener('online', () => { S.horsLigne = false; majBandeau(); viderFile(); });
+window.addEventListener('online', () => { S.horsLigne = false; majBandeau(); });
 window.addEventListener('offline', () => { S.horsLigne = true; majBandeau(); });
-setInterval(viderFile, 20000);
 
 // ── Connexion Firebase et profil ─────────────────────────────
 // Firebase Auth persiste lui-même la session (IndexedDB) : plus de jeton ni de
@@ -779,20 +671,65 @@ async function chargerProfil(email) {
 }
 
 /**
- * Jours du programme en vigueur : ceux de l'attribution « En cours ».
- * S'il y en avait plusieurs — l'invariant peut se casser sur un double envoi —
- * on prend la plus récente, comme le faisait `attributionActive_`.
+ * Attribution « En cours » d'un pratiquant, avec ses lignes de programme —
+ * ou `null` s'il n'en a pas. S'il y en avait plusieurs — l'invariant peut se
+ * casser sur un double envoi, voir `attribuer` — on prend la plus récente,
+ * comme le faisait `attributionActive_` côté Apps Script.
  */
-async function joursDuProgramme(email) {
+async function attributionActive(email) {
   const { db, collection, query, where, orderBy, limit, getDocs } = FB;
-  const att = await getDocs(query(collection(db, 'attributions'),
+  const snap = await getDocs(query(collection(db, 'attributions'),
     where('email', '==', email), where('statut', '==', 'En cours'),
     orderBy('date_debut', 'desc'), limit(1)));
-  if (att.empty) return [];
+  if (snap.empty) return null;
+  const att = { id: snap.docs[0].id, ...snap.docs[0].data() };
+  const lignes = await getDocs(collection(db, 'attributions', att.id, 'programme'));
+  att.lignes = lignes.docs.map(d => d.data());
+  return att;
+}
 
-  const lignes = await getDocs(collection(db, 'attributions', att.docs[0].id, 'programme'));
+/** Lignes du jour groupées en blocs, triées — sans charges ni historique : de
+ *  quoi estimer une durée, pas encore de quoi afficher un logger. */
+function blocsBruts(att, jour) {
+  if (!att) return [];
+  const lignes = att.lignes.filter(l => String(l.jour) === String(jour))
+    .sort((a, b) => { const d = numBloc(a) - numBloc(b); return d !== 0 ? d : Number(a.ordre) - Number(b.ordre); });
+  const blocs = []; const parNum = {};
+  lignes.forEach(l => {
+    const num = numBloc(l);
+    if (!parNum[num]) {
+      parNum[num] = { bloc: num, series: Number(l.series) || 3, repos_s: Number(l.repos_s) || 90, exercices: [] };
+      blocs.push(parNum[num]);
+    }
+    parNum[num].exercices.push(l);
+  });
+  return blocs;
+}
+
+/**
+ * Le pratiquant fixe sa propre charge sur un exercice, prioritaire sur celle
+ * du coach — c'est lui qui est sous la barre. Une charge nulle efface
+ * l'ajustement et rend la main au programme. Le doc ID est l'exercice
+ * lui-même (voir le modèle de données) : pas de recherche préalable à faire,
+ * contrairement à l'ancienne table plate indexée par un id généré.
+ */
+async function ajusterCharge(exerciceId, charge) {
+  const { db, doc, setDoc, deleteDoc, serverTimestamp } = FB;
+  const att = await attributionActive(S.email);
+  if (!att) throw new Error('AUCUNE_ATTRIBUTION');
+  const ref = doc(db, 'attributions', att.id, 'ajustements', exerciceId);
+  const val = Number(charge) || 0;
+  if (!val) { await deleteDoc(ref); return { charge: 0, efface: true }; }
+  await setDoc(ref, { charge: val, maj_le: serverTimestamp() });
+  return { charge: val };
+}
+
+/** Jours du programme en vigueur : ceux de l'attribution « En cours ». */
+async function joursDuProgramme(email) {
+  const att = await attributionActive(email);
+  if (!att) return [];
   const jours = [];
-  lignes.forEach(l => { const j = l.data().jour; if (j && !jours.includes(j)) jours.push(j); });
+  att.lignes.forEach(l => { if (l.jour && !jours.includes(l.jour)) jours.push(l.jour); });
   return jours.sort(triJours);
 }
 
@@ -803,6 +740,12 @@ function versDate(v) {
   if (!v) return null;
   if (typeof v.toDate === 'function') return v.toDate().toISOString();
   return String(v);
+}
+
+/** Même conversion que `versDate`, mais en objet `Date` pour les comparaisons. */
+function dateDe(v) {
+  if (!v) return new Date(0);
+  return typeof v.toDate === 'function' ? v.toDate() : new Date(v);
 }
 
 /**
@@ -1001,6 +944,15 @@ async function nomsExercices() {
   return S.nomsEx;
 }
 
+/** Catalogue indexé par identifiant, mis en cache pour la session. */
+async function catalogueParId() {
+  if (!S.catalogue) {
+    S.catalogue = {};
+    (await dataCatalogue()).forEach(e => { S.catalogue[e.id] = e; });
+  }
+  return S.catalogue;
+}
+
 /** Liste des modèles. Les compteurs sont portés par le document (voir seed). */
 async function dataModeles() {
   const { db, collection, getDocs } = FB;
@@ -1052,6 +1004,104 @@ async function dataAttributions(email) {
     });
   });
   return list.sort((a, b) => new Date(b.date_debut) - new Date(a.date_debut));
+}
+
+/** Contenu d'une attribution, groupé en jours. Sans `attributionId`, celle en cours. */
+async function dataProgramme(email, attributionId) {
+  const { db, doc, getDoc, collection, getDocs } = FB;
+  let att, lignesData;
+  if (attributionId) {
+    const snap = await getDoc(doc(db, 'attributions', attributionId));
+    if (!snap.exists()) throw new Error('ATTRIBUTION_INTROUVABLE');
+    att = { id: snap.id, ...snap.data() };
+    if (String(att.email).toLowerCase() !== email) throw new Error('ATTRIBUTION_ETRANGERE');
+    lignesData = (await getDocs(collection(db, 'attributions', att.id, 'programme'))).docs.map(d => d.data());
+  } else {
+    att = await attributionActive(email);
+    lignesData = att ? att.lignes : [];
+  }
+  const noms = await nomsExercices();
+  return {
+    email,
+    attribution: att ? {
+      id: att.id, nom: att.nom, modele_id: att.modele_id || '',
+      date_debut: versDate(att.date_debut), date_fin: versDate(att.date_fin) || '', statut: att.statut
+    } : null,
+    jours: grouperEnJours(lignesData, noms)
+  };
+}
+
+/**
+ * Donne un programme à un pratiquant. Avec un modèle, son contenu est copié —
+ * le personnaliser ensuite ne touche pas le modèle, et il peut être redonné
+ * plus tard sans conflit. Sans modèle, l'attribution démarre vide, pour du
+ * sur-mesure. L'attribution « En cours » précédente passe à « Terminé ».
+ * Pas de vraie transaction, pour la même raison qu'à `demarrerSeance` (le SDK
+ * client ne lit pas de requête depuis une transaction) : c'est justement le
+ * risque déjà documenté au plan (Risque 3), absorbé en lecture en prenant
+ * toujours l'attribution la plus récente si l'invariant se casse.
+ */
+async function creerAttribution(email, p) {
+  const { db, doc, getDoc, collection, getDocs, addDoc, updateDoc, writeBatch, serverTimestamp } = FB;
+  let nom = String(p.nom || '').trim();
+  let lignesModele = [];
+  if (p.modele_id) {
+    const [snap, lignes] = await Promise.all([
+      getDoc(doc(db, 'modeles', p.modele_id)),
+      getDocs(collection(db, 'modeles', p.modele_id, 'lignes'))
+    ]);
+    if (!snap.exists()) throw new Error('MODELE_INTROUVABLE');
+    if (!nom) nom = snap.data().nom;
+    lignesModele = lignes.docs.map(d => d.data());
+  }
+  if (!nom) nom = 'Programme sur mesure';
+
+  const active = await attributionActive(email);
+  if (active) {
+    await updateDoc(doc(db, 'attributions', active.id), { statut: 'Terminé', date_fin: serverTimestamp() });
+  }
+
+  const ref = await addDoc(collection(db, 'attributions'), {
+    email, modele_id: p.modele_id || '', nom,
+    date_debut: p.date_debut ? new Date(p.date_debut) : serverTimestamp(),
+    date_fin: '', statut: 'En cours', paye: false, notes: String(p.notes || ''),
+    nb_jours: new Set(lignesModele.map(l => l.jour)).size,
+    nb_exercices: lignesModele.length,
+    cree_le: serverTimestamp()
+  });
+
+  if (lignesModele.length) {
+    const b = writeBatch(db);
+    lignesModele.forEach(l => b.set(doc(collection(db, 'attributions', ref.id, 'programme')), {
+      jour: l.jour, bloc: l.bloc, ordre: l.ordre, exercice_id: l.exercice_id,
+      series: l.series, reps_cible: l.reps_cible, duree_s: l.duree_s,
+      charge_cible: l.charge_cible, pct_rm: l.pct_rm, cadence: l.cadence,
+      pause_s: l.pause_s, repos_s: l.repos_s, note: l.note || ''
+    }));
+    await b.commit();
+  }
+  return { id: ref.id, nom, lignes: lignesModele.length };
+}
+
+/** Modifie un sous-ensemble de champs d'une attribution (clôture, paiement, notes...). */
+async function majAttribution(id, patch) {
+  const { db, doc, updateDoc, serverTimestamp } = FB;
+  const data = {};
+  if (patch.statut !== undefined) data.statut = patch.statut;
+  if (patch.paye !== undefined) data.paye = patch.paye === true;
+  if (patch.notes !== undefined) data.notes = patch.notes;
+  if (patch.date_fin !== undefined) data.date_fin = patch.date_fin ? serverTimestamp() : '';
+  await updateDoc(doc(db, 'attributions', id), data);
+}
+
+/** Supprime une attribution et ses lignes de programme. L'historique des séances reste. */
+async function supprimerAttribution(id) {
+  const { db, doc, collection, getDocs, writeBatch } = FB;
+  const lignes = await getDocs(collection(db, 'attributions', id, 'programme'));
+  const b = writeBatch(db);
+  lignes.docs.forEach(d => b.delete(d.ref));
+  b.delete(doc(db, 'attributions', id));
+  await b.commit();
 }
 
 /** Activités libres d'un pratiquant sur une fenêtre de dates. */
@@ -1229,7 +1279,6 @@ function ouvrirApp(moi) {
   construireNav(moi.estCoach);
   S.jour = S.jour || moi.jours[0] || null;
   majBandeau();
-  viderFile();
   majPastilles();
   rendre();
 }
@@ -1583,17 +1632,13 @@ async function vueSeance() {
   if (ds) ds.onclick = async function () {
     this.disabled = true; this.textContent = 'Démarrage…';
     try {
-      const r = await api('demarrer', { jour: S.jour });
+      const r = await demarrerSeance(S.jour);
       S.seanceId = r.seance_id;
       S.debut = new Date().toISOString();
       oublier('accueil');
       vueSeance();
     } catch (err) {
-      if (!estReseau(err)) { toast(err.message); this.disabled = false; this.textContent = 'Démarrer la séance'; return; }
-      S.seanceId = seanceLocale(); S.debut = new Date().toISOString();
-      file.push({ action:'demarrer', payload:{ jour:S.jour }, local:S.seanceId, ts:Date.now() });
-      ecrireJSON(CLE_FILE, file); S.horsLigne = true; majBandeau();
-      vueSeance();
+      toast(err.message); this.disabled = false; this.textContent = 'Démarrer la séance';
     }
   };
   $('#liste').querySelectorAll('[data-i]').forEach(c =>
@@ -1603,19 +1648,138 @@ async function vueSeance() {
     this.disabled = true;
     const id = this.dataset.rep;
     try {
-      if (S.seanceId) await ecrire('reprendreExercice', { seance_id:S.seanceId, exercice_id:id, jour:S.jour });
+      if (S.seanceId) await reprendreExercice(S.seanceId, id);
       S.finis = S.finis.filter(x => x !== id);
       vueSeance();
     } catch (err) { toast(err.message); this.disabled = false; }
   });
 }
 
+// ── Séance : lecture et écritures ────────────────────────────
+// La vague la plus délicate du portage (voir le plan) : c'est ici que vivent
+// l'invariant « pas deux séances ouvertes le même jour » et les écritures
+// pendant l'entraînement, qui doivent rester utilisables même en salle en
+// sous-sol, réseau coupé — c'est `persistentLocalCache` qui l'assure
+// désormais, plus la file maison retirée avec ce portage.
+
+/**
+ * Séance du jour non terminée, s'il y en a une. Sert à reprendre après un
+ * rechargement — et à `demarrerSeance` pour ne pas en recréer une seconde.
+ * `serverTimestamps: 'estimate'` : juste après une création, le serveur n'a
+ * pas encore répondu et `date` vaudrait `null` sans cette option — la séance
+ * qu'on vient de créer semblerait alors ne pas exister, invariant compris.
+ */
+async function seanceOuverteDuJour(jour) {
+  const { db, collection, query, where, orderBy, limit, getDocs } = FB;
+  const snap = await getDocs(query(collection(db, 'seances'), where('email', '==', S.email),
+    orderBy('date', 'desc'), limit(5)));
+  const minuit = new Date(); minuit.setHours(0, 0, 0, 0);
+  const trouve = snap.docs.find(d => {
+    const s = d.data({ serverTimestamps: 'estimate' });
+    if (String(s.jour) !== String(jour)) return false;
+    if (s.duree_min !== '' && s.duree_min != null) return false;
+    return dateDe(s.date) >= minuit;
+  });
+  return trouve ? { id: trouve.id, ...trouve.data({ serverTimestamps: 'estimate' }) } : null;
+}
+
+/**
+ * Assemble la séance du jour : blocs du programme actif avec charges (maxi,
+ * ajustement, pourcentage), séance ouverte le cas échéant avec ses séries
+ * déjà saisies, et les dernières séries de chaque exercice pour « dernier »
+ * / « record ». Équivalent direct de getSeance_ (apps-script/Code.js).
+ */
+async function dataSeance(jour) {
+  const { db, collection, collectionGroup, query, where, orderBy, limit, getDocs } = FB;
+  const email = S.email;
+
+  const att = await attributionActive(email);
+  const blocsBase = blocsBruts(att, jour);
+  const idsExosJour = [...new Set(blocsBase.flatMap(b => b.exercices.map(l => l.exercice_id)))];
+
+  const [ajustSnap, maxisSnap, exercices, ouverte, historiques] = await Promise.all([
+    att ? getDocs(collection(db, 'attributions', att.id, 'ajustements')) : Promise.resolve({ docs: [] }),
+    getDocs(collection(db, 'pratiquants', email, 'maxis')),
+    catalogueParId(),
+    seanceOuverteDuJour(jour),
+    Promise.all(idsExosJour.map(async id => {
+      const snap = await getDocs(query(collectionGroup(db, 'series'),
+        where('email', '==', email), where('exercice_id', '==', id),
+        orderBy('horodatage', 'desc'), limit(5)));
+      return [id, snap.docs.map(d => d.data())];
+    })).then(Object.fromEntries)
+  ]);
+
+  const ajustes = {};
+  ajustSnap.docs.forEach(d => { ajustes[d.id] = Number(d.data().charge) || 0; });
+
+  const maxis = {};
+  maxisSnap.docs.forEach(d => {
+    const m = d.data();
+    if (Number(m.kg) > 0) maxis[d.id] = { kg: Number(m.kg), source: m.source || 'mesuré' };
+  });
+  // Sans maxi saisi par le coach (écriture réservée au coach, voir firestore.rules),
+  // on estime depuis les dernières séries connues — formule d'Epley, sur les cinq
+  // dernières plutôt que tout l'historique : l'ancien serveur avait le classeur
+  // entier en mémoire, le navigateur ne peut pas se permettre la même lecture.
+  idsExosJour.forEach(id => {
+    if (maxis[id]) return;
+    const est = (historiques[id] || [])
+      .filter(s => Number(s.charge) > 0 && Number(s.reps) > 0 && Number(s.reps) <= 15)
+      .reduce((m, s) => Math.max(m, Number(s.charge) * (1 + Number(s.reps) / 30)), 0);
+    if (est > 0) maxis[id] = { kg: Math.round(est * 10) / 10, source: 'estimé' };
+  });
+
+  let faits = {}, finis = [];
+  if (ouverte) {
+    finis = ouverte.exercices_finis || [];
+    const seriesSnap = await getDocs(collection(db, 'seances', ouverte.id, 'series'));
+    seriesSnap.docs.map(d => d.data())
+      .sort((a, b) => Number(a.serie_num) - Number(b.serie_num))
+      .forEach(s => { (faits[s.exercice_id] = faits[s.exercice_id] || [])
+        .push({ reps: Number(s.reps) || 0, charge: Number(s.charge) || 0, duree_s: Number(s.duree_s) || 0 }); });
+  }
+
+  const blocs = blocsBase.map(b => ({
+    bloc: b.bloc, series: b.series, repos_s: b.repos_s,
+    exercices: b.exercices.map(l => {
+      const ex = exercices[l.exercice_id] || {};
+      const pct = Number(String(l.pct_rm).replace('%', '')) || 0;
+      const rm = maxis[l.exercice_id];
+      let charge = Number(l.charge_cible) || 0;
+      if (pct > 0 && rm && rm.kg > 0) charge = Math.round(rm.kg * pct / 100 / 2.5) * 2.5;
+      const perso = ajustes[l.exercice_id];
+      const ajuste = perso > 0;
+      const chargeCoach = charge;
+      if (ajuste) charge = perso;
+      const passe = historiques[l.exercice_id] || [];
+      return {
+        exercice_id: l.exercice_id, nom: ex.nom || l.exercice_id, groupe: ex.groupe || '',
+        consigne: ex.consigne || '', photo: ex.photo || '',
+        bloc: b.bloc, series: b.series, repos_s: b.repos_s,
+        reps_cible: repsTexte(l.reps_cible),
+        duree_s: l.duree_s === '' || l.duree_s === undefined ? null : l.duree_s,
+        cadence: l.cadence || '', pause_s: Number(l.pause_s) || 0, note: l.note || '',
+        pct_rm: pct, rm: rm ? rm.kg : 0, rm_source: rm ? rm.source : '',
+        charge_cible: charge, charge_calculee: !!(pct && rm) && !ajuste,
+        charge_coach: chargeCoach, charge_ajustee: ajuste,
+        dernier: passe.length ? { reps: passe[0].reps, charge: Number(passe[0].charge) } : null,
+        record: passe.length ? Math.max(...passe.map(s => Number(s.charge) || 0)) : 0
+      };
+    })
+  }));
+
+  return {
+    seance_id: ouverte ? ouverte.id : null,
+    debut: ouverte ? versDate(ouverte.date) : null,
+    duree_estimee: estimerDuree(blocs),
+    faits, finis, blocs
+  };
+}
+
 /** Charge la séance en blocs et remet à plat S.exos, index utilisé par le logger. */
 async function chargerSeance(jour) {
-  const { d: r, frais } = await lire('seance', { jour }, 'seance:' + jour);
-  if (!frais) majBandeau();
-  // Le serveur renvoie la séance du jour si elle est ouverte, avec les séries déjà
-  // saisies : un rechargement de page ne perd plus les compteurs.
+  const r = await dataSeance(jour);
   const blocs = r.blocs || [];
   S.seanceId = r.seance_id || null;
   S.debut = r.debut || null;
@@ -1628,6 +1792,98 @@ async function chargerSeance(jour) {
     S.exos.push(e);
   }));
   return blocs;
+}
+
+/**
+ * Démarre la séance du jour, ou reprend celle déjà ouverte — un rechargement
+ * ou une reprise après coupure ne doit pas en créer une seconde.
+ * Pas de vraie transaction : le SDK client ne lit pas une requête depuis une
+ * transaction, seulement des documents un par un — contrairement à ce
+ * qu'imaginait le plan initial. Le bouton reste désactivé pendant l'appel
+ * (voir les appelants), ce qui ramène le risque de doublon à celui déjà admis
+ * pour `attribuer` (Risque 3) : en lecture, on prend toujours la plus
+ * récente si l'invariant se casse malgré tout.
+ */
+async function demarrerSeance(jour) {
+  const { db, collection, addDoc, serverTimestamp } = FB;
+  const ouverte = await seanceOuverteDuJour(jour);
+  if (ouverte) return { seance_id: ouverte.id };
+  const att = await attributionActive(S.email);
+  const blocs = blocsBruts(att, jour);
+  const ref = await addDoc(collection(db, 'seances'), {
+    email: S.email, date: serverTimestamp(), jour,
+    duree_min: '', duree_prevue: estimerDuree(blocs) || '',
+    ressenti: '', notes: '', exercices_finis: []
+  });
+  return { seance_id: ref.id };
+}
+
+/** Enregistre une série de l'exercice en cours. */
+async function enregistrerSerie(seanceId, exerciceId, p) {
+  const { db, collection, addDoc, serverTimestamp } = FB;
+  const reps = Number(p.reps) || 0;
+  const duree = Number(p.duree_s) || 0;
+  const charge = Number(p.charge);
+  if (!(reps > 0) && !(duree > 0)) throw new Error('VALEURS_INVALIDES');
+  if (!(charge >= 0)) throw new Error('VALEURS_INVALIDES');
+  await addDoc(collection(db, 'seances', seanceId, 'series'), {
+    email: S.email, exercice_id: exerciceId, serie_num: Number(p.serie_num) || 1,
+    reps: reps || '', duree_s: duree || '', charge, horodatage: serverTimestamp()
+  });
+}
+
+/** Clôt un exercice sans exiger que toutes les séries soient faites : le
+ *  pratiquant décide qu'il en a fini. Les séries déjà saisies restent. */
+async function finirExercice(seanceId, exerciceId) {
+  const { db, doc, updateDoc, arrayUnion } = FB;
+  await updateDoc(doc(db, 'seances', seanceId), { exercices_finis: arrayUnion(exerciceId) });
+}
+
+/** Rouvre un exercice clos par erreur. */
+async function reprendreExercice(seanceId, exerciceId) {
+  const { db, doc, updateDoc, arrayRemove } = FB;
+  await updateDoc(doc(db, 'seances', seanceId), { exercices_finis: arrayRemove(exerciceId) });
+}
+
+/**
+ * Clôt la séance. Rien n'oblige à avoir tout fait : les exercices non
+ * commencés restent simplement non commencés, la séance est enregistrée
+ * telle quelle. Le compteur `resume.nbSeances` du profil (Risque 2 du plan —
+ * pas de Cloud Function pour l'agréger côté serveur) est mis à jour dans le
+ * même lot, par le pratiquant lui-même : c'est le seul acteur en mesure de
+ * le faire à cet instant.
+ */
+async function terminerSeance(seanceId, p) {
+  const { db, doc, getDoc, writeBatch, serverTimestamp, increment } = FB;
+  const ref = doc(db, 'seances', seanceId);
+  const snap = await getDoc(ref);
+  if (!snap.exists()) throw new Error('SEANCE_INTROUVABLE');
+  const s = snap.data({ serverTimestamps: 'estimate' });
+
+  let duree = Number(p.duree_min) || 0;
+  if (!duree && s.date) {
+    duree = Math.max(1, Math.round((Date.now() - dateDe(s.date).getTime()) / 60000));
+    if (duree > 300) duree = 0;   // séance oubliée ouverte : mieux vaut vide qu'absurde
+  }
+
+  const b = writeBatch(db);
+  b.update(ref, { duree_min: duree || '', ressenti: p.ressenti || '', notes: p.notes || '' });
+  b.update(doc(db, 'pratiquants', S.email), {
+    'resume.nbSeances': increment(1), 'resume.derniereSeanceLe': serverTimestamp()
+  });
+  await b.commit();
+  return { duree_min: duree };
+}
+
+/** Annule une séance encore ouverte : elle et toutes ses séries disparaissent
+ *  — pour une séance démarrée par erreur, ou laissée ouverte pour rien. */
+async function supprimerSeance(seanceId) {
+  const { db, doc, collection, getDocs, writeBatch } = FB;
+  const seriesSnap = await getDocs(collection(db, 'seances', seanceId, 'series'));
+  const b = writeBatch(db);
+  seriesSnap.docs.forEach(d => b.delete(d.ref));
+  b.delete(doc(db, 'seances', seanceId));
+  await b.commit();
 }
 
 /**
@@ -1659,7 +1915,7 @@ function majOrigine(e, charge) {
   if (g) g.onclick = async function () {
     this.disabled = true;
     try {
-      await api('ajuster', { exercice_id:e.exercice_id, charge: change ? charge : 0 });
+      await ajusterCharge(e.exercice_id, change ? charge : 0);
       if (change) { e.charge_coach = e.charge_coach || e.charge_cible; e.charge_cible = charge; e.charge_ajustee = true; }
       else { e.charge_cible = e.charge_coach || 0; e.charge_ajustee = false; }
       toast(change ? 'Charge enregistrée' : 'Retour à la charge du programme');
@@ -1895,18 +2151,7 @@ function disques(kg) {
 async function ouvrirLogger(i) {
   const e = S.exos[i];
   const b = S.blocs[e._b];
-  if (!S.seanceId) {
-    try {
-      S.seanceId = (await api('demarrer', { jour:S.jour })).seance_id;
-    } catch (err) {
-      if (!estReseau(err)) throw err;
-      // Pas de réseau : identifiant provisoire, la séance sera créée au rejeu.
-      S.seanceId = seanceLocale();
-      file.push({ action:'demarrer', payload:{ jour:S.jour }, local:S.seanceId, ts:Date.now() });
-      ecrireJSON(CLE_FILE, file);
-      S.horsLigne = true; majBandeau();
-    }
-  }
+  if (!S.seanceId) S.seanceId = (await demarrerSeance(S.jour)).seance_id;
 
   // Exercice au temps : duree_s renseigné. Un nombre = durée à tenir (décompte),
   // 'max' = jusqu'à l'échec (le chrono monte).
@@ -2023,7 +2268,7 @@ async function ouvrirLogger(i) {
     this.disabled = true;
     clearInterval(chrono); chrono = null; tourne = false;
     try {
-      if (S.seanceId) await ecrire('finirExercice', { seance_id:S.seanceId, exercice_id:e.exercice_id, jour:S.jour });
+      if (S.seanceId) await finirExercice(S.seanceId, e.exercice_id);
       if (ouvert(e)) S.finis.push(e.exercice_id);
       suite(true);
     } catch (err) { toast(err.message); this.disabled = false; }
@@ -2034,9 +2279,9 @@ async function ouvrirLogger(i) {
     clearInterval(chrono); chrono = null; tourne = false;
     try {
       const num = (S.faits[e.exercice_id] || []).length + 1;
-      const p = { seance_id:S.seanceId, exercice_id:e.exercice_id, serie_num:num, charge };
+      const p = { serie_num:num, charge };
       if (auTemps) p.duree_s = ecoule; else p.reps = reps;
-      await ecrire('serie', Object.assign({ jour:S.jour }, p));
+      await enregistrerSerie(S.seanceId, e.exercice_id, p);
       (S.faits[e.exercice_id] = S.faits[e.exercice_id] || [])
         .push(auTemps ? { duree_s:ecoule, charge } : { reps, charge });
       if (auTemps) { ecoule = 0; const g = L.querySelector('#go'); if (g) g.textContent = 'Démarrer'; }
@@ -2139,9 +2384,7 @@ function modalFinSeance() {
   w.querySelector('#fOk').onclick = async function () {
     this.disabled = true;
     try {
-      await ecrire('terminer', {
-        seance_id: S.seanceId,
-        jour: S.jour,
+      await terminerSeance(S.seanceId, {
         duree_min: w.querySelector('#fDur').value,
         ressenti: w.querySelector('#fRes').value,
         notes: w.querySelector('#fNot').value
@@ -2158,8 +2401,7 @@ function modalFinSeance() {
 
 /**
  * Annulation d'une séance. Deux temps dès qu'il y a des séries à perdre : le
- * bouton demande confirmation avant de partir. Une séance jamais montée au
- * serveur ne s'annule pas, elle se retire simplement de la file.
+ * bouton demande confirmation avant de partir.
  */
 function annulerSeance(w, faites) {
   return async function () {
@@ -2169,15 +2411,12 @@ function annulerSeance(w, faites) {
       return;
     }
     this.disabled = true;
-    const id = S.seanceId;
     try {
-      purgerFile(id);
-      const distant = mapSeances[id] || (String(id).indexOf('LOC-') === 0 ? null : id);
-      if (distant) await ecrire('annuler', { seance_id: distant });
+      await supprimerSeance(S.seanceId);
       w.fermer();
       toast('Séance annulée');
       S.seanceId = null; S.debut = null; S.faits = {}; S.finis = []; S.cal = null;
-      oublier('accueil'); oublier('seance:' + S.jour);
+      oublier('accueil');
       try { S.moi = await chargerProfil(S.email); } catch (err) {}
       vueSeance();
     } catch (err) { toast(err.message); this.disabled = false; }
@@ -2655,6 +2894,27 @@ function carteAthlete(a) {
   </button>`;
 }
 
+/**
+ * Inscrit un pratiquant. Il démarre au statut Nouveau, sans programme.
+ * `setDoc` écraserait une fiche existante en silence (côté règles, un doc déjà
+ * là passe par la branche `update` du coach, qui autorise justement ces
+ * champs) : on vérifie donc d'abord l'absence, comme `pratiquantCreer_`.
+ */
+async function creerPratiquant(p) {
+  const { db, doc, getDoc, setDoc, serverTimestamp } = FB;
+  const email = String(p.email || '').trim().toLowerCase();
+  if (!email || email.indexOf('@') === -1) throw new Error('EMAIL_INVALIDE');
+  const ref = doc(db, 'pratiquants', email);
+  if ((await getDoc(ref)).exists()) throw new Error('DEJA_INSCRIT');
+  await setDoc(ref, {
+    nom: String(p.nom || '').trim() || email.split('@')[0],
+    role: 'pratiquant', admin: false, statut: 'Nouveau',
+    telephone: String(p.telephone || ''), date_inscription: serverTimestamp(),
+    objectif: String(p.objectif || ''), notes: ''
+  });
+  return { email };
+}
+
 function modalInscrire() {
   const w = modal('Inscrire un pratiquant', `
     <div class="champ"><label>Adresse Google</label>
@@ -2670,7 +2930,7 @@ function modalInscrire() {
   w.querySelector('#iOk').onclick = async function () {
     this.disabled = true;
     try {
-      await api('pratiquantCreer', {
+      await creerPratiquant({
         email: w.querySelector('#iMail').value,
         nom: w.querySelector('#iNom').value,
         telephone: w.querySelector('#iTel').value,
@@ -2788,7 +3048,7 @@ async function vueFiche() {
   });
   $('#zone').querySelectorAll('[data-paye]').forEach(c => c.onchange = async function () {
     try {
-      await api('attributionMaj', { id: this.dataset.paye, paye: this.checked });
+      await majAttribution(this.dataset.paye, { paye: this.checked });
       this.parentNode.querySelector('span').textContent = this.checked ? 'Payé' : 'Non payé';
       toast(this.checked ? 'Marqué payé' : 'Marqué non payé');
     } catch (err) { toast(err.message); this.checked = !this.checked; }
@@ -3381,119 +3641,161 @@ function modalLigne(bi, ei) {
 }
 
 /**
- * Maintenance depuis l'app. Ces opérations existent aussi dans le menu du
- * Sheet, mais ce menu n'existe pas dans Sheets mobile : le coach doit pouvoir les
- * lancer depuis son téléphone.
+ * Réglages du coach. L'ancien menu Sheet (migrer, jeu d'essai, imports de
+ * catalogue/programmes-types, exemple) a disparu avec le classeur : ce
+ * travail unique est fait par `scripts/seed.mjs`, pas par une action
+ * cliquable — voir Étape 4 du plan. Le rapport hebdomadaire doit encore
+ * devenir un écran de tableau de bord (Étape 10) plutôt qu'un envoi : en
+ * attendant, il n'a pas sa place ici.
  */
 function vueReglages() {
-  const ops = [
-    { op:'migrer', nom:'Aligner les colonnes',
-      quoi:'Crée les onglets et colonnes manquants, et rattache les anciennes lignes de programme à une attribution.',
-      sur:true },
-    { op:'jeuEssai', nom:'Charger le programme de test',
-      quoi:'Pose un programme d\'exemple sur les comptes de test. Ignore un compte qui en a déjà un.',
-      sur:true },
-    { op:'jeuEssaiReset', nom:'Recharger le programme de test',
-      quoi:'Efface les lignes de programme des seuls comptes de test, puis les repose.',
-      sur:false },
-    { op:'catalogue', nom:'Importer le catalogue de départ',
-      quoi:'Verse 97 exercices en français, illustrés, issus d\'une base du domaine public. Un exercice dont le nom existe déjà est ignoré : vos fiches ne sont pas touchées.',
-      sur:true },
-    { op:'feuille', nom:'Importer la feuille',
-      quoi:'Transforme l\'onglet Import du classeur en modèle. On y colle un programme composé dans le tableur, les exercices désignés par leur nom — aucun identifiant à manipuler.',
-      sur:true, fiche:true },
-    { op:'programmes', nom:'Importer dix programmes types',
-      quoi:'Verse dix méthodes largement documentées — 5×5, Push Pull Legs, Haut/Bas, 5/3/1, Texas Method, split 5 jours, sans matériel… — comme modèles réutilisables. Un modèle portant déjà le même nom est laissé intact.',
-      sur:true },
-    { op:'exemple', nom:'Créer le programme d\'exemple',
-      quoi:'Compose un modèle « Prise de masse — Haut / Bas » sur 8 semaines et l\'attribue au compte de test, démarré il y a trois semaines pour que l\'avancement soit visible. Importe le catalogue s\'il manque.',
-      sur:true },
-    { op:'rapport', nom:'Envoyer le rapport hebdomadaire',
-      quoi:'Envoie au coach la liste des pratiquants sans séance depuis 10 jours.',
-      sur:true }
-  ];
-
   $('#zone').innerHTML = `
-    <p class="consigne">Les mêmes opérations que le menu <strong>Coaching Fitness</strong> du classeur,
-      accessibles ici parce que ce menu n'existe pas dans Sheets sur téléphone.</p>
-    <div style="margin-top:16px">${ops.map(o => `
-      <div class="card" style="display:block">
-        <div class="nom">${o.nom}</div>
-        <div class="meta" style="margin-top:4px;line-height:1.45">${o.quoi}</div>
-        <div class="barre">
-          <button class="btn ${o.sur ? '' : 'danger'}" data-op="${o.op}" data-sur="${o.sur}"
-            data-fiche="${o.fiche ? 'true' : 'false'}" style="flex:1">
-            ${o.sur ? 'Lancer' : 'Lancer — remplace des données'}</button>
-        </div>
-      </div>`).join('')}</div>
-    <div id="resultat"></div>`;
+    <div class="card" style="display:block">
+      <div class="nom">Importer un programme</div>
+      <div class="meta" style="margin-top:4px;line-height:1.45">Transforme le gabarit
+        modele-import.xlsx rempli en modèle. Les exercices sont désignés par leur nom —
+        aucun identifiant à manipuler.</div>
+      <div class="barre"><button class="btn" id="import" style="flex:1">Importer</button></div>
+    </div>`;
+  $('#import').onclick = modalImportFeuille;
+}
 
-  $('#zone').querySelectorAll('[data-op]').forEach(b => b.onclick = async function () {
-    if (this.dataset.fiche === 'true') return modalImportFeuille();
-    if (this.dataset.sur !== 'true' && !confirm('Cette opération remplace des données. Continuer ?')) return;
-    const libelle = this.textContent;
-    this.disabled = true; this.textContent = 'En cours…';
-    try {
-      const r = await api('maintenance', { op: this.dataset.op });
-      $('#resultat').innerHTML = `<div class="card" style="display:block;margin-top:14px">
-        <div class="eyebrow">Résultat</div>
-        <p class="consigne" style="margin-top:8px;white-space:pre-wrap">${r.message || 'Terminé.'}</p></div>`;
-      toast('Opération terminée');
-    } catch (err) {
-      $('#resultat').innerHTML = `<div class="card" style="display:block;margin-top:14px">
-        <div class="eyebrow" style="color:var(--brand-ink)">Échec</div>
-        <p class="consigne" style="margin-top:8px">${err.message}</p></div>`;
-    }
-    this.disabled = false; this.textContent = libelle;
-  });
+// ── Import Excel (gabarit modele-import.xlsx) ────────────────
+// Remplace l'aller-retour par l'onglet Import du classeur (retiré avec Sheets) :
+// le coach remplit le gabarit — onglets « Fiche » et « Programme » — et
+// l'importe directement depuis son téléphone. SheetJS n'est chargé qu'à ce
+// moment-là, ce fichier n'en a besoin nulle part ailleurs.
+let _xlsxPromise = null;
+function chargerXLSX() {
+  if (window.XLSX) return Promise.resolve();
+  if (!_xlsxPromise) {
+    _xlsxPromise = new Promise((resolve, reject) => {
+      const s = document.createElement('script');
+      s.src = 'https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js';
+      s.onload = resolve; s.onerror = () => reject(new Error('XLSX_INDISPONIBLE'));
+      document.head.appendChild(s);
+    });
+  }
+  return _xlsxPromise;
+}
+
+/** Un onglet du classeur, en objets indexés par les en-têtes de sa première ligne. */
+function feuilleEnObjets(classeur, nomFeuille) {
+  const sh = classeur.Sheets[nomFeuille];
+  if (!sh) throw new Error('ONGLET_MANQUANT_' + nomFeuille);
+  return XLSX.utils.sheet_to_json(sh, { defval: '' });
+}
+
+/** L'onglet « Fiche » (colonnes Champ/Valeur) en objet d'en-tête de modèle. */
+function ficheEnObjet(rows) {
+  const parChamp = {};
+  rows.forEach(r => { parChamp[String(r.Champ || '').trim()] = r.Valeur; });
+  return {
+    nom: String(parChamp['Nom'] || '').trim(),
+    categorie: String(parChamp['Catégorie'] || '').trim(),
+    difficulte: String(parChamp['Difficulté'] || '').trim(),
+    duree_semaines: Number(parChamp['Durée (semaines)']) || 0,
+    statut: String(parChamp['Statut'] || '').trim() || 'Brouillon',
+    description: String(parChamp['Description'] || '').trim(),
+    source: String(parChamp['Page source'] || '').trim(),
+    video: String(parChamp['Vidéo'] || '').trim()
+  };
 }
 
 /**
- * L'import de feuille a besoin de l'en-tête du modèle : la feuille ne porte que
- * les lignes d'exercices. On demande le reste ici plutôt que d'ajouter un second
- * onglet au classeur.
+ * L'onglet « Programme » en lignes prêtes à écrire. Les exercices sont désignés
+ * par leur nom, résolu contre le catalogue — comme dans le gabarit, aucun
+ * identifiant à manipuler. Rien n'est retenu si un seul nom est introuvable :
+ * mieux vaut refuser que produire un programme troué.
  */
-function modalImportFeuille() {
-  const w = modal('Importer la feuille', `
-    <p class="consigne">Les lignes viennent de l'onglet <strong>Import</strong> du classeur.
-      Renseignez ici l'en-tête du modèle.</p>
-    <div class="champ"><label>Nom</label><input class="f" id="iwNom" placeholder="Force 2 — Eric Flag"></div>
-    <div class="duo">
-      <div class="champ"><label>Catégorie</label><input class="f" id="iwCat" placeholder="Street workout"></div>
-      <div class="champ"><label>Difficulté</label><input class="f" id="iwDif" placeholder="Intermédiaire"></div>
-    </div>
-    <div class="duo">
-      <div class="champ"><label>Durée (semaines)</label><input class="f" id="iwDur" type="number" min="0"></div>
-      <div class="champ"><label>Statut</label>
-        <select class="f" id="iwSta">${['Brouillon','Actif','Archivé'].map(x =>
-          `<option ${x === 'Brouillon' ? 'selected' : ''}>${x}</option>`).join('')}</select></div>
-    </div>
-    <div class="champ"><label>Description</label><textarea class="f" id="iwDes" rows="3"></textarea></div>
-    <div class="barre"><button class="btn" id="iwAnn">Annuler</button>
-      <button class="btn plein" id="iwOk" style="flex:1">Importer</button></div>`);
+function programmeEnLignes(rows, idsParNom) {
+  const inconnus = [];
+  const lignes = rows
+    .filter(r => String(r.Jour || '').trim() && String(r.Exercice || '').trim())
+    .map(r => {
+      const nom = String(r.Exercice).trim();
+      const id = idsParNom[nom.toLowerCase()];
+      if (!id) inconnus.push(nom);
+      return {
+        jour: String(r.Jour).trim(), bloc: Number(r.Bloc) || 1, ordre: Number(r.Ordre) || 1,
+        exercice_id: id || '',
+        series: Number(r['Séries']) || 3,
+        reps_cible: r['Répétitions'] === undefined ? '' : String(r['Répétitions']),
+        duree_s: r['Durée (s)'] === undefined || r['Durée (s)'] === '' ? '' : r['Durée (s)'],
+        charge_cible: Number(r['Charge (kg)']) || 0,
+        pct_rm: Number(String(r['% du max']).replace('%', '')) || 0,
+        cadence: String(r.Cadence || ''),
+        pause_s: Number(r['Pause (s)']) || 0,
+        repos_s: Number(r['Repos (s)']) || 90
+      };
+    });
+  if (inconnus.length) throw new Error('EXERCICES_INCONNUS: ' + [...new Set(inconnus)].join(', '));
+  return lignes;
+}
 
-  w.querySelector('#iwAnn').onclick = w.fermer;
-  w.querySelector('#iwOk').onclick = async function () {
-    const nom = w.querySelector('#iwNom').value.trim();
-    if (!nom) return toast('Donnez un nom au modèle');
+/** Identifiants d'exercice indexés par nom (minuscules), pour résoudre un import. */
+async function idsExercicesParNom() {
+  if (!S.idsParNom) {
+    S.idsParNom = {};
+    (await dataCatalogue()).forEach(e => { if (e.nom) S.idsParNom[e.nom.trim().toLowerCase()] = e.id; });
+  }
+  return S.idsParNom;
+}
+
+/** Transforme un classeur d'import (gabarit modele-import.xlsx) en modèle. */
+async function importerModele(classeur) {
+  const { db, doc, collection, addDoc, writeBatch, serverTimestamp } = FB;
+  const fiche = ficheEnObjet(feuilleEnObjets(classeur, 'Fiche'));
+  if (!fiche.nom) throw new Error('NOM_REQUIS');
+  const idsParNom = await idsExercicesParNom();
+  const lignes = programmeEnLignes(feuilleEnObjets(classeur, 'Programme'), idsParNom);
+  if (!lignes.length) throw new Error('FEUILLE_VIDE');
+
+  const ref = await addDoc(collection(db, 'modeles'), {
+    nom: fiche.nom, categorie: fiche.categorie, difficulte: fiche.difficulte,
+    duree_semaines: fiche.duree_semaines, statut: fiche.statut,
+    description: fiche.description, source: fiche.source, video: fiche.video,
+    nb_jours: new Set(lignes.map(l => l.jour)).size, nb_exercices: lignes.length,
+    cree_le: serverTimestamp()
+  });
+  const b = writeBatch(db);
+  lignes.forEach(l => b.set(doc(collection(db, 'modeles', ref.id, 'lignes')), l));
+  await b.commit();
+  return { id: ref.id, nom: fiche.nom, jours: new Set(lignes.map(l => l.jour)).size, lignes: lignes.length };
+}
+
+function modalImportFeuille() {
+  const w = modal('Importer un programme', `
+    <p class="consigne">Le fichier <code>modele-import.xlsx</code> rempli, avec ses onglets
+      « Fiche » et « Programme ». Rien n'est créé si un seul nom de l'onglet « Programme »
+      est introuvable dans le catalogue.</p>
+    <div class="champ"><label>Fichier</label>
+      <input class="f" id="ifFile" type="file" accept=".xlsx"></div>
+    <div class="barre"><button class="btn" id="ifAnn">Annuler</button>
+      <button class="btn plein" id="ifOk" style="flex:1" disabled>Importer</button></div>`);
+
+  w.querySelector('#ifAnn').onclick = w.fermer;
+  const champ = w.querySelector('#ifFile');
+  const ok = w.querySelector('#ifOk');
+  champ.onchange = () => { ok.disabled = !champ.files.length; };
+
+  ok.onclick = async function () {
     this.disabled = true; this.textContent = 'Import…';
     try {
-      const r = await api('maintenance', { op:'feuille', fiche: {
-        nom: nom,
-        categorie: w.querySelector('#iwCat').value,
-        difficulte: w.querySelector('#iwDif').value,
-        duree_semaines: w.querySelector('#iwDur').value,
-        statut: w.querySelector('#iwSta').value,
-        description: w.querySelector('#iwDes').value
-      }});
-      w.fermer(); toast('Modèle importé');
-      $('#resultat').innerHTML = `<div class="card" style="display:block;margin-top:14px">
-        <div class="eyebrow">Résultat</div>
-        <p class="consigne" style="margin-top:8px;white-space:pre-wrap">${r.message}</p></div>`;
+      await chargerXLSX();
+      const buf = await champ.files[0].arrayBuffer();
+      const classeur = XLSX.read(new Uint8Array(buf), { type: 'array' });
+      const r = await importerModele(classeur);
+      w.fermer();
+      toast(`${r.nom} importé : ${r.jours} jour${r.jours > 1 ? 's' : ''}, ${r.lignes} ligne${r.lignes > 1 ? 's' : ''}`);
     } catch (err) {
-      const m = /^EXERCICES_INCONNUS: (.+)$/.exec(err.message);
-      toast(m ? 'Noms introuvables : ' + m[1]
-          : err.message === 'FEUILLE_VIDE' ? "L'onglet Import est vide" : err.message);
+      const inconnus = /^EXERCICES_INCONNUS: (.+)$/.exec(err.message);
+      const manquant = /^ONGLET_MANQUANT_(.+)$/.exec(err.message);
+      toast(inconnus ? 'Noms introuvables : ' + inconnus[1]
+          : manquant ? `Onglet « ${manquant[1]} » manquant dans le fichier`
+          : err.message === 'FEUILLE_VIDE' ? "L'onglet Programme est vide"
+          : err.message === 'NOM_REQUIS' ? "Renseignez le nom dans l'onglet Fiche"
+          : err.message);
       this.disabled = false; this.textContent = 'Importer';
     }
   };
@@ -3779,19 +4081,16 @@ function modalMaxi(m) {
 
 // ── Programme d'un pratiquant ────────────────────────────────
 async function vueProgramme() {
-  // Un seul aller-retour : la liste des attributions, le catalogue si on ne
-  // l'a pas encore, et le contenu de l'attribution en cours.
-  const demandes = [{ action:'attributions', payload:{ email:S.coach.email } }];
-  if (!S.cat) demandes.push({ action:'catalogue' });
-  demandes.push({ action:'programme', payload:{ email:S.coach.email, attribution_id:S.attSel || undefined } });
-
-  let reponses;
-  try { reponses = await apiLot(demandes); }
-  catch (err) { $('#zone').innerHTML = `<div class="empty">${err.message}</div>`; return; }
-
-  const atts = reponses[0];
-  if (!S.cat) S.cat = reponses[1];
-  let prog = reponses[reponses.length - 1];
+  // Les lectures partent ensemble : la liste des attributions, le catalogue
+  // si on ne l'a pas encore, et le contenu de l'attribution visée.
+  let atts, prog;
+  try {
+    [atts, , prog] = await Promise.all([
+      dataAttributions(S.coach.email),
+      S.cat ? null : dataCatalogue().then(c => { S.cat = c; }),
+      dataProgramme(S.coach.email, S.attSel || undefined)
+    ]);
+  } catch (err) { $('#zone').innerHTML = `<div class="empty">${err.message}</div>`; return; }
 
   S.atts = atts;
   if (!S.attSel || !atts.some(a => a.id === S.attSel)) {
@@ -3799,7 +4098,7 @@ async function vueProgramme() {
     S.attSel = (active || atts[0] || {}).id || null;
     // L'attribution visée a changé en cours de route : on va rechercher la bonne.
     if (S.attSel && (!prog.attribution || prog.attribution.id !== S.attSel)) {
-      prog = await api('programme', { email:S.coach.email, attribution_id:S.attSel });
+      prog = await dataProgramme(S.coach.email, S.attSel);
     }
   }
 
@@ -3854,14 +4153,14 @@ async function vueProgramme() {
   if (cl) cl.onclick = async function () {
     this.disabled = true;
     try {
-      await api('attributionMaj', { id: S.attSel, statut: 'Terminé', date_fin: new Date().toISOString() });
+      await majAttribution(S.attSel, { statut: 'Terminé', date_fin: true });
       toast('Programme clos'); vueProgramme();
     } catch (err) { toast(err.message); this.disabled = false; }
   };
   $('#supprAtt').onclick = async function () {
     this.disabled = true;
     try {
-      await api('attributionSuppr', { id: S.attSel });
+      await supprimerAttribution(S.attSel);
       toast('Attribution supprimée'); S.attSel = null; S.ed = null; vueProgramme();
     } catch (err) { toast(err.message); this.disabled = false; }
   };
@@ -3917,8 +4216,7 @@ async function modalAttribuer() {
   w.querySelector('#aOk').onclick = async function () {
     this.disabled = true;
     try {
-      const r = await api('attribuer', {
-        email: S.coach.email,
+      const r = await creerAttribution(S.coach.email, {
         modele_id: w.querySelector('#aMod').value || undefined,
         nom: w.querySelector('#aNom').value,
         date_debut: w.querySelector('#aDeb').value
@@ -3942,6 +4240,70 @@ function marquer(blocs) {
     b.exercices.forEach(e => { if (!e._uid) e._uid = 'e' + (++_uid); });
   });
   return blocs;
+}
+
+/**
+ * Transforme les blocs de l'éditeur en lignes plates, prêtes à écrire —
+ * équivalent direct de `aplatirBlocs_`. Lève si un exercice n'existe plus au
+ * catalogue ; en pratique injoignable depuis l'éditeur, qui ne propose que
+ * des exercices choisis dans le catalogue, mais on ne fait pas confiance à
+ * un id qui aurait pu être manipulé.
+ */
+async function aplatirBlocs(blocs, jour) {
+  const connus = await catalogueParId();
+  const rangs = [];
+  (blocs || []).forEach((b, bi) => {
+    (b.exercices || []).forEach((e, ei) => {
+      if (!connus[e.exercice_id]) throw new Error('EXERCICE_INCONNU_' + e.exercice_id);
+      rangs.push({
+        jour, bloc: bi + 1, ordre: ei + 1, exercice_id: e.exercice_id,
+        series: Number(b.series) || 3,
+        reps_cible: e.reps_cible === undefined ? '' : e.reps_cible,
+        duree_s: e.duree_s === undefined ? '' : e.duree_s,
+        charge_cible: Number(e.charge_cible) || 0,
+        pct_rm: Number(String(e.pct_rm).replace('%', '')) || 0,
+        cadence: e.cadence || '',
+        pause_s: Number(e.pause_s) || 0,
+        repos_s: Number(b.repos_s) || 90,
+        note: e.note || ''
+      });
+    });
+  });
+  if (!rangs.length) throw new Error('PROGRAMME_VIDE');
+  return rangs;
+}
+
+/**
+ * Réécrit un jour dans une collection de lignes (celles d'un modèle ou d'une
+ * attribution — même structure, seule la clé de rattachement change). Les
+ * lignes de ce jour sont remplacées, les autres jours ne bougent pas. Les
+ * compteurs dénormalisés `nb_jours`/`nb_exercices` du doc parent (lus par les
+ * listes de modèles/attributions) sont recalculés au passage.
+ */
+async function sauverLignesJour(refDoc, refLignes, jour, blocs) {
+  const { db, doc, getDocs, writeBatch, updateDoc } = FB;
+  const rangs = await aplatirBlocs(blocs, jour);
+  const existantes = await getDocs(refLignes);
+  const b = writeBatch(db);
+  existantes.docs.forEach(d => { if (String(d.data().jour) === jour) b.delete(d.ref); });
+  rangs.forEach(r => b.set(doc(refLignes), r));
+  await b.commit();
+  const toutes = (await getDocs(refLignes)).docs.map(d => d.data());
+  await updateDoc(refDoc, { nb_jours: new Set(toutes.map(l => l.jour)).size, nb_exercices: toutes.length });
+  return { lignes: rangs.length };
+}
+
+/** Supprime un jour d'une collection de lignes, et recalcule les compteurs. */
+async function supprimerLignesJour(refDoc, refLignes, jour) {
+  const { db, getDocs, writeBatch, updateDoc } = FB;
+  const existantes = await getDocs(refLignes);
+  const b = writeBatch(db);
+  let n = 0;
+  existantes.docs.forEach(d => { if (String(d.data().jour) === jour) { b.delete(d.ref); n++; } });
+  await b.commit();
+  const restantes = (await getDocs(refLignes)).docs.map(d => d.data());
+  await updateDoc(refDoc, { nb_jours: new Set(restantes.map(l => l.jour)).size, nb_exercices: restantes.length });
+  return { supprimees: n };
 }
 
 function chargerJour(jour) {
@@ -3986,12 +4348,15 @@ async function enregistrerJour() {
     return toast('Ajoutez au moins un exercice');
   btn.disabled = true;
   const blocs = ed.blocs.filter(b => b.exercices.length);
+  const { db, doc, collection } = FB;
   try {
     if (ed.cible === 'modele') {
-      await api('modeleJourSave', { modele_id: ed.modele_id, jour: ed.jour, blocs });
+      await sauverLignesJour(doc(db, 'modeles', ed.modele_id),
+        collection(db, 'modeles', ed.modele_id, 'lignes'), ed.jour, blocs);
       toast('Jour enregistré'); S.ed = null; vueModele();
     } else {
-      await api('programmeSave', { email: ed.email, attribution_id: ed.attribution_id, jour: ed.jour, blocs });
+      await sauverLignesJour(doc(db, 'attributions', ed.attribution_id),
+        collection(db, 'attributions', ed.attribution_id, 'programme'), ed.jour, blocs);
       toast('Jour enregistré'); S.ed = null; vueProgramme();
     }
   } catch (err) { toast(err.message); btn.disabled = false; }
@@ -4000,12 +4365,15 @@ async function enregistrerJour() {
 async function supprimerJour(btn) {
   const ed = S.ed;
   btn.disabled = true;
+  const { db, doc, collection } = FB;
   try {
     if (ed.cible === 'modele') {
-      await api('modeleJour', { modele_id: ed.modele_id, jour: ed.jour });
+      await supprimerLignesJour(doc(db, 'modeles', ed.modele_id),
+        collection(db, 'modeles', ed.modele_id, 'lignes'), ed.jour);
       toast('Jour supprimé'); S.ed = null; vueModele();
     } else {
-      await api('programmeJour', { attribution_id: ed.attribution_id, jour: ed.jour });
+      await supprimerLignesJour(doc(db, 'attributions', ed.attribution_id),
+        collection(db, 'attributions', ed.attribution_id, 'programme'), ed.jour);
       toast('Jour supprimé'); S.ed = null; vueProgramme();
     }
   } catch (err) { toast(err.message); btn.disabled = false; }
