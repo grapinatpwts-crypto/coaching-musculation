@@ -162,6 +162,15 @@ L'app enchaîne toute seule : série validée → pause → exercice suivant du 
 … → dernier du bloc → repos → retour au premier. Une `pause_s` à 0 enchaîne sans
 temps mort. Un bloc à un seul exercice ne connaît que `repos_s`, comportement d'avant.
 
+**Ces deux enchaînements ne partent que depuis le panneau de saisie.** Valider
+une série depuis la pastille est un raccourci : il écrit la série et rien
+d'autre, sans armer de minuteur. D'où la **rangée de chronos** en haut de
+l'écran séance, sous les onglets de jours (`peindreChronos`) : un bouton par
+temps mort du jour, qui lance `lancerMinuteur` à la main. Les durées ne sont
+pas inventées — ce sont les `repos_s` des blocs et les `pause_s` des exercices
+du jour affiché, dédoublonnées et triées. Un jour sans aucun temps mort
+déclaré n'affiche pas de rangée du tout ; le programme du coach fait foi.
+
 ### Cadence
 
 `cadence` est un tempo en quatre temps, dans l'ordre

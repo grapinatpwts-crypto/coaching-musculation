@@ -97,7 +97,8 @@ programme tombe où, déjà fait ou non) et un planning personnel pour les engag
 extérieurs récurrents (jour fixe, fréquence, ou une date ponctuelle) — visible aussi
 par le coach sur la fiche du pratiquant. Séance en blocs, avec supersets, cadence en
 courbe, exercices au temps, et deux minuteurs distincts — pause dans le bloc, repos
-de fin de tour. Charge ajustable par le pratiquant lui-même, qui prime sur celle du
+de fin de tour — enchaînés automatiquement depuis la saisie, ou lançables à la main
+depuis une rangée de chronos en haut de la séance, aux durées du jour. Charge ajustable par le pratiquant lui-même, qui prime sur celle du
 coach. Une pastille par **ligne de programme** compte les séries faites et sert de
 raccourci : appui court pour en valider une de plus aux valeurs par défaut, appui
 long pour remplir les séries restantes d'un coup. Le compteur s'arrête à la

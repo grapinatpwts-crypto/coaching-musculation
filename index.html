@@ -297,6 +297,16 @@ header h2{font-size:30px;text-transform:uppercase;line-height:1}
   font-weight:600;font-size:14px;white-space:nowrap;min-height:44px}
 .day[aria-pressed="true"]{background:var(--brand);color:var(--on-brand);border-color:var(--brand)}
 
+/* Chronos de la séance : mêmes pastilles, en plus discret — un outil, pas une
+   navigation. La rangée disparaît quand le jour n'a ni repos ni pause. */
+.chronos{display:flex;gap:8px;overflow-x:auto;padding-bottom:14px;margin:-4px 0 6px;scrollbar-width:none}
+.chronos::-webkit-scrollbar{display:none}
+.chronos:empty{display:none}
+.chrono-btn{flex:0 0 auto;padding:8px 14px;border-radius:999px;background:transparent;
+  border:1px solid var(--edge);color:var(--chalk);font-weight:600;font-size:13px;
+  white-space:nowrap;min-height:36px}
+.chrono-btn .n{color:var(--txt);font-variant-numeric:tabular-nums}
+
 /* Carte exercice */
 .card{background:var(--plate);border:1px solid var(--edge);border-radius:var(--r);padding:16px;margin-bottom:12px;
   box-shadow:var(--relief);
@@ -318,8 +328,15 @@ header h2{font-size:30px;text-transform:uppercase;line-height:1}
 .bar .bague{width:3.5px;height:12px;background:var(--dust);border-radius:1px;border:0}
 
 /* Panneau de saisie */
-#logger{position:fixed;inset:0;background:var(--iron);z-index:20;display:flex;flex-direction:column;
+/* `inset:0` sans `overflow` figeait le panneau : dès que la fenêtre était
+   moins haute que le contenu — un PC en paysage — le bas devenait
+   inatteignable. Le défilement vit ici ; la colonne interne reprend la
+   largeur de `.wrap`, sinon l'image, les steppers et les boutons s'étalaient
+   sur toute la largeur de l'écran. */
+#logger{position:fixed;inset:0;background:var(--iron);z-index:20;
+  overflow-y:auto;overscroll-behavior:contain;
   padding:20px 18px calc(20px + env(safe-area-inset-bottom));animation:up .22s ease}
+.logger-col{max-width:560px;min-height:100%;margin:0 auto;display:flex;flex-direction:column}
 @keyframes up{from{transform:translateY(14px);opacity:0}to{transform:none;opacity:1}}
 @media (prefers-reduced-motion:reduce){#logger{animation:none}}
 #logger .top{display:flex;justify-content:space-between;align-items:center;margin-bottom:6px}
@@ -2249,6 +2266,7 @@ async function vueSeance() {
     <div class="eyebrow" id="avancement">Programme</div>
     <div class="days">${S.moi.jours.map(j =>
       `<button class="day" data-jour="${j}" aria-pressed="${j === S.jour}">${j}</button>`).join('')}</div>
+    <div class="chronos" id="chronos"></div>
     <div id="liste"><div class="empty">Chargement…</div></div>`;
 
   const ra = $('#retourAccueil');
@@ -2280,6 +2298,8 @@ async function vueSeance() {
       ? `<div class="empty">Séance en cours : ${S.autreSeanceOuverte.jour}.<br>Terminez-la ou annulez-la avant d'en commencer une nouvelle.</div>
          <div class="barre"><button class="btn plein" id="allerSeanceActive" style="flex:1">Aller à cette séance</button></div>`
       : `<div class="barre"><button class="btn plein" id="debutSeance" style="flex:1">Démarrer la séance</button></div>`);
+
+  peindreChronos(blocs);
 
   const total = S.exos.length;
   const clos = S.exos.filter(x => S.finis.indexOf(x.ligne_id) !== -1 ||
@@ -2706,6 +2726,40 @@ function dureeJour(blocs) {
 }
 
 /**
+ * Les chronos du jour, en haut de la séance. Valider une série depuis la
+ * pastille n'arme aucun minuteur — c'est le prix du raccourci — et il arrive
+ * de vouloir souffler entre deux exercices sans rien valider du tout. Cette
+ * rangée met les temps morts à portée de pouce, sans ouvrir un exercice.
+ *
+ * Les durées ne sont pas inventées : ce sont celles du jour affiché, les
+ * `repos_s` des blocs et les `pause_s` des exercices, dédoublonnées et
+ * triées. Un jour sans aucun temps mort déclaré n'affiche rien plutôt que des
+ * durées arbitraires — le programme du coach fait foi.
+ */
+function peindreChronos(blocs) {
+  const z = $('#chronos');
+  if (!z) return;
+
+  const vus = {};
+  (blocs || []).forEach(b => {
+    if (Number(b.repos_s) > 0) vus['Repos·' + Number(b.repos_s)] = { libelle:'Repos', sec:Number(b.repos_s) };
+    b.exercices.forEach(e => {
+      if (Number(e.pause_s) > 0) vus['Pause·' + Number(e.pause_s)] = { libelle:'Pause', sec:Number(e.pause_s) };
+    });
+  });
+  const temps = Object.values(vus).sort((a, b) => a.sec - b.sec);
+
+  z.innerHTML = temps.map((t, i) => `<button class="chrono-btn" data-chrono="${i}"
+    aria-label="Lancer un ${t.libelle.toLowerCase()} de ${reposTexte(t.sec)}"
+    >${t.libelle} <span class="n">${reposTexte(t.sec)}</span></button>`).join('');
+
+  z.querySelectorAll('[data-chrono]').forEach(btn => {
+    const t = temps[Number(btn.dataset.chrono)];
+    btn.onclick = () => lancerMinuteur(t.sec, t.libelle);
+  });
+}
+
+/**
  * Bandeau d'avancement : le temps écoulé face au temps prévu, et les exercices
  * bouclés. Le pendule bat chaque minute tant que la séance est ouverte —
  * chaque seconde n'apprendrait rien et réveillerait l'écran pour rien.
@@ -3012,6 +3066,7 @@ async function ouvrirLogger(i) {
   const L = $('#logger');
   L.classList.remove('hidden');
   L.innerHTML = `
+    <div class="logger-col">
     <div class="top"><button class="close">← Retour</button>
       <span class="eyebrow">${e.groupe}</span></div>
     <h3>${e.nom}</h3>
@@ -3039,7 +3094,8 @@ async function ouvrirLogger(i) {
     </div>
     <div id="origine" class="origine"></div>
     <button class="valider">Valider la série ${faitsDe(e).length + 1}</button>
-    <div class="barre"><button class="btn" id="finir" style="flex:1">Terminer cet exercice</button></div>`;
+    <div class="barre"><button class="btn" id="finir" style="flex:1">Terminer cet exercice</button></div>
+    </div>`;
 
   const maj = () => {
     // Le logger a pu être fermé ou remplacé pendant que le chrono tournait :
