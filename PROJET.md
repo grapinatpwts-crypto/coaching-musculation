@@ -117,7 +117,9 @@ attributions/{attributionId}                 # auto-id, TOP-LEVEL (requêtes par
 
 seances/{seanceId}                           # auto-id, TOP-LEVEL (requêtes par email+date)
   email, date, jour, duree_min, duree_prevue, ressenti, notes, exercices_finis: string[]
+                                             # ↳ des ligne_id (voir « Une ligne, un compteur »)
   seances/{seanceId}/series/{serieId}        # auto-id
+                                             # exercice_id (historique) + ligne_id (compteur)
 
 commentaires/{commentaireId}                 # TOP-LEVEL
 compteurs/exercices                          # doc unique { dernier }, transaction pour "EXnnn"
@@ -179,6 +181,31 @@ Fonction `courbeCadence()` dans `index.html`, SVG inline, aucune dépendance.
 
 Purement indicatif : rien n'est chronométré dessus.
 
+### Une ligne, un compteur
+
+Un même exercice peut revenir **plusieurs fois dans un bloc** — Zercher squat en
+4 × 6 à 50 kg, puis 4 × 12 à 30 kg. Ce sont deux lignes de programme distinctes,
+et chacune compte ses propres séries : deux pastilles indépendantes, que le
+pratiquant valide séparément. Rien ne les associe.
+
+C'est pour ça que la série écrite porte **deux** identifiants :
+
+| Champ | Sert à |
+|---|---|
+| `exercice_id` | l'historique de l'exercice, tous programmes confondus — « dernière fois », record, maxi estimé |
+| `ligne_id` | le compteur de la séance en cours — l'id du doc `attributions/{id}/programme/{ligneId}` |
+
+`exercices_finis` porte lui aussi des `ligne_id` : clore une ligne ne clôt pas
+l'autre. Les séances écrites avant l'ajout de `ligne_id` n'en ont pas ; `dataSeance`
+répartit alors leurs séries sur les lignes de leur exercice, dans l'ordre, chacune
+jusqu'à son nombre prévu. Sans ce repli, la première ligne héritait de tout.
+
+**Le compteur ne dépasse jamais la consigne.** Une fois les séries prévues
+validées, la pastille est pleine et inerte, et le bouton du panneau passe à
+« Les N séries sont faites ». Un verrou par ligne (`enEcriture`) empêche deux
+appuis rapprochés d'écrire chacun leur série avant que l'autre n'ait été comptée —
+la pastille répond plus vite que Firestore.
+
 ### Exercices au temps
 
 `duree_s` renseigné bascule l'exercice en mode chrono et `reps_cible` est ignoré.
@@ -197,9 +224,9 @@ comportement documenté dans un vieux commit ou un commentaire Apps Script.
 | `bootstrap` | `chargerProfil` | lecture directe de `pratiquants/{email}` |
 | `seance` | `dataSeance` / `chargerSeance` | assemble aussi maxi, ajustement, historique borné (5 dernières séries/exercice) |
 | `demarrer` | `demarrerSeance` | invariant global (§ voir plus bas), pas par jour |
-| `serie` | `enregistrerSerie` | |
+| `serie` | `enregistrerSerie` | écrit `exercice_id` **et** `ligne_id` (voir « Une ligne, un compteur ») |
 | `terminer` | `terminerSeance` | met aussi à jour `resume.nbSeances` du profil, même lot |
-| `finirExercice` / `reprendreExercice` | `finirExercice` / `reprendreExercice` | `arrayUnion`/`arrayRemove` sur `exercices_finis` |
+| `finirExercice` / `reprendreExercice` | `finirExercice` / `reprendreExercice` | `arrayUnion`/`arrayRemove` sur `exercices_finis`, par `ligne_id` |
 | `annuler` | `supprimerSeance` | |
 | `historique` | `dataHistorique` | |
 | `calendrier` | `dataCalendrier` | |

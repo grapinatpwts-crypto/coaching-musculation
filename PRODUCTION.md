@@ -98,9 +98,11 @@ extérieurs récurrents (jour fixe, fréquence, ou une date ponctuelle) — visi
 par le coach sur la fiche du pratiquant. Séance en blocs, avec supersets, cadence en
 courbe, exercices au temps, et deux minuteurs distincts — pause dans le bloc, repos
 de fin de tour. Charge ajustable par le pratiquant lui-même, qui prime sur celle du
-coach. Une pastille par exercice compte les séries faites et sert de raccourci :
-appui court pour en valider une de plus aux valeurs par défaut, appui long pour
-remplir les séries restantes d'un coup. Sorties partielles à tous les niveaux :
+coach. Une pastille par **ligne de programme** compte les séries faites et sert de
+raccourci : appui court pour en valider une de plus aux valeurs par défaut, appui
+long pour remplir les séries restantes d'un coup. Le compteur s'arrête à la
+consigne du coach, et deux lignes du même exercice dans un bloc restent
+indépendantes — le pratiquant valide l'une puis l'autre. Sorties partielles à tous les niveaux :
 clore un exercice entamé, clore la séance, ou ne rien clore. Calendrier, courbes de
 progression, activités libres hors programme. Commentaires attachés à chaque
 exercice.

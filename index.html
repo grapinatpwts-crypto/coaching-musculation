@@ -566,7 +566,10 @@ async function attributionActive(email) {
   if (snap.empty) return null;
   const att = { id: snap.docs[0].id, ...snap.docs[0].data() };
   const lignes = await getDocs(collection(db, 'attributions', att.id, 'programme'));
-  att.lignes = lignes.docs.map(d => d.data());
+  // L'id du doc voyage avec la ligne : deux lignes peuvent porter le même
+  // exercice dans un bloc (Zercher lourd puis léger) et chacune compte ses
+  // propres séries — voir `ligne_id` dans dataSeance.
+  att.lignes = lignes.docs.map(d => ({ ligne_id: d.id, ...d.data() }));
   return att;
 }
 
@@ -2279,8 +2282,8 @@ async function vueSeance() {
       : `<div class="barre"><button class="btn plein" id="debutSeance" style="flex:1">Démarrer la séance</button></div>`);
 
   const total = S.exos.length;
-  const clos = S.exos.filter(x => S.finis.indexOf(x.exercice_id) !== -1 ||
-    (S.faits[x.exercice_id] || []).length >= x.series).length;
+  const clos = S.exos.filter(x => S.finis.indexOf(x.ligne_id) !== -1 ||
+    faitsDe(x).length >= x.series).length;
   majPendule(clos, total);
 
   const fs = $('#finSeance');
@@ -2394,14 +2397,36 @@ async function dataSeance(jour) {
   const autreSeanceOuverte = active && String(active.jour) !== String(jour)
     ? { jour: active.jour, id: active.id } : null;
 
+  // Séries et exercices clos sont rangés par LIGNE de programme, jamais par
+  // exercice : deux lignes du même exercice dans un bloc gardent chacune leur
+  // compteur et se valident séparément. Les séries écrites avant l'ajout de
+  // `ligne_id` n'en portent pas : on les répartit sur les lignes de leur
+  // exercice, dans l'ordre, chacune jusqu'à son nombre de séries prévu —
+  // sinon la première ligne héritait de tout et affichait « 8/4 ».
   let faits = {}, finis = [];
   if (ouverte) {
-    finis = ouverte.exercices_finis || [];
+    const lignesDuJour = blocsBase.flatMap(b => b.exercices.map(l => ({
+      ligne_id: l.ligne_id, exercice_id: l.exercice_id, series: Number(b.series) || 3
+    })));
+    const parLigne = Object.fromEntries(lignesDuJour.map(l => [l.ligne_id, l]));
+
+    finis = (ouverte.exercices_finis || []).flatMap(id => parLigne[id] ? [id]
+      : lignesDuJour.filter(l => l.exercice_id === id).map(l => l.ligne_id));
+
     const seriesSnap = await getDocs(collection(db, 'seances', ouverte.id, 'series'));
     seriesSnap.docs.map(d => d.data())
       .sort((a, b) => Number(a.serie_num) - Number(b.serie_num))
-      .forEach(s => { (faits[s.exercice_id] = faits[s.exercice_id] || [])
-        .push({ reps: Number(s.reps) || 0, charge: Number(s.charge) || 0, duree_s: Number(s.duree_s) || 0 }); });
+      .forEach(s => {
+        let cle = parLigne[s.ligne_id] ? s.ligne_id : null;
+        if (!cle) {
+          const candidates = lignesDuJour.filter(l => l.exercice_id === s.exercice_id);
+          const libre = candidates.find(l => (faits[l.ligne_id] || []).length < l.series);
+          cle = (libre || candidates[0] || {}).ligne_id;
+        }
+        if (!cle) return;
+        (faits[cle] = faits[cle] || [])
+          .push({ reps: Number(s.reps) || 0, charge: Number(s.charge) || 0, duree_s: Number(s.duree_s) || 0 });
+      });
   }
 
   const blocs = blocsBase.map(b => ({
@@ -2418,7 +2443,8 @@ async function dataSeance(jour) {
       if (ajuste) charge = perso;
       const passe = historiques[l.exercice_id] || [];
       return {
-        exercice_id: l.exercice_id, nom: ex.nom || l.exercice_id, groupe: ex.groupe || '',
+        exercice_id: l.exercice_id, ligne_id: l.ligne_id,
+        nom: ex.nom || l.exercice_id, groupe: ex.groupe || '',
         consigne: ex.consigne || '', photo: ex.photo || '',
         bloc: b.bloc, series: b.series, repos_s: b.repos_s,
         reps_cible: repsTexte(l.reps_cible),
@@ -2488,8 +2514,10 @@ async function demarrerSeance(jour) {
   return { seance_id: ref.id };
 }
 
-/** Enregistre une série de l'exercice en cours. */
-async function enregistrerSerie(seanceId, exerciceId, p) {
+/** Enregistre une série de l'exercice en cours. `exercice_id` reste écrit
+ *  pour l'historique (dernier, record, maxi estimé, tous exercices confondus) ;
+ *  `ligne_id` dit de quelle ligne du programme elle vient. */
+async function enregistrerSerie(seanceId, exerciceId, ligneId, p) {
   const { db, collection, addDoc, serverTimestamp } = FB;
   const reps = Number(p.reps) || 0;
   const duree = Number(p.duree_s) || 0;
@@ -2497,22 +2525,26 @@ async function enregistrerSerie(seanceId, exerciceId, p) {
   if (!(reps > 0) && !(duree > 0)) throw new Error('VALEURS_INVALIDES');
   if (!(charge >= 0)) throw new Error('VALEURS_INVALIDES');
   await addDoc(collection(db, 'seances', seanceId, 'series'), {
-    email: S.email, exercice_id: exerciceId, serie_num: Number(p.serie_num) || 1,
+    email: S.email, exercice_id: exerciceId, ligne_id: ligneId || '',
+    serie_num: Number(p.serie_num) || 1,
     reps: reps || '', duree_s: duree || '', charge, horodatage: serverTimestamp()
   });
 }
 
-/** Clôt un exercice sans exiger que toutes les séries soient faites : le
- *  pratiquant décide qu'il en a fini. Les séries déjà saisies restent. */
-async function finirExercice(seanceId, exerciceId) {
+/** Clôt une ligne de programme sans exiger que toutes les séries soient
+ *  faites : le pratiquant décide qu'il en a fini. Les séries déjà saisies
+ *  restent. Le champ garde son nom `exercices_finis` mais contient désormais
+ *  des `ligne_id` — les anciennes séances y ont des `exercice_id`, relus par
+ *  le repli de dataSeance. */
+async function finirExercice(seanceId, ligneId) {
   const { db, doc, updateDoc, arrayUnion } = FB;
-  await updateDoc(doc(db, 'seances', seanceId), { exercices_finis: arrayUnion(exerciceId) });
+  await updateDoc(doc(db, 'seances', seanceId), { exercices_finis: arrayUnion(ligneId) });
 }
 
-/** Rouvre un exercice clos par erreur. */
-async function reprendreExercice(seanceId, exerciceId) {
+/** Rouvre une ligne close par erreur. */
+async function reprendreExercice(seanceId, ligneId) {
   const { db, doc, updateDoc, arrayRemove } = FB;
-  await updateDoc(doc(db, 'seances', seanceId), { exercices_finis: arrayRemove(exerciceId) });
+  await updateDoc(doc(db, 'seances', seanceId), { exercices_finis: arrayRemove(ligneId) });
 }
 
 /**
@@ -2709,6 +2741,9 @@ function reposTexte(sec) {
   return r ? `${m} min ${r}` : `${m} min`;
 }
 
+/** Séries déjà validées sur CETTE ligne de programme. */
+const faitsDe = e => S.faits[e.ligne_id] || [];
+
 /** Commentaires non lus sur un exercice, pour celui qui regarde. */
 const enAttente = id => ((S.nonLus || {}).exercices || {})[id] || 0;
 
@@ -2724,8 +2759,9 @@ const enAttente = id => ((S.nonLus || {}).exercices || {})[id] || 0;
  * invalide, et la pastille doit rester cliquable indépendamment.
  */
 function carte(e, seul) {
-  const n = (S.faits[e.exercice_id] || []).length;
-  const fini = S.finis.indexOf(e.exercice_id) !== -1;
+  const n = faitsDe(e).length;
+  const complet = n >= e.series;
+  const fini = S.finis.indexOf(e.ligne_id) !== -1;
   const cible = e.duree_s ? duree(e.duree_s) : e.reps_cible;
   return `<div class="card ${fini ? 'clos' : ''}">
     <div class="body" data-i="${e._i}">
@@ -2744,10 +2780,12 @@ function carte(e, seul) {
       ${e.charge_cible ? disques(e.charge_cible) : ''}
     </div>
     ${fini
-      ? `<button class="done full reprendre" data-rep="${e.exercice_id}"
+      ? `<button class="done full reprendre" data-rep="${e.ligne_id}"
            title="Reprendre cet exercice" aria-label="Reprendre ${e.nom}">↺</button>`
-      : `<button class="done ${n >= e.series ? 'full' : ''}" data-valider="${e._i}"
-           aria-label="${n} sur ${e.series} séries — appui court : une série de plus, appui long : au maximum">${n}/${e.series}</button>`}
+      : `<button class="done ${complet ? 'full' : ''}" data-valider="${e._i}"${complet ? ' disabled' : ''}
+           aria-label="${complet
+             ? `${e.series} séries faites, rien de plus à valider`
+             : `${n} sur ${e.series} séries — appui court : une série de plus, appui long : au maximum`}">${n}/${e.series}</button>`}
   </div>`;
 }
 
@@ -2783,8 +2821,8 @@ function rafraichirCarte(e) {
   cablerCarte(e, seul);
 
   const total = S.exos.length;
-  const clos = S.exos.filter(x => S.finis.indexOf(x.exercice_id) !== -1 ||
-    (S.faits[x.exercice_id] || []).length >= x.series).length;
+  const clos = S.exos.filter(x => S.finis.indexOf(x.ligne_id) !== -1 ||
+    faitsDe(x).length >= x.series).length;
   majPendule(clos, total);
 }
 
@@ -2792,18 +2830,38 @@ function rafraichirCarte(e) {
 function cablerCarte(e, seul) {
   const corps = document.querySelector(`.body[data-i="${e._i}"]`);
   if (corps) corps.onclick = () => ouvrirLogger(e._i);
-  const rep = document.querySelector(`[data-rep="${e.exercice_id}"]`);
+  const rep = document.querySelector(`[data-rep="${e.ligne_id}"]`);
   if (rep) rep.onclick = async function () {
     this.disabled = true;
     try {
-      if (S.seanceId) await reprendreExercice(S.seanceId, e.exercice_id);
-      S.finis = S.finis.filter(x => x !== e.exercice_id);
+      if (S.seanceId) await reprendreExercice(S.seanceId, e.ligne_id);
+      S.finis = S.finis.filter(x => x !== e.ligne_id);
       rafraichirCarte(e);
     } catch (err) { toast(err.message); this.disabled = false; }
   };
   const val = document.querySelector(`[data-valider="${e._i}"]`);
-  appuiLong(val, () => validerSerieRapide(e), () => remplirSerieAuMax(e));
+  if (val && !val.disabled) appuiLong(val, () => validerSerieRapide(e), () => remplirSerieAuMax(e));
 }
+
+/**
+ * Le compteur ne dépasse jamais la consigne du coach : une fois les séries
+ * prévues validées, plus rien ne s'ajoute — ni par la pastille, ni par le
+ * panneau. Sans ce plafond, chaque appui de trop écrivait une série de plus
+ * en base et la pastille affichait « 8/4 ». Dit une fois plutôt que d'être
+ * répété sur les trois chemins d'écriture.
+ */
+function auComplet(e) {
+  if (faitsDe(e).length < e.series) return false;
+  toast(`Les ${e.series} séries sont faites`);
+  return true;
+}
+
+/**
+ * Une écriture à la fois par ligne. La pastille répond plus vite que
+ * Firestore : deux appuis rapprochés lisaient tous les deux le même compteur
+ * avant que le premier n'ait poussé sa série, et le plafond sautait.
+ */
+const enEcriture = {};
 
 /**
  * Une série de plus depuis la pastille, sans ouvrir le panneau — reps/charge
@@ -2811,46 +2869,52 @@ function cablerCarte(e, seul) {
  * reste le seul moyen d'ajuster reps/charge/durée avant de valider.
  */
 async function validerSerieRapide(e) {
-  const avaitSeance = !!S.seanceId;
-  if (!(await assurerSeanceActive())) return;
-  const auTemps = !!e.duree_s;
-  const cible = auTemps && String(e.duree_s).toLowerCase() !== 'max' ? Number(e.duree_s) : 0;
-  if (auTemps && !cible) { toast("Ouvrez l'exercice pour chronométrer une série"); return; }
-  const reps = Number(String(e.reps_cible).split('-')[0]) || 10;
-  const charge = e.dernier ? e.dernier.charge : (e.charge_cible || (auTemps ? 0 : 20));
+  if (enEcriture[e.ligne_id] || auComplet(e)) return;
+  enEcriture[e.ligne_id] = true;
   try {
-    const p = { serie_num: (S.faits[e.exercice_id] || []).length + 1, charge };
+    const avaitSeance = !!S.seanceId;
+    if (!(await assurerSeanceActive())) return;
+    const auTemps = !!e.duree_s;
+    const cible = auTemps && String(e.duree_s).toLowerCase() !== 'max' ? Number(e.duree_s) : 0;
+    if (auTemps && !cible) { toast("Ouvrez l'exercice pour chronométrer une série"); return; }
+    const reps = Number(String(e.reps_cible).split('-')[0]) || 10;
+    const charge = e.dernier ? e.dernier.charge : (e.charge_cible || (auTemps ? 0 : 20));
+    const p = { serie_num: faitsDe(e).length + 1, charge };
     if (auTemps) p.duree_s = cible; else p.reps = reps;
-    await enregistrerSerie(S.seanceId, e.exercice_id, p);
-    (S.faits[e.exercice_id] = S.faits[e.exercice_id] || [])
+    await enregistrerSerie(S.seanceId, e.exercice_id, e.ligne_id, p);
+    (S.faits[e.ligne_id] = S.faits[e.ligne_id] || [])
       .push(auTemps ? { duree_s:cible, charge } : { reps, charge });
     if (avaitSeance) rafraichirCarte(e); else vueSeance();
   } catch (err) { toast('Non enregistré : ' + err.message); }
+  finally { delete enEcriture[e.ligne_id]; }
 }
 
 /** Toutes les séries restantes d'un coup, aux mêmes valeurs par défaut. */
 async function remplirSerieAuMax(e) {
-  const avaitSeance = !!S.seanceId;
-  if (!(await assurerSeanceActive())) return;
-  let deja = (S.faits[e.exercice_id] || []).length;
-  const manquant = e.series - deja;
-  if (manquant <= 0) return;
-  const auTemps = !!e.duree_s;
-  const cible = auTemps && String(e.duree_s).toLowerCase() !== 'max' ? Number(e.duree_s) : 0;
-  if (auTemps && !cible) { toast("Ouvrez l'exercice pour chronométrer une série"); return; }
-  const reps = Number(String(e.reps_cible).split('-')[0]) || 10;
-  const charge = e.dernier ? e.dernier.charge : (e.charge_cible || (auTemps ? 0 : 20));
+  if (enEcriture[e.ligne_id] || auComplet(e)) return;
+  enEcriture[e.ligne_id] = true;
   try {
+    const avaitSeance = !!S.seanceId;
+    if (!(await assurerSeanceActive())) return;
+    let deja = faitsDe(e).length;
+    const manquant = e.series - deja;
+    if (manquant <= 0) return;   // auComplet a déjà prévenu
+    const auTemps = !!e.duree_s;
+    const cible = auTemps && String(e.duree_s).toLowerCase() !== 'max' ? Number(e.duree_s) : 0;
+    if (auTemps && !cible) { toast("Ouvrez l'exercice pour chronométrer une série"); return; }
+    const reps = Number(String(e.reps_cible).split('-')[0]) || 10;
+    const charge = e.dernier ? e.dernier.charge : (e.charge_cible || (auTemps ? 0 : 20));
     for (let i = 0; i < manquant; i++) {
       deja++;
       const p = { serie_num: deja, charge };
       if (auTemps) p.duree_s = cible; else p.reps = reps;
-      await enregistrerSerie(S.seanceId, e.exercice_id, p);
-      (S.faits[e.exercice_id] = S.faits[e.exercice_id] || [])
+      await enregistrerSerie(S.seanceId, e.exercice_id, e.ligne_id, p);
+      (S.faits[e.ligne_id] = S.faits[e.ligne_id] || [])
         .push(auTemps ? { duree_s:cible, charge } : { reps, charge });
     }
     if (avaitSeance) rafraichirCarte(e); else vueSeance();
   } catch (err) { toast('Non enregistré : ' + err.message); }
+  finally { delete enEcriture[e.ligne_id]; }
 }
 
 const arrondi = n => Math.round(n * 10) / 10;
@@ -2974,7 +3038,7 @@ async function ouvrirLogger(i) {
         <div class="row"><button data-c="-2.5">−</button><button data-c="2.5">+</button></div></div>
     </div>
     <div id="origine" class="origine"></div>
-    <button class="valider">Valider la série ${(S.faits[e.exercice_id] || []).length + 1}</button>
+    <button class="valider">Valider la série ${faitsDe(e).length + 1}</button>
     <div class="barre"><button class="btn" id="finir" style="flex:1">Terminer cet exercice</button></div>`;
 
   const maj = () => {
@@ -2992,9 +3056,11 @@ async function ouvrirLogger(i) {
     $('#vCharge').textContent = charge;
     majOrigine(e, charge);
     const btn = L.querySelector('.valider');
-    btn.textContent = `Valider la série ${(S.faits[e.exercice_id] || []).length + 1}`;
-    btn.disabled = auTemps && ecoule === 0;
-    $('#sets').innerHTML = (S.faits[e.exercice_id] || []).map((x, n) =>
+    const dejaFaites = faitsDe(e).length;
+    const complet = dejaFaites >= e.series;
+    btn.textContent = complet ? `Les ${e.series} séries sont faites` : `Valider la série ${dejaFaites + 1}`;
+    btn.disabled = complet || (auTemps && ecoule === 0);
+    $('#sets').innerHTML = faitsDe(e).map((x, n) =>
       `<span class="set">${n + 1} · ${x.duree_s ? duree(x.duree_s) : x.reps + ' × ' + x.charge + ' kg'}</span>`).join('');
   };
   maj();
@@ -3018,7 +3084,7 @@ async function ouvrirLogger(i) {
   L.querySelector('.close').onclick = () => { clearInterval(chrono); L.classList.add('hidden'); vueSeance(); };
   L.querySelector('#commenter').onclick = () => modalCommentaires(e.exercice_id, e.nom, null);
 
-  const ouvert = x => S.finis.indexOf(x.exercice_id) === -1;
+  const ouvert = x => S.finis.indexOf(x.ligne_id) === -1;
 
   /**
    * Après une série validée, deux minuteurs distincts :
@@ -3028,7 +3094,7 @@ async function ouvrirLogger(i) {
    * lui-même, sans forcément avoir fait toutes ses séries.
    */
   const suite = (clos) => {
-    const faits = (S.faits[e.exercice_id] || []).length;
+    const faits = faitsDe(e).length;
     const apres = b.exercices.slice(e._e + 1).filter(ouvert);
 
     if (N > 1 && apres.length) {
@@ -3051,8 +3117,8 @@ async function ouvrirLogger(i) {
     clearInterval(chrono); chrono = null; tourne = false;
     if (!(await assurerSeanceActive())) { this.disabled = false; return; }
     try {
-      await finirExercice(S.seanceId, e.exercice_id);
-      if (ouvert(e)) S.finis.push(e.exercice_id);
+      await finirExercice(S.seanceId, e.ligne_id);
+      if (ouvert(e)) S.finis.push(e.ligne_id);
       suite(true);
     } catch (err) { toast(err.message); this.disabled = false; }
   };
@@ -3062,11 +3128,11 @@ async function ouvrirLogger(i) {
     clearInterval(chrono); chrono = null; tourne = false;
     if (!(await assurerSeanceActive())) { this.disabled = false; return; }
     try {
-      const num = (S.faits[e.exercice_id] || []).length + 1;
+      const num = faitsDe(e).length + 1;
       const p = { serie_num:num, charge };
       if (auTemps) p.duree_s = ecoule; else p.reps = reps;
-      await enregistrerSerie(S.seanceId, e.exercice_id, p);
-      (S.faits[e.exercice_id] = S.faits[e.exercice_id] || [])
+      await enregistrerSerie(S.seanceId, e.exercice_id, e.ligne_id, p);
+      (S.faits[e.ligne_id] = S.faits[e.ligne_id] || [])
         .push(auTemps ? { duree_s:ecoule, charge } : { reps, charge });
       if (auTemps) { ecoule = 0; const g = L.querySelector('#go'); if (g) g.textContent = 'Démarrer'; }
       maj();
@@ -3139,8 +3205,8 @@ function courbeCadence(c, grand) {
  */
 function modalFinSeance() {
   const total = S.exos.length;
-  const clos = S.exos.filter(x => S.finis.indexOf(x.exercice_id) !== -1 ||
-    (S.faits[x.exercice_id] || []).length >= x.series).length;
+  const clos = S.exos.filter(x => S.finis.indexOf(x.ligne_id) !== -1 ||
+    faitsDe(x).length >= x.series).length;
   const mins = S.debut ? Math.max(1, Math.round((Date.now() - new Date(S.debut)) / 60000)) : '';
   const faites = Object.keys(S.faits).reduce((n, k) => n + (S.faits[k] || []).length, 0);
 
