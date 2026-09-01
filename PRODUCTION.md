@@ -95,7 +95,11 @@ Accueil qui annonce la prochaine séance et l'avancement du programme, sans le d
 des exercices, plus un bandeau de la semaine (lundi à dimanche : quel jour de
 programme tombe où, déjà fait ou non) et un planning personnel pour les engagements
 extérieurs récurrents (jour fixe, fréquence, ou une date ponctuelle) — visible aussi
-par le coach sur la fiche du pratiquant. Séance en blocs, avec supersets, cadence en
+par le coach sur la fiche du pratiquant, et reporté dans le bandeau comme dans le
+calendrier. Les deux grilles nomment ce qu'elles montrent au lieu d'un point :
+« Séance 2 », « Arts martiaux », en rouge pour ce que le coach a prescrit et dans
+l'encre du texte pour ce que le pratiquant a posé, plein quand ça a eu lieu et en
+contour quand c'est encore prévu. Séance en blocs, avec supersets, cadence en
 courbe, exercices au temps, et deux minuteurs distincts — pause dans le bloc, repos
 de fin de tour — enchaînés automatiquement depuis la saisie, ou lançables à la main
 depuis une rangée de chronos en haut de la séance, qui reprend les durées du jour. Charge ajustable par le pratiquant lui-même, qui prime sur celle du

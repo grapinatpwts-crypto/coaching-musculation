@@ -136,22 +136,33 @@ header h2{font-size:30px;text-transform:uppercase;line-height:1}
   border:1px solid var(--edge);font-size:18px;color:var(--dust)}
 .cal{display:grid;grid-template-columns:repeat(7,1fr);gap:5px}
 .cal .jc{font-size:10px;letter-spacing:.1em;color:var(--dust);text-align:center;padding-bottom:4px;font-weight:600}
-.cal .c{aspect-ratio:1;border-radius:9px;background:var(--plate);border:1px solid var(--edge);
-  display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;
-  font-size:13px;font-variant-numeric:tabular-nums;color:var(--dust);padding:0}
+/* La case n'est plus un pictogramme : elle liste ce qui tombe ce jour-là. Elle
+   grandit donc en hauteur au lieu d'être carrée, et c'est l'étiquette qui
+   porte la couleur — plus la case entière. */
+.cal .c{min-height:62px;border-radius:9px;background:var(--plate);border:1px solid var(--edge);
+  display:flex;flex-direction:column;align-items:stretch;justify-content:flex-start;gap:2px;
+  font-size:13px;font-variant-numeric:tabular-nums;color:var(--dust);padding:4px 3px;overflow:hidden}
+.cal .c .n{font-size:11px;text-align:center;line-height:1.1}
 .cal .c.vide{background:none;border-color:transparent}
 .cal .c.today{border-color:var(--dust)}
-.cal .c.faite{background:var(--brand);border-color:var(--brand);color:var(--on-brand);font-weight:700}
+/* Rouge : ce que le coach a prescrit. Encre du texte : ce que le pratiquant a
+   posé lui-même. Aplat = eu lieu, contour = prévu. */
+/* L'étiquette sans classe est celle du pratiquant — l'encre du texte, donc
+   blanche sur fond sombre et noire en thème clair. `.coach` la repeint en
+   rouge. `.prevu` vide l'aplat : ce qui a eu lieu est plein, ce qui est au
+   planning est en contour. */
+.eti{display:block;border-radius:4px;font-size:9.5px;line-height:1.3;padding:2px 3px;font-weight:700;
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis;text-align:left;
+  background:var(--chalk);border:1px solid var(--chalk);color:var(--iron)}
+.eti.prevu{background:none;color:var(--chalk)}
+.eti.coach{background:var(--brand);border-color:var(--brand);color:var(--on-brand)}
+.eti.coach.prevu{background:none;color:var(--brand-ink)}
+.eti.plus{background:none;border-color:transparent;color:var(--dust);font-weight:600;padding:1px 3px}
 .card.clos .nom{color:var(--dust)}
 .card.clos{display:flex;align-items:center;gap:12px}
 .card.clos .body{opacity:.72;flex:1;min-width:0;cursor:pointer}
 .reprendre{font-size:17px;line-height:1;flex:0 0 auto}
 .cal .c[aria-pressed="true"]{outline:2px solid var(--brand-ink);outline-offset:1px}
-.cal .c .pts{display:flex;gap:3px}
-.cal .c .pt{width:4px;height:4px;border-radius:50%;background:var(--on-brand)}
-.cal .c .pt.libre{background:var(--brand-ink)}
-.cal .c.libre{border-color:var(--brand);color:var(--chalk)}
-.cal .c.libre .pt.libre{background:var(--brand-ink)}
 .card.libre{border-left:3px solid var(--brand-ink)}
 .chip.libre{background:rgba(224,82,83,.15);color:var(--brand-ink)}
 .legende{font-size:12px;color:var(--dust);margin:12px 0 4px;display:flex;gap:14px;flex-wrap:wrap}
@@ -1912,17 +1923,23 @@ async function vueAccueil() {
   const p = a.progression;
   const part = p ? Math.round(p.part * 100) : 0;
 
-  const nomsRecurrences = j => (j.recurrences || []).map(r => r.sport).join(', ');
+  // Le bandeau dit la même chose que le calendrier, dans les mêmes couleurs :
+  // rouge pour la séance du coach, encre du texte pour ce que le pratiquant a
+  // posé. Une séance déjà faite est en aplat, ce qui reste à venir en contour.
+  const itemsSemaine = j => (j.jour ? [{ nom: nomCourt(j.jour), coach: true, fait: j.fait, heure: '' }] : [])
+    .concat((j.recurrences || []).map(r => ({ nom: r.sport, coach: false, fait: false, heure: r.heure || '' })));
   $('#zone').innerHTML = `
     <div class="eyebrow">Cette semaine</div>
     <div class="cal" style="margin-top:6px">
       ${JOURSC.map(j => `<div class="jc">${j}</div>`).join('')}
-      ${a.semaine.map(j => `<button class="c ${j.fait ? 'faite' : ''} ${!j.jour && j.recurrences.length ? 'libre' : ''} ${j.aujourdhui ? 'today' : ''}"
+      ${a.semaine.map(j => {
+        const items = itemsSemaine(j);
+        return `<button class="c ${j.aujourdhui ? 'today' : ''}"
         ${j.jour ? `data-jsem="${j.jour}"` : 'disabled'}
-        aria-label="${[j.jour, j.jour ? (j.fait ? 'faite' : 'à faire') : '', nomsRecurrences(j)].filter(Boolean).join(' · ') || 'rien de prévu'}">
-        ${j.jour || j.recurrences.length ? `<span class="pts">${
-          j.jour ? '<i class="pt"></i>' : ''}${j.recurrences.length ? '<i class="pt libre"></i>' : ''}</span>` : ''}
-      </button>`).join('')}
+        aria-label="${[j.jour ? j.jour + (j.fait ? ' · faite' : ' · à faire') : '',
+          resumeJour(items.filter(x => !x.coach)).slice(3)].filter(Boolean).join(' · ') || 'rien de prévu'}"
+        >${etiquettes(items)}</button>`;
+      }).join('')}
     </div>
 
     ${a.prochaine ? `
@@ -3538,6 +3555,70 @@ const JOURSC = ['L', 'M', 'M', 'J', 'V', 'S', 'D'];
 const cleJour = d => d.getFullYear() + '-' +
   String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
 
+/** Rang lundi=0 d'un libellé qui contient un jour — « Mercredi — Séance 2 » → 2. */
+function rangJour(j) {
+  const t = String(j).toLowerCase();
+  for (let i = 0; i < SEMAINE.length; i++) if (t.indexOf(SEMAINE[i].toLowerCase()) !== -1) return i;
+  return -1;
+}
+
+/**
+ * « Mercredi — Séance 2 » → « Séance 2 ». Dans une case de calendrier large de
+ * quelques dizaines de pixels, le jour est déjà donné par la colonne : le
+ * répéter mangerait la seule place utile. Un libellé sans tiret est rendu tel
+ * quel — c'est le coach qui nomme ses jours, on ne lui invente pas de nom.
+ */
+function nomCourt(libelle) {
+  const t = String(libelle || '').trim();
+  const i = t.search(/[—–-]/);
+  const court = i !== -1 ? t.slice(i + 1).trim() : t;
+  return court || t;
+}
+
+/**
+ * Les planifications qui tombent une date donnée. Le récurrent mensuel en est
+ * absent volontairement : son seul champ de jour est un jour de la SEMAINE, il
+ * ne dit pas quelle semaine du mois — le placer sur une date serait inventer
+ * une information que le pratiquant n'a jamais donnée. Il reste visible dans
+ * la liste de gestion, comme dans le bandeau.
+ */
+function planifsDuJour(planifs, date) {
+  return (planifs || []).filter(r => {
+    if (r.recurrent) {
+      if (r.frequence !== 'semaine') return false;
+      if (rangJour(r.jour) !== (date.getDay() + 6) % 7) return false;
+      if (r.date_debut && cleJour(date) < cleJour(new Date(r.date_debut))) return false;
+      if (r.date_fin && cleJour(date) > cleJour(new Date(r.date_fin))) return false;
+      return true;
+    }
+    return r.date && cleJour(new Date(r.date)) === cleJour(date);
+  });
+}
+
+/**
+ * Ce qui tombe un jour donné, dans l'ordre où ça se lit : la séance du coach
+ * d'abord — c'est elle qui structure la journée — puis le reste à l'heure de
+ * début. Ce qui n'a pas d'heure passe en dernier plutôt que d'être placé au
+ * hasard à minuit.
+ */
+function agendaDuJour(items) {
+  return items.slice().sort((a, b) => {
+    if (a.coach !== b.coach) return a.coach ? -1 : 1;
+    const ha = a.heure || '', hb = b.heure || '';
+    if (!ha !== !hb) return ha ? -1 : 1;
+    return ha.localeCompare(hb);
+  });
+}
+
+/** Les étiquettes d'une case, au plus trois puis un « +N » qui compte le reste. */
+function etiquettes(items, max) {
+  const tri = agendaDuJour(items);
+  const n = max || 3;
+  const vus = tri.slice(0, n).map(x => `<span class="eti${x.coach ? ' coach' : ''}${
+    x.fait ? '' : ' prevu'}" title="${x.nom}">${x.nom}</span>`).join('');
+  return vus + (tri.length > n ? `<span class="eti plus">+${tri.length - n}</span>` : '');
+}
+
 async function vueCalendrier(email) {
   const cible = email || null;
   if (!S.cal || S.cal.email !== cible) {
@@ -3556,7 +3637,15 @@ async function peindreCalendrier() {
   if (!c.seances) {
     z.innerHTML = `<div class="empty">Chargement…</div>`;
     const p = { depuis: new Date(Date.now() - 365 * 86400000).toISOString() };
-    try { c.seances = await dataCalendrier(c.email || S.email, p); }
+    try {
+      // Le planning est une intention, l'historique un fait : deux collections,
+      // deux lectures, réunies seulement à l'affichage.
+      const [faits, planifs] = await Promise.all([
+        dataCalendrier(c.email || S.email, p),
+        dataRecurrences(c.email || S.email)
+      ]);
+      c.seances = faits; c.planifs = planifs;
+    }
     catch (err) { z.innerHTML = `<div class="empty">Impossible de charger.<br>${err.message}</div>`; return; }
   }
 
@@ -3576,16 +3665,11 @@ async function peindreCalendrier() {
   for (let d = 1; d <= nb; d++) {
     const date = new Date(c.annee, c.mois, d);
     const k = cleJour(date);
-    const duJour = parJour[k] || [];
-    const seance = duJour.some(x => x.type !== 'activite');
-    const libre = duJour.some(x => x.type === 'activite');
-    // Séance du programme en aplat, activité libre en contour : le coach doit
-    // distinguer d'un regard ce qu'il a prescrit de ce que le pratiquant a ajouté.
-    const classe = seance ? 'faite' : libre ? 'libre' : '';
-    cases += `<button class="c ${classe} ${date.toDateString() === ajd ? 'today' : ''}"
-      data-j="${k}" aria-pressed="${c.sel === k}">${d}${
-      duJour.length ? `<span class="pts">${seance ? '<i class="pt"></i>' : ''}${
-        libre ? '<i class="pt libre"></i>' : ''}</span>` : ''}</button>`;
+    const items = itemsDuJour(c, date, parJour[k]);
+    cases += `<button class="c ${date.toDateString() === ajd ? 'today' : ''}"
+      data-j="${k}" aria-pressed="${c.sel === k}"
+      aria-label="${d} ${MOIS[c.mois]}${resumeJour(items)}"
+      ><span class="n">${d}</span>${etiquettes(items)}</button>`;
   }
 
   // Bilan du mois affiché
@@ -3623,7 +3707,21 @@ async function peindreCalendrier() {
 
   if (c.sel) {
     const ss = parJour[c.sel] || [];
-    $('#detail').innerHTML = ss.length
+    const prevues = planifsDuJour(c.planifs, dateDeCle(c.sel));
+    $('#detail').innerHTML = (prevues.length ? prevues.map(r => `
+      <div class="card" style="display:block;margin-top:14px">
+        <div class="entete" style="margin-bottom:4px">
+          <span class="chip libre">Au planning</span>
+          <span class="meta" style="flex:1;text-align:right">${
+            dateDeCle(c.sel).toLocaleDateString('fr-FR', { weekday:'long', day:'numeric', month:'long' })}</span>
+        </div>
+        <div class="nom">${r.sport}</div>
+        <div class="sets">
+          ${r.heure ? `<span class="set">${r.heure}</span>` : ''}
+          ${r.duree_min ? `<span class="set">${r.duree_min} min</span>` : ''}
+        </div>
+        ${r.notes ? `<p class="consigne" style="margin-top:10px">${r.notes}</p>` : ''}
+      </div>`).join('') : '') + (ss.length
       ? ss.map(s => s.type === 'activite'
         ? `<div class="card libre" style="display:block;margin-top:14px">
             <div class="entete" style="margin-bottom:4px">
@@ -3650,8 +3748,35 @@ async function peindreCalendrier() {
             </div>
             ${s.notes ? `<p class="consigne" style="margin-top:10px">${s.notes}</p>` : ''}
           </div>`).join('')
-      : `<div class="empty" style="padding:24px 0">Rien ce jour-là.</div>`;
+      : prevues.length ? '' : `<div class="empty" style="padding:24px 0">Rien ce jour-là.</div>`);
   }
+}
+
+/** Clé « 2026-09-02 » → Date locale, sans passer par un fuseau. */
+function dateDeCle(k) {
+  const [a, m, j] = String(k).split('-').map(Number);
+  return new Date(a, m - 1, j);
+}
+
+/**
+ * Ce qui tombe un jour du calendrier, sous la forme que lisent `etiquettes` :
+ * séances et activités déjà enregistrées (des faits), plus les planifications
+ * projetées sur cette date (des intentions).
+ */
+function itemsDuJour(c, date, faits) {
+  const items = (faits || []).map(x => x.type === 'activite'
+    ? { nom: x.sport, coach: false, fait: true, heure: '' }
+    : { nom: nomCourt(x.jour) || 'Séance', coach: true, fait: true, heure: '' });
+  planifsDuJour(c.planifs, date).forEach(r =>
+    items.push({ nom: r.sport, coach: false, fait: false, heure: r.heure || '' }));
+  return items;
+}
+
+/** Le même contenu, dit à voix haute pour le lecteur d'écran — la troncature
+ *  visuelle et le « +N » ne doivent rien lui cacher. */
+function resumeJour(items) {
+  const noms = agendaDuJour(items).map(x => x.nom);
+  return noms.length ? ' · ' + noms.join(', ') : '';
 }
 
 // ── Vue coach ────────────────────────────────────────────────

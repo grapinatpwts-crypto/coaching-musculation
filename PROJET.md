@@ -177,6 +177,47 @@ d'où vient le temps mort ; lancé à la main, un chrono de 30 s est un chrono d
 30 s. La déduplication porte donc sur la seule durée : un repos et une pause
 de même longueur ne font qu'un bouton.
 
+### Le calendrier et le bandeau nomment ce qu'ils montrent
+
+Les deux grilles — le bandeau « Cette semaine » de l'accueil et le calendrier
+mensuel — partagent le même vocabulaire visuel, produit par `etiquettes()` :
+
+| Étiquette | Ce que c'est |
+|---|---|
+| rouge, aplat | une séance du coach qui a eu lieu |
+| rouge, contour | une séance du coach encore à faire |
+| encre du texte, aplat | une activité que le pratiquant a consignée |
+| encre du texte, contour | une planification — son intention, pas un fait |
+
+Deux couleurs, deux états : **le rouge dit qui l'a décidé** (le coach),
+**l'aplat dit que ça a eu lieu**. « Encre du texte » est `--chalk` : blanche
+sur le thème sombre, noire sur le clair, sans règle en double.
+
+Chaque étiquette porte un **nom court** plutôt qu'un point : `nomCourt()`
+coupe au tiret — « Mercredi — Séance 2 » devient « Séance 2 » — parce que la
+colonne donne déjà le jour et que la place restante vaut mieux qu'une
+redite. Un libellé sans tiret est rendu tel quel : c'est le coach qui nomme
+ses jours.
+
+Une journée peut en porter plusieurs. L'ordre est celui de `agendaDuJour()` :
+**la séance du coach d'abord** — c'est elle qui structure la journée — puis le
+reste à l'heure de début, et ce qui n'a pas d'heure en dernier plutôt que placé
+au hasard à minuit. Au-delà de trois, un « +N » compte le reste ; le
+`aria-label` de la case, lui, énonce tout, la troncature ne doit rien cacher au
+lecteur d'écran.
+
+Le calendrier lit deux sources sans jamais les confondre : l'historique
+(`dataCalendrier`, des faits) et le planning (`dataRecurrences`, des
+intentions), réunis seulement à l'affichage par `itemsDuJour()`. Le récurrent
+**mensuel** n'est projeté sur aucune date : son seul champ de jour est un jour
+de la semaine, il ne dit pas quelle semaine du mois — le placer serait inventer
+ce que le pratiquant n'a jamais donné. Il reste dans la liste de gestion.
+
+Ce qui n'y est **pas** : les séances du programme encore à venir sur des jours
+passés. Le calendrier dirait alors « tu devais, tu n'as pas » sur chaque case
+vide — un jugement que l'app ne porte nulle part ailleurs (§ 8, « aucune notion
+d'échec »).
+
 ### Cadence
 
 `cadence` est un tempo en quatre temps, dans l'ordre
