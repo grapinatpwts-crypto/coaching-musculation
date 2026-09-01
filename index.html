@@ -87,6 +87,10 @@ button{font-family:inherit;font-size:16px;border:0;cursor:pointer;color:inherit;
 #marque{width:min(112px,26vw);height:auto}
 #login h1 span{display:block;color:var(--brand-ink)}
 #login p{color:var(--dust);max-width:32ch;margin:0;line-height:1.5}
+/* Le bouton de connexion est le nôtre depuis le passage à Firebase Auth :
+   Google Identity Services dessinait le sien, le SDK Firebase n'en fournit pas. */
+.bgoogle{min-height:48px;padding:0 22px;border-radius:999px;background:var(--brand);
+  color:var(--on-brand);font-weight:600;font-size:16px;border:1px solid var(--brand)}
 
 /* En-tête */
 header{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:22px;flex-wrap:wrap}
@@ -397,11 +401,85 @@ header h2{font-size:30px;text-transform:uppercase;line-height:1}
 <div id="logger" class="hidden"></div>
 <div id="repos" class="hidden"></div>
 
-<script src="https://accounts.google.com/gsi/client" async defer></script>
+<!--
+  Pont vers le SDK Firebase. Le script principal reste un script classique : le
+  convertir en module l'aurait passé en mode strict d'un bloc, sur 3100 lignes
+  écrites sans lui. On importe donc ici, et on expose sur `window.FB` ce dont il
+  a besoin. Les modules s'exécutent avant `window.onload`, qui démarre l'app :
+  `FB` est donc toujours prêt quand le script principal s'en sert.
+
+  Les identifiants ci-dessous sont publics par nature — la sécurité tient aux
+  Security Rules, pas à leur secret, comme l'était déjà le CLIENT_ID Google.
+-->
+<script type="module">
+import { initializeApp } from 'https://www.gstatic.com/firebasejs/12.18.0/firebase-app.js';
+import { getAuth, GoogleAuthProvider, signInWithPopup, onAuthStateChanged, signOut }
+  from 'https://www.gstatic.com/firebasejs/12.18.0/firebase-auth.js';
+import { initializeFirestore, persistentLocalCache, persistentMultipleTabManager,
+         doc, getDoc, getDocs, collection, collectionGroup, query, where, orderBy, limit,
+         onSnapshot, setDoc, addDoc, updateDoc, deleteDoc, writeBatch, runTransaction,
+         serverTimestamp, increment }
+  from 'https://www.gstatic.com/firebasejs/12.18.0/firebase-firestore.js';
+
+const app = initializeApp({
+  apiKey: 'AIzaSyDzKOeKwPDJ7CxD1uoPvLNzeGPzJX8knCE',
+  authDomain: 'coaching-musculation-f0c1c.firebaseapp.com',
+  projectId: 'coaching-musculation-f0c1c',
+  storageBucket: 'coaching-musculation-f0c1c.firebasestorage.app',
+  messagingSenderId: '987770049003',
+  appId: '1:987770049003:web:9539975011af967ef7c9ae'
+});
+
+// Le cache persistant remplace le cache de lecture et la file d'écriture qu'on
+// tenait à la main : lectures servies hors ligne, écritures rejouées au retour
+// du réseau, sans identifiant provisoire puisque Firestore génère l'id côté client.
+const db = initializeFirestore(app, {
+  localCache: persistentLocalCache({ tabManager: persistentMultipleTabManager() })
+});
+
+window.FB = {
+  auth: getAuth(app), db, GoogleAuthProvider, signInWithPopup, onAuthStateChanged, signOut,
+  doc, getDoc, getDocs, collection, collectionGroup, query, where, orderBy, limit,
+  onSnapshot, setDoc, addDoc, updateDoc, deleteDoc, writeBatch, runTransaction,
+  serverTimestamp, increment
+};
+</script>
 <script>
 // ── Configuration ────────────────────────────────────────────
-const API = 'https://script.google.com/macros/s/AKfycbw8wC_TmFuLzP8yTrOmX5wH5k3Yoc-AbauN3Hj9oF57Lc1NSA-MrclnkuTnKr8DtBpEiQ/exec';                  // URL /exec du déploiement Apps Script
-const CLIENT_ID = '765877661024-r5p4dhadda0i9eb9996ctb8298f7m6h8.apps.googleusercontent.com';
+// Constantes autrefois servies par Apps Script (CONFIG/SPORTS dans Code.js) :
+// elles ne dépendaient d'aucune donnée, elles vivent maintenant côté client.
+const COACH_NOM = 'Jérémy';
+const BAR_KG = 20;              // poids de la barre olympique, pour l'affichage des disques
+
+/** Sports proposés à la saisie libre, groupés par famille. */
+const SPORTS = [
+  ['Salle', ['Musculation', 'Séance libre', 'Cross-training', 'Cardio', 'Circuit training',
+             'Poids de corps', 'Kettlebell', 'Rameur', 'Vélo d\'intérieur', 'Elliptique', 'Stepper']],
+  ['Course', ['Course à pied', 'Trail', 'Tapis de course', 'Marche', 'Marche nordique', 'Randonnée']],
+  ['Vélo', ['Vélo de route', 'VTT', 'Spinning', 'Gravel']],
+  ['Eau', ['Natation', 'Eau libre', 'Aviron', 'Kayak', 'Surf', 'Paddle']],
+  ['Collectif', ['Football', 'Basketball', 'Handball', 'Rugby', 'Volleyball']],
+  ['Raquette', ['Tennis', 'Padel', 'Badminton', 'Squash', 'Tennis de table']],
+  ['Combat', ['Boxe', 'Arts martiaux', 'Grappling', 'Escrime']],
+  ['Souplesse', ['Yoga', 'Pilates', 'Étirements', 'Mobilité', 'Méditation']],
+  ['Glisse', ['Ski', 'Snowboard', 'Patinage', 'Escalade', 'Équitation']],
+  ['Autre', ['Danse', 'Golf', 'Jardinage', 'Autre']]
+];
+
+/**
+ * Tri des jours par ordre de la semaine, le libellé pouvant être « Lundi — Haut ».
+ * S'appuie sur SEMAINE, déclaré plus bas avec les jours capitalisés : la
+ * comparaison se fait en minuscules des deux côtés.
+ */
+function triJours(a, b) {
+  const rang = j => {
+    const t = String(j).toLowerCase();
+    for (let i = 0; i < SEMAINE.length; i++) if (t.indexOf(SEMAINE[i].toLowerCase()) !== -1) return i;
+    return 99;
+  };
+  const d = rang(a) - rang(b);
+  return d !== 0 ? d : String(a).localeCompare(String(b));
+}
 
 // ── État ─────────────────────────────────────────────────────
 const S = { token:null, moi:null, jour:null, exos:[], blocs:[], seanceId:null, debut:null,
@@ -409,26 +487,14 @@ const S = { token:null, moi:null, jour:null, exos:[], blocs:[], seanceId:null, d
 const $ = s => document.querySelector(s);
 
 // ── Appels API ───────────────────────────────────────────────
+// PORTAGE EN COURS — Apps Script n'est plus joignable : il vérifiait un jeton
+// Google émis pour son propre CLIENT_ID, que Firebase Auth ne produit pas.
+// Chaque action encore appelée ici reste donc à porter vers Firestore ; on échoue
+// franchement, sans appel réseau, pour que la liste des restes soit lisible en
+// console plutôt que noyée dans des erreurs de jeton.
 async function api(action, payload = {}) {
-  let j;
-  try {
-    const r = await fetch(API, {
-      method:'POST',
-      headers:{'Content-Type':'text/plain;charset=utf-8'},   // évite le préflight CORS
-      body:JSON.stringify({ token:S.token, action, payload })
-    });
-    j = await r.json();
-  } catch (e) {
-    // Réseau absent, ou réponse illisible (portail captif) : traité comme une panne,
-    // jamais comme une erreur métier — l'appelant peut différer l'action.
-    throw new Error('RESEAU');
-  }
-  if (!j.ok) {
-    if (/TOKEN/.test(j.error)) return reconnexion();
-    throw new Error(j.error);
-  }
-  perimer(action);
-  return j.data;
+  console.warn('[à porter] action non migrée vers Firestore :', action, payload);
+  throw new Error('NON_PORTE_' + action);
 }
 
 function toast(msg) {
@@ -684,80 +750,83 @@ window.addEventListener('online', () => { S.horsLigne = false; majBandeau(); vid
 window.addEventListener('offline', () => { S.horsLigne = true; majBandeau(); });
 setInterval(viderFile, 20000);
 
-// ── Connexion Google et session ──────────────────────────────
-const CLE_SESSION = 'muscu.session';
+// ── Connexion Firebase et profil ─────────────────────────────
+// Firebase Auth persiste lui-même la session (IndexedDB) : plus de jeton ni de
+// profil à ranger dans localStorage, plus d'expiration à surveiller. Le SDK
+// renouvelle le jeton tout seul, `onAuthStateChanged` fait foi.
 
-/** `exp` du jeton Google, en secondes epoch. 0 si illisible. */
-function expiration(jwt) {
-  try {
-    const c = jwt.split('.')[1].replace(/-/g, '+').replace(/_/g, '/');
-    return JSON.parse(decodeURIComponent(escape(atob(c)))).exp || 0;
-  } catch (e) { return 0; }
+/**
+ * Le profil que le reste de l'app attend — l'ancien `bootstrap` d'Apps Script.
+ * Une lecture du document de profil, plus les jours du programme en vigueur.
+ * Hors ligne, le cache persistant de Firestore répond sans réseau.
+ */
+async function chargerProfil(email) {
+  const { db, doc, getDoc } = FB;
+  const snap = await getDoc(doc(db, 'pratiquants', email));
+  if (!snap.exists()) throw new Error('NON_INSCRIT');
+  const p = snap.data();
+  return {
+    email,
+    nom: p.nom || '',
+    objectif: p.objectif || '',
+    estCoach: p.role === 'coach',
+    admin: p.admin === true,
+    coach: COACH_NOM,
+    sports: SPORTS,
+    jours: await joursDuProgramme(email),
+    barKg: BAR_KG
+  };
 }
 
 /**
- * La session tient dans localStorage : le jeton Google et le profil.
- * Le jeton expire de lui-même au bout d'une heure environ ; on ne le garde
- * que tant qu'il est valide, et la clé est effacée à la déconnexion.
+ * Jours du programme en vigueur : ceux de l'attribution « En cours ».
+ * S'il y en avait plusieurs — l'invariant peut se casser sur un double envoi —
+ * on prend la plus récente, comme le faisait `attributionActive_`.
  */
-function sauverSession() {
-  try {
-    localStorage.setItem(CLE_SESSION, JSON.stringify({
-      token: S.token, exp: S.exp, moi: S.moi
-    }));
-  } catch (e) {}
-}
+async function joursDuProgramme(email) {
+  const { db, collection, query, where, orderBy, limit, getDocs } = FB;
+  const att = await getDocs(query(collection(db, 'attributions'),
+    where('email', '==', email), where('statut', '==', 'En cours'),
+    orderBy('date_debut', 'desc'), limit(1)));
+  if (att.empty) return [];
 
-function lireSession() {
-  try {
-    const o = JSON.parse(localStorage.getItem(CLE_SESSION) || 'null');
-    // 60 s de marge : inutile de restaurer un jeton sur le point d'expirer.
-    return o && o.token && o.exp > Date.now() / 1000 + 60 ? o : null;
-  } catch (e) { return null; }
-}
-
-function oublierSession() {
-  try { localStorage.removeItem(CLE_SESSION); } catch (e) {}
+  const lignes = await getDocs(collection(db, 'attributions', att.docs[0].id, 'programme'));
+  const jours = [];
+  lignes.forEach(l => { const j = l.data().jour; if (j && !jours.includes(j)) jours.push(j); });
+  return jours.sort(triJours);
 }
 
 window.onload = () => {
-  const reprise = lireSession();
-  google.accounts.id.initialize({ client_id:CLIENT_ID, callback:onGoogle, auto_select:true });
-
-  if (reprise) {
-    S.token = reprise.token; S.exp = reprise.exp;
-    ouvrirApp(reprise.moi);
-    // On rafraîchit le profil en arrière-plan : si le jeton a été révoqué, on retombe
-    // proprement sur l'écran de connexion plutôt que d'afficher un état périmé.
-    // Un jeton révoqué renvoie à la connexion — reconnexion() s'en charge. Une simple
-    // coupure réseau, elle, ne doit pas déconnecter : en salle, le wifi est capricieux.
-    api('bootstrap')
-      .then(m => { S.moi = m; sauverSession(); rendre(); })
-      .catch(e => {
-        if (/NON_INSCRIT/.test(e.message || '')) { oublierSession(); ecranConnexion(); }
-        else toast('Hors ligne : affichage de la dernière version connue');
-      });
-    return;
-  }
-
-  google.accounts.id.renderButton($('#gbtn'), { theme:'filled_black', size:'large', shape:'pill', text:'signin_with', locale:'fr' });
-  google.accounts.id.prompt();
+  // Une session déjà ouverte revient par ce même canal, sans rien à restaurer.
+  FB.onAuthStateChanged(FB.auth, async user => {
+    if (!user) { ecranConnexion(); return; }
+    S.email = (user.email || '').toLowerCase();
+    try {
+      ouvrirApp(await chargerProfil(S.email));
+    } catch (e) {
+      // Un document de profil absent est refusé par les règles, pas signalé
+      // « introuvable » : les deux cas veulent dire la même chose ici.
+      if (/NON_INSCRIT|permission-denied/.test(e.message || e.code || '')) {
+        await FB.signOut(FB.auth);
+        ecranConnexion('Ce compte n\'est pas encore inscrit. Demandez à votre coach de vous ajouter.');
+      } else {
+        toast('Chargement impossible : ' + (e.message || e.code));
+        ecranConnexion();
+      }
+    }
+  });
 };
 
-async function onGoogle(res) {
-  S.token = res.credential;
-  S.exp = expiration(res.credential);
+/** Connexion par le bouton Google. */
+async function connexionGoogle() {
   try {
-    S.moi = await api('bootstrap');
+    await FB.signInWithPopup(FB.auth, new FB.GoogleAuthProvider());
+    // La suite est prise en charge par onAuthStateChanged.
   } catch (e) {
-    $('#loginErr').textContent = e.message === 'NON_INSCRIT'
-      ? 'Ce compte n\'est pas encore inscrit. Demandez à votre coach de vous ajouter.'
-      : 'Connexion impossible : ' + e.message;
+    if (e.code === 'auth/popup-closed-by-user' || e.code === 'auth/cancelled-popup-request') return;
+    $('#loginErr').textContent = 'Connexion impossible : ' + (e.message || e.code);
     $('#loginErr').classList.remove('hidden');
-    return;
   }
-  sauverSession();
-  ouvrirApp(S.moi);
 }
 
 /**
@@ -786,29 +855,24 @@ function ouvrirApp(moi) {
   rendre();
 }
 
-function ecranConnexion() {
-  S.token = null; S.moi = null; S.exp = 0;
+function ecranConnexion(message) {
+  S.email = null; S.moi = null;
   $('#logger').classList.add('hidden');
   $('#app').classList.add('hidden'); $('#nav').classList.add('hidden');
   $('#login').classList.remove('hidden');
-  $('#gbtn').innerHTML = '';
-  google.accounts.id.renderButton($('#gbtn'), { theme:'filled_black', size:'large', shape:'pill', text:'signin_with', locale:'fr' });
+  $('#gbtn').innerHTML = '<button class="bgoogle" id="gsignin">Se connecter avec Google</button>';
+  if (message) {
+    $('#loginErr').textContent = message;
+    $('#loginErr').classList.remove('hidden');
+  }
 }
 
-/** Déconnexion : on oublie la session et on coupe la reconnexion automatique. */
-function deconnexion() {
-  oublierSession();
-  try { google.accounts.id.disableAutoSelect(); } catch (e) {}
-  Object.assign(S, { token:null, moi:null, exp:0, jour:null, exos:[], blocs:[],
+/** Déconnexion : Firebase Auth oublie la session, le SDK purge son propre état. */
+async function deconnexion() {
+  try { await FB.signOut(FB.auth); } catch (e) {}
+  Object.assign(S, { email:null, moi:null, jour:null, exos:[], blocs:[],
                      seanceId:null, faits:{}, vue:'seance', cal:null, coach:null, ed:null });
-  ecranConnexion();
-}
-
-function reconnexion() {
-  oublierSession();
-  ecranConnexion();
-  google.accounts.id.prompt();
-  throw new Error('SESSION_EXPIREE');
+  // onAuthStateChanged ramène à l'écran de connexion.
 }
 
 // Les boutons d'en-tête, identiques partout : écrits une fois, insérés par les vues.
@@ -823,6 +887,7 @@ const ENTETE_BOUTONS =
 document.addEventListener('click', e => {
   if (e.target.closest('#quitter')) deconnexion();
   else if (e.target.closest('#btheme')) modalTheme();
+  else if (e.target.closest('#gsignin')) connexionGoogle();
 });
 
 // ── Apparence ────────────────────────────────────────────────
@@ -1706,7 +1771,7 @@ function modalFinSeance() {
       toast('Séance enregistrée');
       S.seanceId = null; S.debut = null; S.faits = {}; S.finis = []; S.cal = null;
       oublier('accueil');   // la prochaine séance a changé
-      try { S.moi = await api('bootstrap'); sauverSession(); } catch (err) {}
+      try { S.moi = await chargerProfil(S.email); } catch (err) {}
       vueSeance();
     } catch (err) { toast(err.message); this.disabled = false; }
   };
@@ -1734,7 +1799,7 @@ function annulerSeance(w, faites) {
       toast('Séance annulée');
       S.seanceId = null; S.debut = null; S.faits = {}; S.finis = []; S.cal = null;
       oublier('accueil'); oublier('seance:' + S.jour);
-      try { S.moi = await api('bootstrap'); sauverSession(); } catch (err) {}
+      try { S.moi = await chargerProfil(S.email); } catch (err) {}
       vueSeance();
     } catch (err) { toast(err.message); this.disabled = false; }
   };
