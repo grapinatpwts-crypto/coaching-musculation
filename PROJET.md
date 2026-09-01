@@ -168,8 +168,14 @@ d'autre, sans armer de minuteur. D'où la **rangée de chronos** en haut de
 l'écran séance, sous les onglets de jours (`peindreChronos`) : un bouton par
 temps mort du jour, qui lance `lancerMinuteur` à la main. Les durées ne sont
 pas inventées — ce sont les `repos_s` des blocs et les `pause_s` des exercices
-du jour affiché, dédoublonnées et triées. Un jour sans aucun temps mort
-déclaré n'affiche pas de rangée du tout ; le programme du coach fait foi.
+du jour affiché. Un jour sans aucun temps mort déclaré n'affiche pas de rangée
+du tout ; le programme du coach fait foi.
+
+**Les boutons ne portent que la durée** — « 45 s », « 1 min 30 ». Pause et
+repos ne se distinguent que dans l'enchaînement automatique, où le mot dit
+d'où vient le temps mort ; lancé à la main, un chrono de 30 s est un chrono de
+30 s. La déduplication porte donc sur la seule durée : un repos et une pause
+de même longueur ne font qu'un bouton.
 
 ### Cadence
 

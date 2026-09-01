@@ -304,8 +304,7 @@ header h2{font-size:30px;text-transform:uppercase;line-height:1}
 .chronos:empty{display:none}
 .chrono-btn{flex:0 0 auto;padding:8px 14px;border-radius:999px;background:transparent;
   border:1px solid var(--edge);color:var(--chalk);font-weight:600;font-size:13px;
-  white-space:nowrap;min-height:36px}
-.chrono-btn .n{color:var(--txt);font-variant-numeric:tabular-nums}
+  white-space:nowrap;min-height:36px;font-variant-numeric:tabular-nums}
 
 /* Carte exercice */
 .card{background:var(--plate);border:1px solid var(--edge);border-radius:var(--r);padding:16px;margin-bottom:12px;
@@ -2732,9 +2731,16 @@ function dureeJour(blocs) {
  * rangée met les temps morts à portée de pouce, sans ouvrir un exercice.
  *
  * Les durées ne sont pas inventées : ce sont celles du jour affiché, les
- * `repos_s` des blocs et les `pause_s` des exercices, dédoublonnées et
- * triées. Un jour sans aucun temps mort déclaré n'affiche rien plutôt que des
- * durées arbitraires — le programme du coach fait foi.
+ * `repos_s` des blocs et les `pause_s` des exercices. Un jour sans aucun temps
+ * mort déclaré n'affiche rien plutôt que des durées arbitraires — le programme
+ * du coach fait foi.
+ *
+ * Les boutons ne portent que la durée. Dire « pause » ou « repos » ici serait
+ * un mot de trop : ces deux-là ne se distinguent que dans l'enchaînement
+ * automatique du panneau, où ils expliquent d'où vient le temps mort. Lancé à
+ * la main, un chrono de 30 s est un chrono de 30 s. C'est aussi pourquoi la
+ * déduplication porte sur la seule durée : un repos et une pause de même
+ * longueur ne font qu'un bouton.
  */
 function peindreChronos(blocs) {
   const z = $('#chronos');
@@ -2742,20 +2748,17 @@ function peindreChronos(blocs) {
 
   const vus = {};
   (blocs || []).forEach(b => {
-    if (Number(b.repos_s) > 0) vus['Repos·' + Number(b.repos_s)] = { libelle:'Repos', sec:Number(b.repos_s) };
-    b.exercices.forEach(e => {
-      if (Number(e.pause_s) > 0) vus['Pause·' + Number(e.pause_s)] = { libelle:'Pause', sec:Number(e.pause_s) };
-    });
+    if (Number(b.repos_s) > 0) vus[Number(b.repos_s)] = true;
+    b.exercices.forEach(e => { if (Number(e.pause_s) > 0) vus[Number(e.pause_s)] = true; });
   });
-  const temps = Object.values(vus).sort((a, b) => a.sec - b.sec);
+  const temps = Object.keys(vus).map(Number).sort((a, b) => a - b);
 
-  z.innerHTML = temps.map((t, i) => `<button class="chrono-btn" data-chrono="${i}"
-    aria-label="Lancer un ${t.libelle.toLowerCase()} de ${reposTexte(t.sec)}"
-    >${t.libelle} <span class="n">${reposTexte(t.sec)}</span></button>`).join('');
+  z.innerHTML = temps.map(sec => `<button class="chrono-btn" data-chrono="${sec}"
+    aria-label="Lancer un chrono de ${reposTexte(sec)}">${reposTexte(sec)}</button>`).join('');
 
   z.querySelectorAll('[data-chrono]').forEach(btn => {
-    const t = temps[Number(btn.dataset.chrono)];
-    btn.onclick = () => lancerMinuteur(t.sec, t.libelle);
+    const sec = Number(btn.dataset.chrono);
+    btn.onclick = () => lancerMinuteur(sec, 'Chrono');
   });
 }
 
