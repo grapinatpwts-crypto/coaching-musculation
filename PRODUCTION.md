@@ -94,7 +94,7 @@ maintenant un import de fichier, pas un copier-coller.
 Accueil qui annonce la prochaine séance et l'avancement du programme, sans le détail
 des exercices, plus un bandeau de la semaine (lundi à dimanche : quel jour de
 programme tombe où, déjà fait ou non) et un planning personnel pour les engagements
-extérieurs récurrents (jour fixe, fréquence, ou une date ponctuelle) — visible aussi
+extérieurs récurrents (chaque semaine à jour fixe, ou une date ponctuelle) — visible aussi
 par le coach sur la fiche du pratiquant, et reporté dans le bandeau comme dans le
 calendrier. Les deux grilles nomment ce qu'elles montrent au lieu d'un point :
 « Séance 2 », « Arts martiaux », en rouge pour ce que le coach a prescrit et dans

@@ -1483,7 +1483,11 @@ async function sauverRecurrence(p) {
     const jour = String(p.jour || '').trim();
     if (!jour) throw new Error('JOUR_REQUIS');
     champs.jour = jour;
-    champs.frequence = p.frequence === 'mois' ? 'mois' : 'semaine';
+    // Un récurrent est hebdomadaire, point. Le mensuel n'avait qu'un jour de la
+    // SEMAINE pour se situer — il ne disait pas laquelle du mois, donc aucune
+    // grille ne pouvait le placer. Le champ reste écrit : les entrées d'avant
+    // gardent leur valeur, et la lecture continue de les filtrer.
+    champs.frequence = 'semaine';
     champs.date_debut = String(p.date_debut || '');
     champs.date_fin = String(p.date_fin || '');
     champs.date = '';
@@ -2085,7 +2089,9 @@ function modalActivite(x) {
 /** Résumé lisible d'une entrée de planning, récurrente ou ponctuelle. */
 function texteRecurrence(r) {
   if (r.recurrent) {
-    const freq = r.frequence === 'mois' ? 'chaque mois' : 'chaque semaine';
+    // « chaque mois » n'est plus proposé ; une entrée d'avant le dit encore,
+    // et le dire est justement ce qui explique qu'elle n'apparaisse nulle part.
+    const freq = r.frequence === 'mois' ? 'chaque mois (non placé au calendrier)' : 'chaque semaine';
     const fenetre = [
       r.date_debut ? 'du ' + new Date(r.date_debut).toLocaleDateString('fr-FR') : '',
       r.date_fin ? 'au ' + new Date(r.date_fin).toLocaleDateString('fr-FR') : ''
@@ -2121,7 +2127,7 @@ function modalPlanningRecurrent(liste) {
 }
 
 function modalEditerRecurrence(r, liste, rafraichirParent) {
-  const x = r || { id:'', sport:'', recurrent:true, jour:SEMAINE[0], frequence:'semaine',
+  const x = r || { id:'', sport:'', recurrent:true, jour:SEMAINE[0],
                    date_debut:'', date_fin:'', date:'', heure:'', duree_min:'', notes:'' };
   const w = modal(r ? 'Modifier' : 'Ajouter au planning', `
     <div class="champ"><label>Activité</label>
@@ -2134,15 +2140,8 @@ function modalEditerRecurrence(r, liste, rafraichirParent) {
     <label class="paye"><input type="checkbox" id="rRecurrent" ${x.recurrent ? 'checked' : ''}><span>Récurrent</span></label>
 
     <div id="rBlocRecurrent">
-      <div class="duo">
-        <div class="champ"><label>Jour</label>
-          <select class="f" id="rJour">${SEMAINE.map(j => `<option ${j === x.jour ? 'selected' : ''}>${j}</option>`).join('')}</select></div>
-        <div class="champ"><label>Fréquence</label>
-          <select class="f" id="rFrequence">
-            <option value="semaine" ${x.frequence !== 'mois' ? 'selected' : ''}>Chaque semaine</option>
-            <option value="mois" ${x.frequence === 'mois' ? 'selected' : ''}>Chaque mois</option>
-          </select></div>
-      </div>
+      <div class="champ"><label>Jour</label>
+        <select class="f" id="rJour">${SEMAINE.map(j => `<option ${j === x.jour ? 'selected' : ''}>${j}</option>`).join('')}</select></div>
       <div class="duo">
         <div class="champ"><label>Date de début</label><input class="f" id="rDebut" type="date" value="${x.date_debut}"></div>
         <div class="champ"><label>Date de fin</label><input class="f" id="rFin" type="date" value="${x.date_fin}"></div>
@@ -2177,7 +2176,7 @@ function modalEditerRecurrence(r, liste, rafraichirParent) {
     const recurrent = recCase.checked;
     const champs = {
       sport, recurrent,
-      jour: w.querySelector('#rJour').value, frequence: w.querySelector('#rFrequence').value,
+      jour: w.querySelector('#rJour').value,
       date_debut: w.querySelector('#rDebut').value, date_fin: w.querySelector('#rFin').value,
       date: w.querySelector('#rDate').value,
       heure: w.querySelector('#rHeure').value, duree_min: w.querySelector('#rDuree').value,

@@ -208,10 +208,16 @@ lecteur d'écran.
 
 Le calendrier lit deux sources sans jamais les confondre : l'historique
 (`dataCalendrier`, des faits) et le planning (`dataRecurrences`, des
-intentions), réunis seulement à l'affichage par `itemsDuJour()`. Le récurrent
-**mensuel** n'est projeté sur aucune date : son seul champ de jour est un jour
-de la semaine, il ne dit pas quelle semaine du mois — le placer serait inventer
-ce que le pratiquant n'a jamais donné. Il reste dans la liste de gestion.
+intentions), réunis seulement à l'affichage par `itemsDuJour()`.
+
+**Un récurrent est hebdomadaire, point.** « Chaque mois » a été retiré du
+formulaire : son seul champ de jour était un jour de la *semaine*, il ne disait
+pas laquelle du mois — aucune grille ne pouvait donc le placer, et une option
+qui n'aboutit nulle part vaut moins que pas d'option. Le refaire un jour
+demande de lui donner un rang (« 1er mardi », « 3e jeudi »), pas de rouvrir le
+menu. Le champ `frequence` reste écrit à `'semaine'` et les deux lectures
+gardent leur filtre : une entrée créée avant garde sa valeur, reste invisible
+aux grilles, et sa ligne de gestion le dit en toutes lettres.
 
 Ce qui n'y est **pas** : les séances du programme encore à venir sur des jours
 passés. Le calendrier dirait alors « tu devais, tu n'as pas » sur chaque case
