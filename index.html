@@ -492,11 +492,6 @@ const $ = s => document.querySelector(s);
 // Chaque action encore appelée ici reste donc à porter vers Firestore ; on échoue
 // franchement, sans appel réseau, pour que la liste des restes soit lisible en
 // console plutôt que noyée dans des erreurs de jeton.
-async function api(action, payload = {}) {
-  console.warn('[à porter] action non migrée vers Firestore :', action, payload);
-  throw new Error('NON_PORTE_' + action);
-}
-
 function toast(msg) {
   const t = document.createElement('div');
   t.className = 'toast'; t.textContent = msg;
@@ -505,124 +500,14 @@ function toast(msg) {
 }
 
 // ── Hors ligne ───────────────────────────────────────────────
-// La file d'écriture maison a disparu avec la dernière action qui s'y fiait
-// (voir Étape 5.2 du plan) : `persistentLocalCache` rejoue maintenant les
-// écritures Firestore lui-même au retour du réseau, ID de document généré
-// côté client dès l'appel. Il ne reste ici que le cache de lecture, pour les
-// actions pas encore portées (`accueil`, `mesProgrammes`, `stats`...).
-
-// La clé de stockage garde son préfixe historique : la renommer viderait le
-// cache de tout le monde, pour rien de visible.
-const CLE_CACHE = 'muscu.cache';
-
-const lireJSON = (cle, defaut) => {
-  try { return JSON.parse(localStorage.getItem(cle)) ?? defaut; } catch (e) { return defaut; }
-};
-const ecrireJSON = (cle, val) => {
-  try { localStorage.setItem(cle, JSON.stringify(val)); } catch (e) {}
-};
-
+// Plus de file d'écriture ni de cache de lecture maison : chaque écran lit et
+// écrit Firestore directement, et `persistentLocalCache` (voir le module de
+// bootstrap plus haut) sert les lectures et rejoue les écritures lui-même au
+// retour du réseau. Il ne reste ici qu'un bandeau, purement indicatif : rien
+// n'en dépend pour fonctionner hors ligne.
 const enLigne = () => navigator.onLine !== false;
-const estReseau = err => err && err.message === 'RESEAU';
 
-/** Cache des lectures, une entrée par action et par clé. */
-function cache(cle, valeur) {
-  const c = lireJSON(CLE_CACHE, {});
-  if (valeur === undefined) return c[cle];
-  c[cle] = { v: valeur, ts: Date.now() };
-  ecrireJSON(CLE_CACHE, c);
-}
-
-/** Jette une copie locale devenue fausse. `cache(cle, undefined)` la lit, ne l'efface pas. */
-function oublier(cle) {
-  const c = lireJSON(CLE_CACHE, {});
-  if (c[cle] === undefined) return;
-  delete c[cle];
-  ecrireJSON(CLE_CACHE, c);
-}
-
-/**
- * Plusieurs lectures en une seule invocation. Chaque sous-appel a son propre
- * résultat : `[{ok, data}|{ok:false, error}]`. On rend directement les données,
- * en remontant la première erreur — l'appelant n'a pas à démêler le protocole.
- */
-async function apiLot(appels) {
-  const r = await api('lot', { appels });
-  // Un lot peut contenir des écritures : chacune périme ce qu'elle touche.
-  appels.forEach(a => perimer(a.action));
-  const rate = r.find(x => !x.ok);
-  if (rate) throw new Error(rate.error);
-  return r.map(x => x.data);
-}
-
-/**
- * Lecture avec affichage immédiat : si une copie existe, l'appelant la reçoit
- * tout de suite et `apresCoup` est rappelé quand la version fraîche arrive.
- * C'est ce qui fait la différence entre une app qui répond et une app qui rame :
- * Apps Script met une à deux secondes, le cache répond en zéro.
- */
-const FRAICHEUR = 20000;   // en deçà, la copie est réputée bonne
-
-async function lireVite(action, payload, cleCache, apresCoup) {
-  const c = cache(cleCache);
-  if (!c) return (await lire(action, payload, cleCache)).d;
-
-  // Sans cette fenêtre, le rafraîchissement rappelait la vue, qui relançait un
-  // rafraîchissement : deux requêtes par affichage au lieu d'une.
-  if (Date.now() - (c.ts || 0) < FRAICHEUR) return c.v;
-
-  lire(action, payload, cleCache)
-    .then(r => { if (r.frais && JSON.stringify(r.d) !== JSON.stringify(c.v)) apresCoup(r.d); })
-    .catch(() => {});
-  return c.v;
-}
-
-/**
- * Lecture tolérante : le réseau d'abord, le cache en secours.
- * `frais` à false signale à l'appelant qu'il regarde une copie.
- */
-async function lire(action, payload, cleCache) {
-  try {
-    const d = await api(action, payload);
-    cache(cleCache, d);
-    // Le drapeau était levé sans que le bandeau soit redessiné : « Hors ligne »
-    // restait affiché indéfiniment après la moindre coupure.
-    if (S.horsLigne) { S.horsLigne = false; majBandeau(); }
-    return { d, frais: true };
-  } catch (err) {
-    if (!estReseau(err)) throw err;
-    const c = cache(cleCache);
-    S.horsLigne = true;
-    majBandeau();
-    if (!c) throw new Error('HORS_LIGNE_SANS_CACHE');
-    return { d: c.v, frais: false };
-  }
-}
-
-/**
- * Copies à jeter quand telle action est écrite : une modification de fiche
- * périme la liste des athlètes autant que la fiche elle-même.
- */
-const PERIME = {
-  pratiquantSave: ['athletes', 'fiche:'],
-  photoSave: ['athletes', 'fiche:'], photoSuppr: ['athletes', 'fiche:'],
-  exerciceSave: ['catalogue'], exerciceSuppr: ['catalogue'],
-  modeleSave: ['modeles'], modeleSuppr: ['modeles'],
-  activiteSave: ['accueil'], activiteSuppr: ['accueil']
-};
-
-/** Jette les copies périmées par une écriture. */
-function perimer(action) {
-  const cles = PERIME[action];
-  if (!cles) return;
-  const c = lireJSON(CLE_CACHE, {});
-  Object.keys(c).forEach(k => {
-    if (cles.some(p => k === p || (p.endsWith(':') && k.indexOf(p) === 0))) delete c[k];
-  });
-  ecrireJSON(CLE_CACHE, c);
-}
-
-/** Bandeau discret : signale une lecture servie depuis le cache faute de réseau. */
+/** Bandeau discret signalant une coupure réseau, confirmée par le navigateur. */
 function majBandeau() {
   let b = $('#reseau');
   if (!b) {
@@ -630,17 +515,14 @@ function majBandeau() {
     b.id = 'reseau';
     document.body.appendChild(b);
   }
-  // On n'affiche « Hors ligne » que si le navigateur le confirme : un appel
-  // raté peut venir du serveur, pas du réseau, et laisser un bandeau menteur.
-  const coupe = S.horsLigne && !enLigne();
-  if (!coupe) { b.classList.add('hidden'); return; }
+  if (enLigne()) { b.classList.add('hidden'); return; }
   b.classList.remove('hidden');
   b.className = 'attente';
   b.innerHTML = `<span class="pastille"></span>Hors ligne`;
 }
 
-window.addEventListener('online', () => { S.horsLigne = false; majBandeau(); });
-window.addEventListener('offline', () => { S.horsLigne = true; majBandeau(); });
+window.addEventListener('online', majBandeau);
+window.addEventListener('offline', majBandeau);
 
 // ── Connexion Firebase et profil ─────────────────────────────
 // Firebase Auth persiste lui-même la session (IndexedDB) : plus de jeton ni de
@@ -1225,6 +1107,467 @@ async function dataCoachDetail(email) {
     .slice(0, 25);
 }
 
+/** Historique complet d'un exercice pour le pratiquant courant, le plus récent en premier. */
+async function dataHistorique(exerciceId) {
+  const { db, collectionGroup, query, where, orderBy, limit, getDocs } = FB;
+  const snap = await getDocs(query(collectionGroup(db, 'series'),
+    where('email', '==', S.email), where('exercice_id', '==', exerciceId),
+    orderBy('horodatage', 'desc'), limit(30)));
+  return snap.docs.map(d => {
+    const s = d.data();
+    return { date: versDate(s.horodatage), reps: Number(s.reps) || 0, charge: Number(s.charge) || 0, serie: Number(s.serie_num) || 0 };
+  });
+}
+
+/**
+ * Assiduité et régularité sur une fenêtre glissante de N semaines (12 par
+ * défaut). Deux mesures distinctes : l'assiduité compte les séances, la
+ * régularité mesure la dispersion des écarts entre deux séances — assidu sur
+ * le papier et irrégulier dans les faits, ce n'est pas rare.
+ */
+async function dataStatistiques(email, semaines) {
+  const { db, collection, query, where, orderBy, getDocs } = FB;
+  const n = Number(semaines) || 12;
+  const depuis = new Date(Date.now() - n * 7 * 86400000);
+
+  const [seancesSnap, activitesSnap] = await Promise.all([
+    getDocs(query(collection(db, 'seances'), where('email', '==', email),
+      where('date', '>=', depuis), orderBy('date', 'desc'))),
+    getDocs(collection(db, 'pratiquants', email, 'activites'))
+  ]);
+
+  const seances = seancesSnap.docs.map(d => ({ ...d.data(), date: versDate(d.data().date) })).reverse();
+  const activites = activitesSnap.docs.map(d => ({ ...d.data(), date: versDate(d.data().date) }))
+    .filter(a => new Date(a.date) >= depuis);
+
+  const parSemaine = [];
+  for (let i = n - 1; i >= 0; i--) {
+    const fin = new Date(Date.now() - i * 7 * 86400000);
+    const deb = new Date(fin.getTime() - 7 * 86400000);
+    parSemaine.push({
+      seances: seances.filter(s => { const d = new Date(s.date); return d > deb && d <= fin; }).length,
+      activites: activites.filter(a => { const d = new Date(a.date); return d > deb && d <= fin; }).length
+    });
+  }
+
+  const ecarts = [];
+  for (let i = 1; i < seances.length; i++) {
+    ecarts.push((new Date(seances[i].date) - new Date(seances[i - 1].date)) / 86400000);
+  }
+  const moyenne = t => t.length ? t.reduce((a, b) => a + b, 0) / t.length : 0;
+  const ecartMoyen = moyenne(ecarts);
+
+  // Régularité : plus les écarts se ressemblent, plus le rythme est tenu.
+  let regularite = null;
+  if (ecarts.length >= 3 && ecartMoyen > 0) {
+    const variance = moyenne(ecarts.map(e => (e - ecartMoyen) * (e - ecartMoyen)));
+    const dispersion = Math.sqrt(variance) / ecartMoyen;
+    regularite = Math.round(Math.max(0, Math.min(1, 1 - dispersion)) * 100);
+  }
+
+  const closes = seances.filter(s => Number(s.duree_min) > 0 && Number(s.duree_prevue) > 0);
+  const reel = moyenne(closes.map(s => Number(s.duree_min)));
+  const prevu = moyenne(closes.map(s => Number(s.duree_prevue)));
+  const derniere = seances.length ? seances[seances.length - 1].date : null;
+
+  return {
+    semaines: n, parSemaine, total: seances.length, totalActivites: activites.length,
+    parSemaineMoyen: Math.round(seances.length / n * 10) / 10,
+    ecartMoyen: Math.round(ecartMoyen * 10) / 10,
+    ecartMax: ecarts.length ? Math.round(Math.max(...ecarts)) : 0,
+    regularite,
+    dureeReelle: Math.round(reel), dureePrevue: Math.round(prevu),
+    ecartDuree: prevu ? Math.round((reel - prevu) / prevu * 100) : null,
+    nbComparees: closes.length,
+    joursDepuis: derniere ? Math.floor((Date.now() - new Date(derniere)) / 86400000) : null
+  };
+}
+
+/** Avancement d'un pratiquant dans son programme, depuis ses propres séances
+ *  — plus précis que l'approximation de `dataCoachAthletes` (qui évite une
+ *  lecture par athlète), utilisable ici parce qu'on ne regarde qu'un compte. */
+function progressionAttribution(att, seances) {
+  if (!att) return null;
+  const parSemaine = Number(att.nb_jours) || new Set((att.lignes || []).map(l => l.jour)).size;
+  const debut = att.date_debut ? dateDe(att.date_debut) : null;
+  const fin = att.date_fin ? dateDe(att.date_fin) : new Date();
+  const joursEcoules = debut ? Math.max(0, Math.floor((fin - debut) / 86400000)) : 0;
+  const semaineCourante = debut ? Math.floor(joursEcoules / 7) + 1 : 0;
+  const duree = Number(att.duree_semaines) || 0;
+  const faites = seances.filter(s => !debut || dateDe(s.date) >= debut).length;
+  const semainesRef = duree || Math.max(1, semaineCourante);
+  const attendues = parSemaine * semainesRef;
+  return { parSemaine, semaine: semaineCourante, duree_semaines: duree, faites, attendues,
+           part: attendues ? Math.min(1, faites / attendues) : 0 };
+}
+
+/** Une séance de ce jour a-t-elle déjà été close aujourd'hui ? */
+function seanceTermineeAujourdhui(seances, jour) {
+  const minuit = new Date(); minuit.setHours(0, 0, 0, 0);
+  return seances.some(s => String(s.jour) === String(jour) && dateDe(s.date) >= minuit &&
+    s.duree_min !== '' && s.duree_min != null);
+}
+
+/**
+ * Ce que le pratiquant voit en arrivant : sa prochaine séance et son
+ * programme en cours, sans le détail des exercices — le détail est à un clic.
+ */
+async function dataAccueil() {
+  const { db, doc, getDoc, collection, query, where, getDocs } = FB;
+  const email = S.email;
+  const [att, seancesSnap, activites] = await Promise.all([
+    attributionActive(email),
+    getDocs(query(collection(db, 'seances'), where('email', '==', email))),
+    dataActivites(email, { depuis: new Date(Date.now() - 30 * 86400000).toISOString() })
+  ]);
+  const seances = seancesSnap.docs.map(d => d.data());
+
+  const jours = att ? [...new Set(att.lignes.map(l => l.jour).filter(Boolean))].sort(triJours) : [];
+
+  const aujourdhui = new Date().getDay();
+  const rangSemaine = j => {
+    const t = String(j).toLowerCase();
+    for (let i = 0; i < SEMAINE.length; i++) if (t.indexOf(SEMAINE[i].toLowerCase()) !== -1) return (i + 1) % 7;
+    return -1;
+  };
+  let prochaine = null, ecart = 99;
+  jours.forEach(j => {
+    const r = rangSemaine(j);
+    if (r === -1) return;
+    let d = (r - aujourdhui + 7) % 7;
+    // Une séance du jour déjà terminée renvoie à la semaine suivante.
+    if (d === 0 && seanceTermineeAujourdhui(seances, j)) d = 7;
+    if (d < ecart) { ecart = d; prochaine = { jour: j, dans: d }; }
+  });
+
+  let progression = null, dureeS = 0;
+  if (att) {
+    if (att.modele_id) {
+      const modSnap = await getDoc(doc(db, 'modeles', att.modele_id));
+      if (modSnap.exists()) dureeS = Number(modSnap.data().duree_semaines) || 0;
+    }
+    progression = progressionAttribution({ ...att, duree_semaines: dureeS }, seances);
+  }
+
+  const triees = seances.slice().sort((a, b) => dateDe(a.date) - dateDe(b.date));
+
+  return {
+    jours,
+    prochaine: prochaine ? { jour: prochaine.jour, dans: prochaine.dans,
+      duree_estimee: estimerDuree(blocsBruts(att, prochaine.jour)) } : null,
+    programme: att ? { id: att.id, nom: att.nom, date_debut: versDate(att.date_debut), duree_semaines: dureeS } : null,
+    progression,
+    nbSeances: seances.length,
+    derniere: triees.length ? versDate(triees[triees.length - 1].date) : null,
+    activites: activites.slice(0, 5)
+  };
+}
+
+/** Historique complet des programmes du pratiquant, pour lui-même. */
+async function dataMesProgrammes() {
+  const { db, collection, query, where, getDocs } = FB;
+  const email = S.email;
+  const [attsSnap, noms] = await Promise.all([
+    getDocs(query(collection(db, 'attributions'), where('email', '==', email))),
+    nomsExercices()
+  ]);
+  const atts = attsSnap.docs.map(d => ({ id: d.id, ...d.data() }))
+    .sort((a, b) => dateDe(b.date_debut) - dateDe(a.date_debut));
+
+  return Promise.all(atts.map(async a => {
+    const lignes = (await getDocs(collection(db, 'attributions', a.id, 'programme'))).docs.map(d => d.data());
+    return {
+      id: a.id, nom: a.nom, statut: a.statut, date_debut: versDate(a.date_debut), date_fin: versDate(a.date_fin) || '',
+      jours: grouperEnJours(lignes, noms)
+    };
+  }));
+}
+
+/**
+ * Séances (avec volume) et activités libres d'une période, fusionnées et
+ * triées — pour le calendrier, coach ou pratiquant selon `email`.
+ */
+async function dataCalendrier(email, p) {
+  const { db, collection, query, where, getDocs } = FB;
+  const fin = p && p.jusqua ? new Date(p.jusqua) : new Date();
+  const debut = p && p.depuis ? new Date(p.depuis) : new Date(fin.getTime() - 120 * 86400000);
+
+  const [seancesSnap, activites] = await Promise.all([
+    getDocs(query(collection(db, 'seances'), where('email', '==', email),
+      where('date', '>=', debut), where('date', '<=', fin))),
+    dataActivites(email, { depuis: debut.toISOString(), jusqua: fin.toISOString() })
+  ]);
+
+  const seances = await Promise.all(seancesSnap.docs.map(async docSeance => {
+    const s = docSeance.data();
+    const series = (await getDocs(collection(db, 'seances', docSeance.id, 'series'))).docs.map(x => x.data());
+    let volume = 0;
+    series.forEach(x => { volume += (Number(x.reps) || 0) * (Number(x.charge) || 0); });
+    return {
+      type: 'seance', id: docSeance.id, date: versDate(s.date), jour: s.jour,
+      duree_min: Number(s.duree_min) || 0, ressenti: s.ressenti || '', notes: s.notes || '',
+      nbSeries: series.length, volume: Math.round(volume)
+    };
+  }));
+
+  const libres = activites.map(a => ({
+    type: 'activite', id: a.id, date: a.date, jour: a.sport, sport: a.sport,
+    duree_min: a.duree_min, distance_km: a.distance_km, effort: a.effort,
+    notes: a.notes, nbSeries: 0, volume: 0
+  }));
+
+  return seances.concat(libres).sort((a, b) => new Date(a.date) - new Date(b.date));
+}
+
+/** Enregistre une activité libre du pratiquant courant. Sans id, une création. */
+async function sauverActivite(p) {
+  const { db, doc, collection, addDoc, updateDoc, serverTimestamp } = FB;
+  const sport = String(p.sport || '').trim();
+  if (!sport) throw new Error('SPORT_REQUIS');
+  const champs = {
+    date: p.date ? new Date(p.date) : serverTimestamp(), sport,
+    duree_min: Number(p.duree_min) || 0, distance_km: Number(p.distance_km) || 0,
+    effort: Math.max(0, Math.min(10, Number(p.effort) || 0)), notes: String(p.notes || '')
+  };
+  if (p.id) {
+    await updateDoc(doc(db, 'pratiquants', S.email, 'activites', p.id), champs);
+    return { id: p.id };
+  }
+  const ref = await addDoc(collection(db, 'pratiquants', S.email, 'activites'), champs);
+  return { id: ref.id };
+}
+
+/** Supprime une activité libre du pratiquant courant. */
+async function supprimerActivite(id) {
+  const { db, doc, deleteDoc } = FB;
+  await deleteDoc(doc(db, 'pratiquants', S.email, 'activites', id));
+}
+
+/** Poste un commentaire sur le fil d'un exercice. */
+async function commenter(exerciceId, texte, emailCible) {
+  const { db, collection, addDoc, serverTimestamp } = FB;
+  const t = String(texte || '').trim();
+  if (!t) throw new Error('TEXTE_VIDE');
+  if (t.length > 2000) throw new Error('TEXTE_TROP_LONG');
+  const estCoach = !!(S.moi && S.moi.estCoach);
+  const email = estCoach && emailCible ? String(emailCible).toLowerCase() : S.email;
+  await addDoc(collection(db, 'commentaires'), {
+    email, exercice_id: exerciceId, auteur: estCoach ? 'coach' : 'pratiquant',
+    texte: t, date: serverTimestamp(), lu: false
+  });
+}
+
+/**
+ * Marque comme lus les messages de l'autre partie sur ce fil. Filtre par
+ * exercice côté client : ajouter `exercice_id` à la requête demanderait un
+ * index composite à quatre champs que `dataNonLus` n'a pas besoin d'avoir.
+ */
+async function marquerCommentairesLus(exerciceId, emailCible) {
+  const { db, collection, query, where, getDocs, writeBatch } = FB;
+  const estCoach = !!(S.moi && S.moi.estCoach);
+  const email = estCoach && emailCible ? String(emailCible).toLowerCase() : S.email;
+  const autre = estCoach ? 'pratiquant' : 'coach';
+  const snap = await getDocs(query(collection(db, 'commentaires'),
+    where('email', '==', email), where('auteur', '==', autre), where('lu', '==', false)));
+  const cibles = snap.docs.filter(d => String(d.data().exercice_id) === String(exerciceId));
+  if (!cibles.length) return { lus: 0 };
+  const b = writeBatch(db);
+  cibles.forEach(d => b.update(d.ref, { lu: true }));
+  await b.commit();
+  return { lus: cibles.length };
+}
+
+/** Enregistre la photo de suivi d'un pratiquant, déjà réduite côté client. */
+async function sauverPhoto(email, image) {
+  const { db, doc, setDoc, serverTimestamp } = FB;
+  const img = String(image || '');
+  if (img.indexOf('data:image/') !== 0) throw new Error('IMAGE_INVALIDE');
+  if (img.length > 45000) throw new Error('IMAGE_TROP_LOURDE');
+  await setDoc(doc(db, 'pratiquants', email, 'prive', 'photo'), { image: img, maj_le: serverTimestamp() });
+}
+
+/** Retire la photo de suivi d'un pratiquant. */
+async function supprimerPhoto(email) {
+  const { db, doc, deleteDoc } = FB;
+  await deleteDoc(doc(db, 'pratiquants', email, 'prive', 'photo'));
+}
+
+/** Le coach met à jour la fiche : nom, téléphone, objectif, notes, statut. */
+async function sauverPratiquant(email, patch) {
+  const { db, doc, updateDoc } = FB;
+  const data = {};
+  ['nom', 'telephone', 'objectif', 'notes'].forEach(k => { if (patch[k] !== undefined) data[k] = String(patch[k]); });
+  if (patch.statut !== undefined) {
+    if (['Nouveau', 'Actif', 'Inactif', 'Archivé'].indexOf(patch.statut) === -1) throw new Error('STATUT_INCONNU');
+    data.statut = patch.statut;
+  }
+  await updateDoc(doc(db, 'pratiquants', email), data);
+}
+
+/**
+ * Message pré-écrit annonçant un programme, composé côté client pour rester
+ * modifiable au même endroit quel que soit le canal choisi.
+ */
+async function dataMessageType(email, attributionId) {
+  const { db, doc, getDoc, collection, getDocs } = FB;
+  const pSnap = await getDoc(doc(db, 'pratiquants', email));
+  if (!pSnap.exists()) throw new Error('PRATIQUANT_INCONNU');
+  const p = pSnap.data();
+
+  let att;
+  if (attributionId) {
+    const s = await getDoc(doc(db, 'attributions', attributionId));
+    att = s.exists() ? { id: s.id, ...s.data() } : null;
+  } else {
+    att = await attributionActive(email);
+  }
+  if (!att) throw new Error('AUCUN_PROGRAMME');
+
+  const lignes = att.lignes || (await getDocs(collection(db, 'attributions', att.id, 'programme'))).docs.map(d => d.data());
+  const nbJours = new Set(lignes.map(l => l.jour).filter(Boolean)).size;
+
+  let semaines = 0;
+  if (att.modele_id) {
+    const modSnap = await getDoc(doc(db, 'modeles', att.modele_id));
+    if (modSnap.exists()) semaines = Number(modSnap.data().duree_semaines) || 0;
+  }
+
+  const prenom = String(p.nom || '').split(' ')[0] || 'Salut';
+  const debut = att.date_debut ? dateDe(att.date_debut).toLocaleDateString('fr-FR') : '';
+
+  const corps = [
+    `Salut ${prenom},`, '',
+    `Ton nouveau programme est prêt : « ${att.nom} ».`,
+    `${nbJours} séance${nbJours > 1 ? 's' : ''} par semaine${semaines ? `, sur ${semaines} semaines` : ''}${debut ? `, à partir du ${debut}` : ''}.`,
+    '', `Tu le retrouves dans l'app :`, location.origin + location.pathname, '',
+    `Dis-moi si quelque chose n'est pas clair.`, COACH_NOM
+  ].join('\n');
+
+  return { email, nom: p.nom, telephone: p.telephone || '', objet: `Ton nouveau programme : ${att.nom}`, message: corps };
+}
+
+/**
+ * Crée ou met à jour un exercice. Sans id, c'est une création : le numéro
+ * vient du compteur partagé `compteurs/exercices`, en transaction — remplace
+ * le scan du plus grand id existant.
+ */
+async function sauverExercice(p) {
+  const { db, doc, updateDoc, runTransaction } = FB;
+  const nom = String(p.nom || '').trim();
+  if (!nom) throw new Error('NOM_REQUIS');
+  const champs = {
+    nom, nom_en: String(p.nom_en || '').trim(), groupe: String(p.groupe || '').trim(),
+    equipement: String(p.equipement || '').trim(), consigne: String(p.consigne || '').trim(),
+    photo: String(p.photo || '').trim(), video: String(p.video || '').trim()
+  };
+  if (p.id) {
+    await updateDoc(doc(db, 'exercices', p.id), champs);
+    return { id: p.id, cree: false };
+  }
+  const id = await runTransaction(db, async tx => {
+    const ref = doc(db, 'compteurs', 'exercices');
+    const snap = await tx.get(ref);
+    const suivant = ((snap.exists() ? Number(snap.data().dernier) : 0) || 0) + 1;
+    const eid = 'EX' + String(suivant).padStart(3, '0');
+    tx.set(ref, { dernier: suivant }, { merge: true });
+    tx.set(doc(db, 'exercices', eid), champs);
+    return eid;
+  });
+  return { id, cree: true };
+}
+
+/**
+ * Supprime un exercice. Vérifié seulement contre les modèles (peu nombreux,
+ * lecture bon marché) — pas contre l'historique des attributions, qui
+ * demanderait de parcourir toutes les attributions jamais faites pour une
+ * action rare : mieux vaut laisser une référence orpheline s'afficher par
+ * son id (déjà le comportement de repli partout ailleurs) que payer cette
+ * lecture à chaque suppression.
+ */
+async function supprimerExercice(id) {
+  const { db, doc, deleteDoc, collection, getDocs } = FB;
+  const modeles = await dataModeles();
+  const comptes = await Promise.all(modeles.map(m =>
+    getDocs(collection(db, 'modeles', m.id, 'lignes'))
+      .then(s => s.docs.filter(d => d.data().exercice_id === id).length)
+  ));
+  const total = comptes.reduce((a, b) => a + b, 0);
+  if (total) throw new Error('EXERCICE_UTILISE_' + total);
+  await deleteDoc(doc(db, 'exercices', id));
+}
+
+/** Crée ou renomme un modèle. Sans id, une création, sans jour pour l'instant. */
+async function sauverModele(p) {
+  const { db, doc, collection, addDoc, updateDoc, serverTimestamp } = FB;
+  const nom = String(p.nom || '').trim();
+  if (!nom) throw new Error('NOM_REQUIS');
+  const champs = {
+    nom, categorie: String(p.categorie || '').trim(), difficulte: String(p.difficulte || '').trim(),
+    description: String(p.description || '').trim(), source: String(p.source || '').trim(),
+    video: String(p.video || '').trim(), duree_semaines: Number(p.duree_semaines) || 0,
+    statut: String(p.statut || 'Brouillon').trim()
+  };
+  if (p.id) {
+    await updateDoc(doc(db, 'modeles', p.id), champs);
+    return { id: p.id, cree: false };
+  }
+  champs.nb_jours = 0; champs.nb_exercices = 0; champs.cree_le = serverTimestamp();
+  const ref = await addDoc(collection(db, 'modeles'), champs);
+  return { id: ref.id, cree: true };
+}
+
+/** Supprime un modèle et ses lignes. Les programmes déjà attribués — des
+ *  copies — ne sont pas touchés, seul le lien d'origine devient orphelin. */
+async function supprimerModele(id) {
+  const { db, doc, collection, getDocs, writeBatch } = FB;
+  const lignes = await getDocs(collection(db, 'modeles', id, 'lignes'));
+  const b = writeBatch(db);
+  lignes.docs.forEach(d => b.delete(d.ref));
+  b.delete(doc(db, 'modeles', id));
+  await b.commit();
+}
+
+/** 1RM par exercice pour un pratiquant, mesurés par le coach — vue Maxis. */
+async function dataMaxis(email) {
+  const { db, collection, getDocs } = FB;
+  const [exercices, maxisSnap, att] = await Promise.all([
+    dataCatalogue(),
+    getDocs(collection(db, 'pratiquants', email, 'maxis')),
+    attributionActive(email)
+  ]);
+  const maxis = {};
+  maxisSnap.docs.forEach(d => { maxis[d.id] = d.data(); });
+  const auProgramme = new Set((att ? att.lignes : []).map(l => l.exercice_id));
+
+  return exercices.map(e => {
+    const m = maxis[e.id];
+    return {
+      exercice_id: e.id, nom: e.nom, groupe: e.groupe || '',
+      rm_kg: m ? Number(m.kg) || 0 : 0, source: m ? m.source || '' : '',
+      date: m ? versDate(m.date) : '',
+      auProgramme: auProgramme.has(e.id)
+    };
+  }).sort((a, b) => {
+    if (a.auProgramme !== b.auProgramme) return a.auProgramme ? -1 : 1;
+    return a.nom.localeCompare(b.nom, 'fr');
+  });
+}
+
+/** Fixe le 1RM mesuré d'un pratiquant sur un exercice — remplace l'estimation. */
+async function sauverMaxi(email, exerciceId, kg) {
+  const { db, doc, setDoc, serverTimestamp } = FB;
+  const val = Number(kg) || 0;
+  if (!(val > 0)) throw new Error('VALEUR_INVALIDE');
+  await setDoc(doc(db, 'pratiquants', email, 'maxis', exerciceId), { kg: val, source: 'mesuré', date: serverTimestamp() });
+  return { kg: val };
+}
+
+/** Efface le maxi mesuré : on retombe sur l'estimation en séance. */
+async function supprimerMaxi(email, exerciceId) {
+  const { db, doc, deleteDoc } = FB;
+  await deleteDoc(doc(db, 'pratiquants', email, 'maxis', exerciceId));
+}
+
 window.onload = () => {
   // Une session déjà ouverte revient par ce même canal, sans rien à restaurer.
   FB.onAuthStateChanged(FB.auth, async user => {
@@ -1414,7 +1757,7 @@ async function vueAccueil() {
     </header><div id="zone"><div class="empty">Chargement…</div></div>`;
 
   let a;
-  try { a = await lireVite('accueil', {}, 'accueil', () => { if (S.vue === 'accueil') vueAccueil(); }); }
+  try { a = await dataAccueil(); }
   catch (err) { $('#zone').innerHTML = `<div class="empty">Impossible de charger.<br>${err.message}</div>`; return; }
   S.accueil = a;
 
@@ -1526,7 +1869,7 @@ function modalActivite(x) {
     if (!sport) return toast('Choisissez une activité');
     this.disabled = true;
     try {
-      await api('activiteSave', {
+      await sauverActivite({
         id: a.id || undefined, sport: sport,
         date: w.querySelector('#aDate').value,
         duree_min: w.querySelector('#aDuree').value,
@@ -1535,7 +1878,7 @@ function modalActivite(x) {
         notes: w.querySelector('#aNotes').value
       });
       w.fermer(); toast('Activité enregistrée');
-      oublier('accueil'); S.cal = null;
+      S.cal = null;
       vueAccueil();
     } catch (err) { toast(err.message); this.disabled = false; }
   };
@@ -1543,7 +1886,7 @@ function modalActivite(x) {
   if (x) w.querySelector('#aDel').onclick = async function () {
     this.disabled = true;
     try {
-      await api('activiteSuppr', { id: a.id });
+      await supprimerActivite(a.id);
       w.fermer(); toast('Activité supprimée'); vueAccueil();
     } catch (err) { toast(err.message); this.disabled = false; }
   };
@@ -1557,8 +1900,7 @@ async function vueMesProgrammes() {
     <div id="zone"><div class="empty">Chargement…</div></div>`;
   $('#retourAccueil').onclick = () => { S.vue = 'accueil'; rendre(); };
 
-  const list = await lireVite('mesProgrammes', {}, 'mesProgrammes',
-    () => { if (S.vue === 'programmes') vueMesProgrammes(); });
+  const list = await dataMesProgrammes();
   $('#zone').innerHTML = list.map(pr => `
     <details class="pli" ${pr.statut === 'En cours' ? 'open' : ''}>
       <summary>
@@ -1635,7 +1977,6 @@ async function vueSeance() {
       const r = await demarrerSeance(S.jour);
       S.seanceId = r.seance_id;
       S.debut = new Date().toISOString();
-      oublier('accueil');
       vueSeance();
     } catch (err) {
       toast(err.message); this.disabled = false; this.textContent = 'Démarrer la séance';
@@ -2392,7 +2733,6 @@ function modalFinSeance() {
       w.fermer();
       toast('Séance enregistrée');
       S.seanceId = null; S.debut = null; S.faits = {}; S.finis = []; S.cal = null;
-      oublier('accueil');   // la prochaine séance a changé
       try { S.moi = await chargerProfil(S.email); } catch (err) {}
       vueSeance();
     } catch (err) { toast(err.message); this.disabled = false; }
@@ -2416,7 +2756,6 @@ function annulerSeance(w, faites) {
       w.fermer();
       toast('Séance annulée');
       S.seanceId = null; S.debut = null; S.faits = {}; S.finis = []; S.cal = null;
-      oublier('accueil');
       try { S.moi = await chargerProfil(S.email); } catch (err) {}
       vueSeance();
     } catch (err) { toast(err.message); this.disabled = false; }
@@ -2456,7 +2795,7 @@ async function modalCommentaires(exerciceId, nomExercice, email) {
     w.querySelector('#fil').scrollTop = 99999;
 
     // Ouvrir le fil vaut lecture.
-    api('commentairesLus', { exercice_id: exerciceId, email }).catch(() => {});
+    marquerCommentairesLus(exerciceId, email).catch(() => {});
   };
   await peindre();
 
@@ -2473,7 +2812,7 @@ async function modalCommentaires(exerciceId, nomExercice, email) {
     if (!t) return;
     this.disabled = true;
     try {
-      await api('commenter', { exercice_id: exerciceId, texte: t, email });
+      await commenter(exerciceId, t, email);
       w.querySelector('#cmTexte').value = '';
       await peindre();
     } catch (err) { toast(err.message === 'TEXTE_TROP_LONG' ? 'Message trop long' : err.message); }
@@ -2586,16 +2925,15 @@ async function vueProgres() {
     ${ENTETE_BOUTONS}</header>
     <div id="stats"></div><div id="liste"><div class="empty">Chargement…</div></div>`;
 
-  lireVite('stats', {}, 'stats', d => { const z = $('#stats'); if (z) z.innerHTML = blocStats(d); })
+  dataStatistiques(S.email, 12)
     .then(d => { const z = $('#stats'); if (z) z.innerHTML = blocStats(d); })
     .catch(() => {});
   if (!S.exos.length && S.jour) await chargerSeance(S.jour);
   if (!S.exos.length) { $('#liste').innerHTML = `<div class="empty">Enregistrez une première séance pour voir vos courbes.</div>`; return; }
 
-  // Un appel par exercice faisait six invocations pour six exercices.
   let histoires;
   try {
-    histoires = await apiLot(S.exos.map(e => ({ action:'historique', payload:{ exercice_id:e.exercice_id } })));
+    histoires = await Promise.all(S.exos.map(e => dataHistorique(e.exercice_id)));
   } catch (err) {
     $('#liste').innerHTML = `<div class="empty">${err.message}</div>`; return;
   }
@@ -2647,8 +2985,7 @@ async function peindreCalendrier() {
   if (!c.seances) {
     z.innerHTML = `<div class="empty">Chargement…</div>`;
     const p = { depuis: new Date(Date.now() - 365 * 86400000).toISOString() };
-    if (c.email) p.email = c.email;
-    c.seances = await api('calendrier', p);
+    c.seances = await dataCalendrier(c.email || S.email, p);
   }
 
   const parJour = {};
@@ -3024,7 +3361,7 @@ async function vueFiche() {
     ${f.notes ? `<div class="eyebrow" style="margin:22px 0 8px">Notes</div>
       <p class="consigne">${f.notes}</p>` : ''}`;
 
-  api('stats', { email: f.email })
+  dataStatistiques(f.email, 12)
     .then(st => { const z = $('#statsAthlete'); if (z) z.innerHTML = blocStats(st); })
     .catch(() => { const z = $('#statsAthlete'); if (z) z.innerHTML = ''; });
 
@@ -3035,13 +3372,13 @@ async function vueFiche() {
   const pd = $('#photoDel');
   if (pd) pd.onclick = async function () {
     this.disabled = true;
-    try { await api('photoSuppr', { email: f.email }); toast('Photo retirée'); vueFiche(); }
+    try { await supprimerPhoto(f.email); toast('Photo retirée'); vueFiche(); }
     catch (err) { toast(err.message); this.disabled = false; }
   };
   $('#zone').querySelectorAll('[data-etat]').forEach(b => b.onclick = async function () {
     if (this.getAttribute('aria-pressed') === 'true') return;
     try {
-      await api('pratiquantSave', { email: f.email, statut: this.dataset.etat });
+      await sauverPratiquant(f.email, { statut: this.dataset.etat });
       toast('Statut : ' + this.dataset.etat);
       vueFiche();
     } catch (err) { toast(err.message); }
@@ -3062,14 +3399,17 @@ async function vueFiche() {
 
 /**
  * Prévenir un pratiquant qu'un programme lui est assigné.
- * Le texte est composé côté serveur puis modifiable ici. Trois canaux passent par
- * le téléphone — WhatsApp, SMS, client mail — et n'engagent aucun service tiers.
- * Le quatrième part directement du compte Google du coach.
+ * Le texte est composé côté client puis modifiable ici. Trois canaux passent
+ * par le téléphone — WhatsApp, SMS, client mail — et n'engagent aucun service
+ * tiers : c'est le pratiquant qui reçoit, jamais un serveur intermédiaire.
+ * L'envoi direct depuis le compte du coach (Étape 9 du plan, un second projet
+ * Apps Script autonome dédié à l'e-mail) n'est pas encore construit ; le
+ * lien « Client mail » reste le repli documenté par le plan en attendant.
  */
 async function modalNotifier(attributionId, email) {
   let m;
   try {
-    m = await api('messageType', { email: email, attribution_id: attributionId });
+    m = await dataMessageType(email, attributionId);
   } catch (err) {
     return toast(err.message === 'AUCUN_PROGRAMME' ? 'Aucun programme à annoncer' : err.message);
   }
@@ -3087,11 +3427,6 @@ async function modalNotifier(attributionId, email) {
       <a class="btn contact" id="nMail">Client mail</a>
     </div>
     ${t ? '' : `<p class="meta" style="margin-top:8px">Sans téléphone renseigné, seul l'e-mail est possible.</p>`}
-    <div class="eyebrow" style="margin:18px 0 8px">Ou envoyer maintenant</div>
-    <div class="barre" style="margin-top:0">
-      <button class="btn plein" id="nEnvoi" style="flex:1">Envoyer l'e-mail depuis mon compte</button></div>
-    <p class="consigne">Part de ${S.moi.email}, avec votre nom en expéditeur.
-      Rien n'est envoyé tant que vous n'avez pas appuyé.</p>
     <div class="barre"><button class="btn" id="nAnn" style="flex:1">Fermer</button></div>`);
 
   // Les liens sont reconstruits à chaque frappe : le texte modifié doit suivre.
@@ -3111,18 +3446,6 @@ async function modalNotifier(attributionId, email) {
   maj();
 
   w.querySelector('#nAnn').onclick = w.fermer;
-  w.querySelector('#nEnvoi').onclick = async function () {
-    this.disabled = true; this.textContent = 'Envoi…';
-    try {
-      const r = await api('notifierMail', {
-        email: m.email, objet: w.querySelector('#nObj').value, message: w.querySelector('#nMsg').value
-      });
-      w.fermer();
-      toast('E-mail envoyé' + (r.restant !== undefined ? ` · ${r.restant} restants aujourd'hui` : ''));
-    } catch (err) {
-      toast(err.message); this.disabled = false; this.textContent = "Envoyer l'e-mail depuis mon compte";
-    }
-  };
 }
 
 /**
@@ -3175,7 +3498,7 @@ async function envoyerPhoto(fichier, email) {
   toast('Préparation de la photo…');
   try {
     const url = await reduireImage(fichier, 256, 44000);
-    await api('photoSave', { email, image: url });
+    await sauverPhoto(email, url);
     toast('Photo enregistrée');
     S.athletes = null; S.photos = null;
     vueFiche();
@@ -3197,8 +3520,7 @@ function modalFiche(f) {
   w.querySelector('#fOk2').onclick = async function () {
     this.disabled = true;
     try {
-      await api('pratiquantSave', {
-        email: f.email,
+      await sauverPratiquant(f.email, {
         nom: w.querySelector('#fNom').value,
         telephone: w.querySelector('#fTel').value,
         objectif: w.querySelector('#fObj').value,
@@ -3432,7 +3754,7 @@ function modalExercice(ex) {
   m.querySelector('#mOk').onclick = async function () {
     this.disabled = true;
     try {
-      await api('exerciceSave', {
+      await sauverExercice({
         id: e.id || undefined,
         nom: m.querySelector('#mNom').value,
         nom_en: m.querySelector('#mNomEn').value,
@@ -3450,7 +3772,7 @@ function modalExercice(ex) {
   if (ex) m.querySelector('#mDel').onclick = async function () {
     this.disabled = true;
     try {
-      await api('exerciceSuppr', { id: e.id });
+      await supprimerExercice(e.id);
       m.fermer(); toast('Exercice supprimé'); vueBibliotheque();
     } catch (err) {
       const u = /^EXERCICE_UTILISE_(\d+)$/.exec(err.message);
@@ -3946,7 +4268,7 @@ function modalModele(m) {
   w.querySelector('#kOk').onclick = async function () {
     this.disabled = true;
     try {
-      const r = await api('modeleSave', {
+      const r = await sauverModele({
         id: x.id || undefined,
         nom: w.querySelector('#kNom').value,
         categorie: w.querySelector('#kCat').value,
@@ -3964,7 +4286,7 @@ function modalModele(m) {
   if (m) w.querySelector('#kDel').onclick = async function () {
     this.disabled = true;
     try {
-      await api('modeleSuppr', { id: x.id });
+      await supprimerModele(x.id);
       w.fermer(); toast('Modèle supprimé');
       S.coach.modele = null; S.ed = null; vueCoach();
     } catch (err) { toast(err.message); this.disabled = false; }
@@ -4017,7 +4339,7 @@ async function vueModele() {
 
 // ── Maxis d'un pratiquant ────────────────────────────────────
 async function vueMaxis(filtre) {
-  const list = await api('maxis', { email: S.coach.email });
+  const list = await dataMaxis(S.coach.email);
   S.maxis = list;
   peindreMaxis(filtre);
 }
@@ -4062,7 +4384,7 @@ function modalMaxi(m) {
   w.querySelector('#xOk').onclick = async function () {
     this.disabled = true;
     try {
-      await api('maxiSave', { email:S.coach.email, exercice_id:m.exercice_id, rm_kg:w.querySelector('#xKg').value });
+      await sauverMaxi(S.coach.email, m.exercice_id, w.querySelector('#xKg').value);
       w.fermer(); toast('Max enregistré'); vueMaxis();
     } catch (err) {
       toast(err.message === 'VALEUR_INVALIDE' ? 'Donnez une valeur en kilos' : err.message);
@@ -4073,7 +4395,7 @@ function modalMaxi(m) {
   if (d) d.onclick = async function () {
     this.disabled = true;
     try {
-      await api('maxiSuppr', { email:S.coach.email, exercice_id:m.exercice_id });
+      await supprimerMaxi(S.coach.email, m.exercice_id);
       w.fermer(); toast('Retour à l\'estimation'); vueMaxis();
     } catch (err) { toast(err.message); this.disabled = false; }
   };
