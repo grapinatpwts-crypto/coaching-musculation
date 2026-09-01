@@ -78,6 +78,13 @@ service cloud.firestore {
         allow read: if estMoi(email) || estCoach();
         allow write: if estMoi(email) && statutOk();
       }
+
+      // Planning récurrent (ex. un cours hebdomadaire fixe hors programme) :
+      // même règle que les activités libres, self-service pour le pratiquant.
+      match /recurrences/{recurrenceId} {
+        allow read: if estMoi(email) || estCoach();
+        allow write: if estMoi(email) && statutOk();
+      }
     }
 
     // ── Catalogue d'exercices ──────────────────────────────────────────

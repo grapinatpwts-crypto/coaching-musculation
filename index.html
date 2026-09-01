@@ -926,7 +926,7 @@ async function dataProgramme(email, attributionId) {
 async function creerAttribution(email, p) {
   const { db, doc, getDoc, collection, getDocs, addDoc, updateDoc, writeBatch, serverTimestamp } = FB;
   let nom = String(p.nom || '').trim();
-  let lignesModele = [];
+  let lignesModele = [], dureeSemaines = 0;
   if (p.modele_id) {
     const [snap, lignes] = await Promise.all([
       getDoc(doc(db, 'modeles', p.modele_id)),
@@ -934,6 +934,7 @@ async function creerAttribution(email, p) {
     ]);
     if (!snap.exists()) throw new Error('MODELE_INTROUVABLE');
     if (!nom) nom = snap.data().nom;
+    dureeSemaines = Number(snap.data().duree_semaines) || 0;
     lignesModele = lignes.docs.map(d => d.data());
   }
   if (!nom) nom = 'Programme sur mesure';
@@ -943,12 +944,16 @@ async function creerAttribution(email, p) {
     await updateDoc(doc(db, 'attributions', active.id), { statut: 'Terminé', date_fin: serverTimestamp() });
   }
 
+  // `duree_semaines` copiée depuis le modèle plutôt que relue au moment de
+  // l'accueil : le pratiquant n'a pas le droit de lire `modeles` (réservé au
+  // coach), seulement sa copie ici. Même logique que nb_jours/nb_exercices.
   const ref = await addDoc(collection(db, 'attributions'), {
     email, modele_id: p.modele_id || '', nom,
     date_debut: p.date_debut ? new Date(p.date_debut) : serverTimestamp(),
     date_fin: '', statut: 'En cours', paye: false, notes: String(p.notes || ''),
     nb_jours: new Set(lignesModele.map(l => l.jour)).size,
     nb_exercices: lignesModele.length,
+    duree_semaines: dureeSemaines,
     cree_le: serverTimestamp()
   });
 
@@ -1208,17 +1213,57 @@ function seanceTermineeAujourdhui(seances, jour) {
     s.duree_min !== '' && s.duree_min != null);
 }
 
+/** A-t-on déjà clos ce jour de programme à cette date précise ? */
+function seanceFaiteCeJourLa(seances, jour, date) {
+  const fin = new Date(date.getTime() + 86400000);
+  return seances.some(s => String(s.jour) === String(jour) && dateDe(s.date) >= date && dateDe(s.date) < fin &&
+    s.duree_min !== '' && s.duree_min != null);
+}
+
+/**
+ * Les sept jours de la semaine en cours, lundi à dimanche — pour le bandeau
+ * d'accueil : quel jour de programme tombe où et s'il est déjà fait, plus le
+ * planning récurrent (arts martiaux, club...) qui tombe ce jour-là. Évite
+ * d'aller au calendrier juste pour voir où on en est cette semaine.
+ */
+function semaineCourante(jours, seances, recurrences) {
+  const lundi = new Date();
+  lundi.setDate(lundi.getDate() - ((lundi.getDay() + 6) % 7));
+  lundi.setHours(0, 0, 0, 0);
+  const rang = j => {
+    const t = String(j).toLowerCase();
+    for (let i = 0; i < SEMAINE.length; i++) if (t.indexOf(SEMAINE[i].toLowerCase()) !== -1) return i;
+    return -1;
+  };
+  const parRang = {};
+  jours.forEach(j => { const r = rang(j); if (r !== -1 && !(r in parRang)) parRang[r] = j; });
+  const recParRang = {};
+  (recurrences || []).filter(r => r.actif).forEach(r => {
+    const ri = rang(r.jour);
+    if (ri !== -1) (recParRang[ri] = recParRang[ri] || []).push(r);
+  });
+
+  return [0, 1, 2, 3, 4, 5, 6].map(i => {
+    const date = new Date(lundi.getTime() + i * 86400000);
+    const jour = parRang[i] || null;
+    return { jour, aujourdhui: date.toDateString() === new Date().toDateString(),
+             fait: jour ? seanceFaiteCeJourLa(seances, jour, date) : false,
+             recurrences: recParRang[i] || [] };
+  });
+}
+
 /**
  * Ce que le pratiquant voit en arrivant : sa prochaine séance et son
  * programme en cours, sans le détail des exercices — le détail est à un clic.
  */
 async function dataAccueil() {
-  const { db, doc, getDoc, collection, query, where, getDocs } = FB;
+  const { db, collection, query, where, getDocs } = FB;
   const email = S.email;
-  const [att, seancesSnap, activites] = await Promise.all([
+  const [att, seancesSnap, activites, recurrences] = await Promise.all([
     attributionActive(email),
     getDocs(query(collection(db, 'seances'), where('email', '==', email))),
-    dataActivites(email, { depuis: new Date(Date.now() - 30 * 86400000).toISOString() })
+    dataActivites(email, { depuis: new Date(Date.now() - 30 * 86400000).toISOString() }),
+    dataRecurrences()
   ]);
   const seances = seancesSnap.docs.map(d => d.data());
 
@@ -1240,19 +1285,18 @@ async function dataAccueil() {
     if (d < ecart) { ecart = d; prochaine = { jour: j, dans: d }; }
   });
 
-  let progression = null, dureeS = 0;
-  if (att) {
-    if (att.modele_id) {
-      const modSnap = await getDoc(doc(db, 'modeles', att.modele_id));
-      if (modSnap.exists()) dureeS = Number(modSnap.data().duree_semaines) || 0;
-    }
-    progression = progressionAttribution({ ...att, duree_semaines: dureeS }, seances);
-  }
+  // `duree_semaines` vient directement de l'attribution (copiée depuis le
+  // modèle à la création) : le pratiquant n'a pas le droit de lire `modeles`,
+  // réservé au coach par les règles — une relecture ici serait refusée.
+  const dureeS = att ? Number(att.duree_semaines) || 0 : 0;
+  const progression = att ? progressionAttribution({ ...att, duree_semaines: dureeS }, seances) : null;
 
   const triees = seances.slice().sort((a, b) => dateDe(a.date) - dateDe(b.date));
 
   return {
     jours,
+    semaine: semaineCourante(jours, seances, recurrences),
+    recurrences,
     prochaine: prochaine ? { jour: prochaine.jour, dans: prochaine.dans,
       duree_estimee: estimerDuree(blocsBruts(att, prochaine.jour)) } : null,
     programme: att ? { id: att.id, nom: att.nom, date_debut: versDate(att.date_debut), duree_semaines: dureeS } : null,
@@ -1288,13 +1332,13 @@ async function dataMesProgrammes() {
  * triées — pour le calendrier, coach ou pratiquant selon `email`.
  */
 async function dataCalendrier(email, p) {
-  const { db, collection, query, where, getDocs } = FB;
+  const { db, collection, query, where, orderBy, getDocs } = FB;
   const fin = p && p.jusqua ? new Date(p.jusqua) : new Date();
   const debut = p && p.depuis ? new Date(p.depuis) : new Date(fin.getTime() - 120 * 86400000);
 
   const [seancesSnap, activites] = await Promise.all([
     getDocs(query(collection(db, 'seances'), where('email', '==', email),
-      where('date', '>=', debut), where('date', '<=', fin))),
+      where('date', '>=', debut), where('date', '<=', fin), orderBy('date', 'desc'))),
     dataActivites(email, { depuis: debut.toISOString(), jusqua: fin.toISOString() })
   ]);
 
@@ -1341,6 +1385,51 @@ async function sauverActivite(p) {
 async function supprimerActivite(id) {
   const { db, doc, deleteDoc } = FB;
   await deleteDoc(doc(db, 'pratiquants', S.email, 'activites', id));
+}
+
+/**
+ * Planning récurrent du pratiquant courant — un engagement extérieur qui
+ * revient chaque semaine (cours, club...), distinct des séances du coach et
+ * des activités déjà faites : c'est une intention affichée, pas un fait
+ * enregistré. La consigner comme faite reste un geste à part, via
+ * « Consigner une activité », le jour où elle a vraiment eu lieu.
+ */
+async function dataRecurrences() {
+  const { db, collection, getDocs } = FB;
+  const snap = await getDocs(collection(db, 'pratiquants', S.email, 'recurrences'));
+  const rang = j => {
+    const t = String(j).toLowerCase();
+    for (let i = 0; i < SEMAINE.length; i++) if (t.indexOf(SEMAINE[i].toLowerCase()) !== -1) return i;
+    return 99;
+  };
+  const list = [];
+  snap.forEach(d => {
+    const r = d.data();
+    list.push({ id: d.id, sport: r.sport, jour: r.jour, heure: r.heure || '', notes: r.notes || '', actif: r.actif !== false });
+  });
+  return list.sort((a, b) => rang(a.jour) - rang(b.jour) || a.heure.localeCompare(b.heure));
+}
+
+/** Ajoute ou modifie une entrée du planning récurrent. Sans id, une création. */
+async function sauverRecurrence(p) {
+  const { db, doc, collection, addDoc, updateDoc } = FB;
+  const sport = String(p.sport || '').trim();
+  const jour = String(p.jour || '').trim();
+  if (!sport) throw new Error('SPORT_REQUIS');
+  if (!jour) throw new Error('JOUR_REQUIS');
+  const champs = { sport, jour, heure: String(p.heure || ''), notes: String(p.notes || ''), actif: p.actif !== false };
+  if (p.id) {
+    await updateDoc(doc(db, 'pratiquants', S.email, 'recurrences', p.id), champs);
+    return { id: p.id };
+  }
+  const ref = await addDoc(collection(db, 'pratiquants', S.email, 'recurrences'), champs);
+  return { id: ref.id };
+}
+
+/** Retire une entrée du planning récurrent. */
+async function supprimerRecurrence(id) {
+  const { db, doc, deleteDoc } = FB;
+  await deleteDoc(doc(db, 'pratiquants', S.email, 'recurrences', id));
 }
 
 /** Poste un commentaire sur le fil d'un exercice. */
@@ -1425,12 +1514,7 @@ async function dataMessageType(email, attributionId) {
 
   const lignes = att.lignes || (await getDocs(collection(db, 'attributions', att.id, 'programme'))).docs.map(d => d.data());
   const nbJours = new Set(lignes.map(l => l.jour).filter(Boolean)).size;
-
-  let semaines = 0;
-  if (att.modele_id) {
-    const modSnap = await getDoc(doc(db, 'modeles', att.modele_id));
-    if (modSnap.exists()) semaines = Number(modSnap.data().duree_semaines) || 0;
-  }
+  const semaines = Number(att.duree_semaines) || 0;
 
   const prenom = String(p.nom || '').split(' ')[0] || 'Salut';
   const debut = att.date_debut ? dateDe(att.date_debut).toLocaleDateString('fr-FR') : '';
@@ -1764,7 +1848,25 @@ async function vueAccueil() {
   const p = a.progression;
   const part = p ? Math.round(p.part * 100) : 0;
 
+  const nomsRecurrences = j => (j.recurrences || []).map(r => r.sport).join(', ');
   $('#zone').innerHTML = `
+    <div class="eyebrow">Cette semaine</div>
+    <div class="cal" style="margin-top:6px">
+      ${JOURSC.map(j => `<div class="jc">${j}</div>`).join('')}
+      ${a.semaine.map(j => `<button class="c ${j.fait ? 'faite' : ''} ${!j.jour && j.recurrences.length ? 'libre' : ''} ${j.aujourdhui ? 'today' : ''}"
+        ${j.jour ? `data-jsem="${j.jour}"` : 'disabled'}
+        aria-label="${[j.jour, j.jour ? (j.fait ? 'faite' : 'à faire') : '', nomsRecurrences(j)].filter(Boolean).join(' · ') || 'rien de prévu'}">
+        ${j.jour || j.recurrences.length ? `<span class="pts">${
+          j.jour ? '<i class="pt"></i>' : ''}${j.recurrences.length ? '<i class="pt libre"></i>' : ''}</span>` : ''}
+      </button>`).join('')}
+    </div>
+    <div class="barre" style="margin-top:10px;margin-bottom:22px">
+      <button class="btn" id="gererPlanning" style="flex:1">${
+        a.recurrences.filter(r => r.actif).length
+          ? 'Planning récurrent · ' + a.recurrences.filter(r => r.actif).length
+          : '＋ Planning récurrent'}</button>
+    </div>
+
     ${a.prochaine ? `
       <div class="eyebrow">Prochaine séance</div>
       <button class="card grande" id="allerSeance">
@@ -1807,6 +1909,9 @@ async function vueAccueil() {
   const bd = $('#detail'); if (bd) bd.onclick = go;
   const bt = $('#tous'); if (bt) bt.onclick = () => { S.vue = 'programmes'; rendre(); };
   $('#consigner').onclick = () => modalActivite(null);
+  $('#gererPlanning').onclick = () => modalPlanningRecurrent(a.recurrences);
+  $('#zone').querySelectorAll('[data-jsem]').forEach(b =>
+    b.onclick = () => { S.jour = b.dataset.jsem; S.vue = 'seance'; rendre(); });
   $('#zone').querySelectorAll('[data-act]').forEach(b =>
     b.onclick = () => modalActivite(a.activites.find(x => x.id === b.dataset.act)));
 }
@@ -1888,6 +1993,87 @@ function modalActivite(x) {
     try {
       await supprimerActivite(a.id);
       w.fermer(); toast('Activité supprimée'); vueAccueil();
+    } catch (err) { toast(err.message); this.disabled = false; }
+  };
+}
+
+/**
+ * Gère le planning récurrent : un engagement extérieur qui revient chaque
+ * semaine (club, cours...). Affiché dans le bandeau de la semaine, mais ne
+ * devient jamais une séance enregistrée tout seul — « Consigner une
+ * activité » reste le geste qui compte pour l'assiduité, le jour où on y va.
+ */
+function modalPlanningRecurrent(liste) {
+  const w = modal('Planning récurrent', `
+    <div id="prList"></div>
+    <div class="barre" style="margin-top:14px">
+      <button class="btn plein" id="prAjout" style="flex:1">＋ Ajouter</button></div>
+    <div class="barre"><button class="btn" id="prFerme" style="flex:1">Fermer</button></div>`);
+
+  const peindre = () => {
+    w.querySelector('#prList').innerHTML = liste.length
+      ? liste.map(r => `<div class="ligne" data-r="${r.id}">
+          <div class="g">
+            <div class="nom">${r.jour}${r.heure ? ' · ' + r.heure : ''}${r.actif ? '' : ' · en pause'}</div>
+            <div class="meta">${r.sport}${r.notes ? ' · ' + r.notes : ''}</div>
+          </div>
+        </div>`).join('')
+      : `<div class="empty" style="padding:14px 0">Rien pour l'instant.</div>`;
+    lignesCliquables(w.querySelector('#prList'), '[data-r]',
+      l => modalEditerRecurrence(liste.find(r => r.id === l.dataset.r), liste, peindre));
+  };
+  peindre();
+
+  w.querySelector('#prFerme').onclick = w.fermer;
+  w.querySelector('#prAjout').onclick = () => modalEditerRecurrence(null, liste, peindre);
+}
+
+function modalEditerRecurrence(r, liste, rafraichirParent) {
+  const x = r || { id:'', sport:'', jour:SEMAINE[0], heure:'', notes:'', actif:true };
+  const w = modal(r ? 'Modifier' : 'Ajouter au planning', `
+    <div class="champ"><label>Activité</label>
+      <select class="f" id="rSport">
+        <option value="">— Choisir —</option>
+        ${(S.moi.sports || SPORTS).map(([famille, lst]) => `<optgroup label="${famille}">
+          ${lst.map(s => `<option ${s === x.sport ? 'selected' : ''}>${s}</option>`).join('')}
+        </optgroup>`).join('')}
+      </select></div>
+    <div class="duo">
+      <div class="champ"><label>Jour</label>
+        <select class="f" id="rJour">${SEMAINE.map(j => `<option ${j === x.jour ? 'selected' : ''}>${j}</option>`).join('')}</select></div>
+      <div class="champ"><label>Heure</label><input class="f" id="rHeure" type="time" value="${x.heure}"></div>
+    </div>
+    <div class="champ"><label>Notes</label><input class="f" id="rNotes" value="${x.notes}" placeholder="Club, adresse…"></div>
+    <label class="paye"><input type="checkbox" id="rActif" ${x.actif ? 'checked' : ''}><span>Actif</span></label>
+    <div class="barre" style="margin-top:14px"><button class="btn" id="rAnn">Annuler</button>
+      <button class="btn plein" id="rOk" style="flex:1">Enregistrer</button></div>
+    ${r ? '<div class="barre"><button class="btn danger" id="rDel">Supprimer</button></div>' : ''}`);
+
+  w.querySelector('#rAnn').onclick = w.fermer;
+  w.querySelector('#rOk').onclick = async function () {
+    const sport = w.querySelector('#rSport').value;
+    if (!sport) return toast('Choisissez une activité');
+    this.disabled = true;
+    const champs = {
+      sport, jour: w.querySelector('#rJour').value,
+      heure: w.querySelector('#rHeure').value, notes: w.querySelector('#rNotes').value,
+      actif: w.querySelector('#rActif').checked
+    };
+    try {
+      const res = await sauverRecurrence(Object.assign({ id: x.id || undefined }, champs));
+      if (r) Object.assign(r, champs);
+      else liste.push(Object.assign({ id: res.id }, champs));
+      w.fermer(); rafraichirParent();
+      toast('Planning enregistré');
+    } catch (err) { toast(err.message); this.disabled = false; }
+  };
+  if (r) w.querySelector('#rDel').onclick = async function () {
+    this.disabled = true;
+    try {
+      await supprimerRecurrence(r.id);
+      const i = liste.indexOf(r); if (i !== -1) liste.splice(i, 1);
+      w.fermer(); rafraichirParent();
+      toast('Retiré du planning');
     } catch (err) { toast(err.message); this.disabled = false; }
   };
 }
