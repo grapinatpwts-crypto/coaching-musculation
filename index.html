@@ -2205,6 +2205,33 @@ async function vueMesProgrammes() {
 }
 
 // ── Vue séance ───────────────────────────────────────────────
+/** Message lisible pour l'erreur lancée par demarrerSeance quand une autre séance bloque. */
+function messageDemarrage(err) {
+  const m = /^SEANCE_AUTRE_JOUR_(.+)$/.exec(err.message);
+  return m ? `Terminez d'abord la séance du ${m[1]} avant d'en commencer une autre.` : err.message;
+}
+
+/**
+ * S'assure qu'une séance est active pour le jour courant avant d'écrire quoi
+ * que ce soit — la démarre au besoin. C'est ici, au premier geste qui compte
+ * vraiment (valider une série, clore un exercice), que la séance démarre —
+ * jamais au simple fait d'ouvrir le détail d'un exercice.
+ * Rend false (et prévient) si une autre séance est restée ouverte ailleurs :
+ * l'appelant doit alors abandonner son geste plutôt qu'écrire dans le vide.
+ */
+async function assurerSeanceActive() {
+  if (S.seanceId) return true;
+  try {
+    const r = await demarrerSeance(S.jour);
+    S.seanceId = r.seance_id;
+    S.debut = S.debut || new Date().toISOString();
+    return true;
+  } catch (err) {
+    toast(messageDemarrage(err));
+    return false;
+  }
+}
+
 async function vueSeance() {
   const app = $('#app');
   if (!S.moi.jours.length) {
@@ -2246,7 +2273,10 @@ async function vueSeance() {
       </div>${cartes}</div>`;
   }).join('') + (S.seanceId
     ? `<div class="barre"><button class="btn plein" id="finSeance" style="flex:1">Terminer la séance</button></div>`
-    : `<div class="barre"><button class="btn plein" id="debutSeance" style="flex:1">Démarrer la séance</button></div>`);
+    : S.autreSeanceOuverte
+      ? `<div class="empty">Séance en cours : ${S.autreSeanceOuverte.jour}.<br>Terminez-la ou annulez-la avant d'en commencer une nouvelle.</div>
+         <div class="barre"><button class="btn plein" id="allerSeanceActive" style="flex:1">Aller à cette séance</button></div>`
+      : `<div class="barre"><button class="btn plein" id="debutSeance" style="flex:1">Démarrer la séance</button></div>`);
 
   const total = S.exos.length;
   const clos = S.exos.filter(x => S.finis.indexOf(x.exercice_id) !== -1 ||
@@ -2264,9 +2294,11 @@ async function vueSeance() {
       S.debut = new Date().toISOString();
       vueSeance();
     } catch (err) {
-      toast(err.message); this.disabled = false; this.textContent = 'Démarrer la séance';
+      toast(messageDemarrage(err)); this.disabled = false; this.textContent = 'Démarrer la séance';
     }
   };
+  const asa = $('#allerSeanceActive');
+  if (asa) asa.onclick = () => { S.jour = S.autreSeanceOuverte.jour; vueSeance(); };
   $('#liste').querySelectorAll('[data-i]').forEach(c =>
     c.onclick = () => ouvrirLogger(Number(c.dataset.i)));
   $('#liste').querySelectorAll('[data-rep]').forEach(b => b.onclick = async function (ev) {
@@ -2289,22 +2321,21 @@ async function vueSeance() {
 // désormais, plus la file maison retirée avec ce portage.
 
 /**
- * Séance du jour non terminée, s'il y en a une. Sert à reprendre après un
- * rechargement — et à `demarrerSeance` pour ne pas en recréer une seconde.
+ * N'importe quelle séance encore ouverte pour ce pratiquant, quel que soit
+ * le jour de programme — l'invariant est global, pas par jour : impossible
+ * d'en démarrer une seconde en parallèle, il faut d'abord clore ou annuler
+ * celle en cours, même oubliée ouverte depuis un autre jour.
  * `serverTimestamps: 'estimate'` : juste après une création, le serveur n'a
  * pas encore répondu et `date` vaudrait `null` sans cette option — la séance
  * qu'on vient de créer semblerait alors ne pas exister, invariant compris.
  */
-async function seanceOuverteDuJour(jour) {
+async function seanceOuverteQuelconque() {
   const { db, collection, query, where, orderBy, limit, getDocs } = FB;
   const snap = await getDocs(query(collection(db, 'seances'), where('email', '==', S.email),
-    orderBy('date', 'desc'), limit(5)));
-  const minuit = new Date(); minuit.setHours(0, 0, 0, 0);
+    orderBy('date', 'desc'), limit(10)));
   const trouve = snap.docs.find(d => {
     const s = d.data({ serverTimestamps: 'estimate' });
-    if (String(s.jour) !== String(jour)) return false;
-    if (s.duree_min !== '' && s.duree_min != null) return false;
-    return dateDe(s.date) >= minuit;
+    return s.duree_min === '' || s.duree_min == null;
   });
   return trouve ? { id: trouve.id, ...trouve.data({ serverTimestamps: 'estimate' }) } : null;
 }
@@ -2323,11 +2354,11 @@ async function dataSeance(jour) {
   const blocsBase = blocsBruts(att, jour);
   const idsExosJour = [...new Set(blocsBase.flatMap(b => b.exercices.map(l => l.exercice_id)))];
 
-  const [ajustSnap, maxisSnap, exercices, ouverte, historiques] = await Promise.all([
+  const [ajustSnap, maxisSnap, exercices, active, historiques] = await Promise.all([
     att ? getDocs(collection(db, 'attributions', att.id, 'ajustements')) : Promise.resolve({ docs: [] }),
     getDocs(collection(db, 'pratiquants', email, 'maxis')),
     catalogueParId(),
-    seanceOuverteDuJour(jour),
+    seanceOuverteQuelconque(),
     // Résilient exercice par exercice : « dernier »/« record »/le maxi estimé sont
     // un confort, pas l'essentiel — une requête qui échoue sur un exercice ne doit
     // pas empêcher d'afficher la séance elle-même.
@@ -2362,6 +2393,14 @@ async function dataSeance(jour) {
       .reduce((m, s) => Math.max(m, Number(s.charge) * (1 + Number(s.reps) / 30)), 0);
     if (est > 0) maxis[id] = { kg: Math.round(est * 10) / 10, source: 'estimé' };
   });
+
+  // La séance active peut porter sur un autre jour que celui affiché — on ne
+  // la rattache aux séries/exercices finis que si elle correspond à ce jour ;
+  // sinon elle bloque juste le démarrage (voir demarrerSeance) et l'écran le
+  // signale via autreSeanceOuverte.
+  const ouverte = active && String(active.jour) === String(jour) ? active : null;
+  const autreSeanceOuverte = active && String(active.jour) !== String(jour)
+    ? { jour: active.jour, id: active.id } : null;
 
   let faits = {}, finis = [];
   if (ouverte) {
@@ -2406,7 +2445,7 @@ async function dataSeance(jour) {
     seance_id: ouverte ? ouverte.id : null,
     debut: ouverte ? versDate(ouverte.date) : null,
     duree_estimee: estimerDuree(blocs),
-    faits, finis, blocs
+    faits, finis, blocs, autreSeanceOuverte
   };
 }
 
@@ -2419,6 +2458,7 @@ async function chargerSeance(jour) {
   S.dureeEstimee = r.duree_estimee || 0;
   S.faits = r.faits || {};
   S.finis = r.finis || [];
+  S.autreSeanceOuverte = r.autreSeanceOuverte || null;
   S.exos = []; S.blocs = blocs;
   blocs.forEach((b, bi) => b.exercices.forEach((e, ei) => {
     e._b = bi; e._e = ei; e._i = S.exos.length;   // bloc, rang dans le bloc, index plat
@@ -2429,7 +2469,9 @@ async function chargerSeance(jour) {
 
 /**
  * Démarre la séance du jour, ou reprend celle déjà ouverte — un rechargement
- * ou une reprise après coupure ne doit pas en créer une seconde.
+ * ou une reprise après coupure ne doit pas en créer une seconde. Si une
+ * séance reste ouverte sur un AUTRE jour, refuse net : une seule à la fois,
+ * il faut la clore ou l'annuler d'abord (voir seanceOuverteQuelconque).
  * Pas de vraie transaction : le SDK client ne lit pas une requête depuis une
  * transaction, seulement des documents un par un — contrairement à ce
  * qu'imaginait le plan initial. Le bouton reste désactivé pendant l'appel
@@ -2439,8 +2481,11 @@ async function chargerSeance(jour) {
  */
 async function demarrerSeance(jour) {
   const { db, collection, addDoc, serverTimestamp } = FB;
-  const ouverte = await seanceOuverteDuJour(jour);
-  if (ouverte) return { seance_id: ouverte.id };
+  const active = await seanceOuverteQuelconque();
+  if (active) {
+    if (String(active.jour) === String(jour)) return { seance_id: active.id };
+    throw new Error('SEANCE_AUTRE_JOUR_' + active.jour);
+  }
   const att = await attributionActive(S.email);
   const blocs = blocsBruts(att, jour);
   const ref = await addDoc(collection(db, 'seances'), {
@@ -2784,7 +2829,9 @@ function disques(kg) {
 async function ouvrirLogger(i) {
   const e = S.exos[i];
   const b = S.blocs[e._b];
-  if (!S.seanceId) S.seanceId = (await demarrerSeance(S.jour)).seance_id;
+  // Ouvrir le détail d'un exercice ne démarre rien : c'est une consultation,
+  // pas un engagement. La séance démarre au premier geste qui compte
+  // vraiment — valider une série — voir plus bas.
 
   // Exercice au temps : duree_s renseigné. Un nombre = durée à tenir (décompte),
   // 'max' = jusqu'à l'échec (le chrono monte).
@@ -2900,8 +2947,9 @@ async function ouvrirLogger(i) {
   L.querySelector('#finir').onclick = async function () {
     this.disabled = true;
     clearInterval(chrono); chrono = null; tourne = false;
+    if (!(await assurerSeanceActive())) { this.disabled = false; return; }
     try {
-      if (S.seanceId) await finirExercice(S.seanceId, e.exercice_id);
+      await finirExercice(S.seanceId, e.exercice_id);
       if (ouvert(e)) S.finis.push(e.exercice_id);
       suite(true);
     } catch (err) { toast(err.message); this.disabled = false; }
@@ -2910,6 +2958,7 @@ async function ouvrirLogger(i) {
   L.querySelector('.valider').onclick = async function () {
     this.disabled = true;
     clearInterval(chrono); chrono = null; tourne = false;
+    if (!(await assurerSeanceActive())) { this.disabled = false; return; }
     try {
       const num = (S.faits[e.exercice_id] || []).length + 1;
       const p = { serie_num:num, charge };
