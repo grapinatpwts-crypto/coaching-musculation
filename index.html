@@ -309,6 +309,39 @@ header h2{font-size:30px;text-transform:uppercase;line-height:1}
   font-size:13px;font-weight:700;flex:0 0 auto;font-variant-numeric:tabular-nums}
 .card .done.full{background:var(--brand);border-color:var(--brand);color:var(--on-brand)}
 
+/* Carte exercice enchaînée dans le déroulé de la séance — steppers et
+   validation directement dans la liste, plus besoin d'ouvrir un panneau par
+   exercice. Classe distincte de .card : celle-ci est en colonne, .card sert
+   ailleurs (athlètes, modèles...) en ligne, on ne la touche pas. */
+.carte-exo{background:var(--plate);border:1px solid var(--edge);border-radius:var(--r);padding:16px;
+  margin-bottom:14px;box-shadow:var(--relief)}
+.carte-exo.clos{padding:14px 16px}
+.entete-exo{display:flex;align-items:flex-start;gap:12px}
+.entete-exo .body{flex:1;min-width:0}
+.carte-exo .nom{font-size:17px;font-weight:600;line-height:1.25}
+.carte-exo .meta{font-size:13px;color:var(--dust);margin-top:3px}
+.done-btn{width:44px;height:44px;border-radius:50%;border:2px solid var(--edge);background:var(--sunk);
+  display:grid;place-items:center;font-size:14px;font-weight:700;flex:0 0 auto;
+  font-variant-numeric:tabular-nums;touch-action:manipulation}
+.done-btn:active{transform:scale(.94)}
+.done-btn.max{background:var(--bad-bg);border-color:var(--bad-ink);color:var(--bad-ink)}
+.done-btn.reprendre{font-size:18px}
+.steppers-inline{display:flex;gap:10px;margin-top:14px}
+.stepper-inline{flex:1;background:var(--sunk);border-radius:10px;padding:10px 8px;text-align:center}
+.stepper-inline .val{font-size:28px;line-height:1;margin:4px 0;font-variant-numeric:tabular-nums}
+.stepper-inline .val.court{color:var(--brand-ink)}
+.stepper-inline .row{display:flex;gap:6px;margin-top:2px}
+.stepper-inline .row button{flex:1;height:40px;border-radius:8px;background:var(--plate);
+  border:1px solid var(--edge);font-size:17px;font-weight:600}
+.stepper-inline .row button:active{background:var(--press)}
+.barre-exo{display:flex;justify-content:space-between;gap:10px;margin-top:12px}
+.barre-exo .lien{font-size:12.5px;color:var(--dust);text-decoration:underline;padding:4px 0}
+.separateur-exo{border:0;border-top:1px solid var(--edge);margin:14px 0}
+.chronos-rapides{display:flex;gap:8px;overflow-x:auto;padding-bottom:10px;margin:0 0 4px;scrollbar-width:none}
+.chronos-rapides::-webkit-scrollbar{display:none}
+.chip-chrono{flex:0 0 auto;padding:9px 14px;border-radius:999px;background:var(--plate);
+  border:1px solid var(--edge);font-size:13px;font-weight:600;white-space:nowrap}
+
 /* Disques — élément signature */
 /* La barre entière : bague, disques, fût, disques, bague. Symétrique, et
    chargée du plus lourd contre le fût vers le plus léger à l'extérieur. */
@@ -2257,11 +2290,22 @@ async function vueSeance() {
   let blocs;
   try { blocs = await chargerSeance(S.jour); }
   catch (err) { $('#liste').innerHTML = `<div class="empty">Impossible de charger.<br>${err.message}</div>`; return; }
-  $('#liste').innerHTML = blocs.map(b => {
+
+  // Raccourcis vers les exercices au temps : sous les jours, avant le premier
+  // exercice, pour ne pas avoir à descendre tout le déroulé pour lancer un
+  // chrono. Un exercice déjà clos n'a plus sa place ici.
+  const chronos = S.exos.filter(x => x.duree_s && S.finis.indexOf(x.exercice_id) === -1);
+  const barreChronos = chronos.length ? `<div class="chronos-rapides">${chronos.map(x =>
+    `<button class="chip-chrono" data-chrono="${x._i}">${x.nom}</button>`).join('')}</div>` : '';
+
+  $('#liste').innerHTML = barreChronos + blocs.map(b => {
     const seul = b.exercices.length < 2;
-    const cartes = b.exercices.map((e, k) => carte(e, seul) +
-      (k < b.exercices.length - 1 && e.pause_s
-        ? `<div class="pause">↓ ${reposTexte(e.pause_s)} de pause</div>` : '')
+    // Le bloc s'enchaîne en entier, tous ses exercices détaillés à la suite,
+    // séparés d'une ligne — on scrolle, on ne rouvre plus un panneau par exercice.
+    const cartes = b.exercices.map((e, k) => `<div class="carte-exo" data-i="${e._i}">${contenuCarteExo(e, seul)}</div>` +
+      (k < b.exercices.length - 1
+        ? `<hr class="separateur-exo">${e.pause_s ? `<div class="pause">↓ ${reposTexte(e.pause_s)} de pause</div>` : ''}`
+        : '')
     ).join('');
     if (seul) return cartes;
     // Superset : on enchaîne les exercices, le repos vient après le tour complet.
@@ -2299,18 +2343,33 @@ async function vueSeance() {
   };
   const asa = $('#allerSeanceActive');
   if (asa) asa.onclick = () => { S.jour = S.autreSeanceOuverte.jour; vueSeance(); };
-  $('#liste').querySelectorAll('[data-i]').forEach(c =>
-    c.onclick = () => ouvrirLogger(Number(c.dataset.i)));
-  $('#liste').querySelectorAll('[data-rep]').forEach(b => b.onclick = async function (ev) {
-    ev.stopPropagation();
-    this.disabled = true;
-    const id = this.dataset.rep;
-    try {
-      if (S.seanceId) await reprendreExercice(S.seanceId, id);
-      S.finis = S.finis.filter(x => x !== id);
-      vueSeance();
-    } catch (err) { toast(err.message); this.disabled = false; }
+  $('#liste').querySelectorAll('[data-chrono]').forEach(c =>
+    c.onclick = () => allerVersExercice(Number(c.dataset.chrono)));
+
+  // Chaque carte se câble elle-même : clos garde juste « reprendre »,
+  // active reçoit steppers/chrono/pastille de séries/détails.
+  S.blocs.forEach(b => {
+    const seul = b.exercices.length < 2;
+    b.exercices.forEach(e => {
+      if (S.finis.indexOf(e.exercice_id) !== -1) wireReprendre(e, seul);
+      else brancherCarteExo(e);
+    });
   });
+}
+
+/** Câble le bouton « reprendre » d'une carte close. */
+function wireReprendre(e, seul) {
+  const racine = document.querySelector(`.carte-exo[data-i="${e._i}"]`);
+  if (!racine) return;
+  const rep = racine.querySelector('[data-rep]');
+  if (rep) rep.onclick = async function () {
+    this.disabled = true;
+    try {
+      if (S.seanceId) await reprendreExercice(S.seanceId, e.exercice_id);
+      S.finis = S.finis.filter(x => x !== e.exercice_id);
+      rafraichirCarteExo(e, seul);
+    } catch (err) { toast(err.message); this.disabled = false; }
+  };
 }
 
 // ── Séance : lecture et écritures ────────────────────────────
@@ -2573,8 +2632,11 @@ async function supprimerSeance(seanceId) {
  * Le coach fixe une charge ou un pourcentage du max ; c'est le pratiquant qui est
  * sous la barre, il a le dernier mot, et son choix vaut pour les séances suivantes.
  */
-function majOrigine(e, charge) {
-  const z = $('#origine');
+/** `racine` : élément conteneur d'où partent les requêtes .origine/.garder —
+ *  plusieurs exercices sont interactifs à la fois dans le déroulé, un id
+ *  global ne suffirait plus à les distinguer. */
+function majOrigine(racine, e, charge) {
+  const z = racine.querySelector('.origine');
   if (!z) return;
   const change = Math.abs(charge - (Number(e.charge_cible) || 0)) > 0.01;
 
@@ -2589,7 +2651,7 @@ function majOrigine(e, charge) {
       ? `<button class="perso" id="garder">${change ? 'Garder ' + charge + ' kg comme ma charge' : 'Revenir à la charge du programme'}</button>`
       : ''}`;
 
-  const g = $('#garder');
+  const g = z.querySelector('#garder');
   if (g) g.onclick = async function () {
     this.disabled = true;
     try {
@@ -2597,7 +2659,7 @@ function majOrigine(e, charge) {
       if (change) { e.charge_coach = e.charge_coach || e.charge_cible; e.charge_cible = charge; e.charge_ajustee = true; }
       else { e.charge_cible = e.charge_coach || 0; e.charge_ajustee = false; }
       toast(change ? 'Charge enregistrée' : 'Retour à la charge du programme');
-      majOrigine(e, charge);
+      majOrigine(racine, e, charge);
     } catch (err) { toast(err.message); this.disabled = false; }
   };
 }
@@ -2721,34 +2783,263 @@ function reposTexte(sec) {
 const enAttente = id => ((S.nonLus || {}).exercices || {})[id] || 0;
 
 /** Carte d'un exercice. series et repos_s sont hérités de son bloc. */
-function carte(e, seul) {
+/**
+ * Contenu d'une carte d'exercice dans le déroulé de la séance. Deux formes,
+ * jamais les deux à la fois :
+ *  - clos : résumé seul, plus un bouton pour rouvrir (reprendre) ;
+ *  - actif : nom, notes, cadence, disques, PUIS les steppers et la pastille
+ *    de séries directement dedans — plus besoin d'ouvrir un panneau à part
+ *    pour valider une série. « Détails » reste l'accès à la consigne
+ *    complète, à la photo et aux commentaires.
+ * `brancherCarteExo` câble l'interactivité juste après ; les deux vont
+ * toujours ensemble, jamais l'un sans l'autre.
+ */
+function contenuCarteExo(e, seul) {
   const n = (S.faits[e.exercice_id] || []).length;
   const fini = S.finis.indexOf(e.exercice_id) !== -1;
-  const cible = e.duree_s ? duree(e.duree_s) : e.reps_cible;
-  // Un exercice clos garde une carte cliquable, plus un bouton pour le rouvrir.
-  // D'où une <div> avec deux zones : imbriquer un bouton dans un bouton est invalide.
-  const [ouvre, ferme] = fini ? ['<div class="card clos">', '</div>'] : [`<button class="card" data-i="${e._i}">`, '</button>'];
-  return `${ouvre}
-    <div class="body" ${fini ? `data-i="${e._i}"` : ''}>
-      <div class="nom">${e.nom}</div>
-      <div class="meta">${e.series} × ${cible}${chargeTexte(e) ? ' · ' + chargeTexte(e) : ''}${
-        fini && n < e.series ? ' · arrêté à ' + n : ''}${
-        !fini && e.dernier && e.charge_cible ? ' · dernière fois ' + e.dernier.charge + ' kg' : ''}</div>
-      ${seul ? `<div class="meta">${[
-        e.repos_s ? 'repos ' + reposTexte(e.repos_s) : '',
-        dureeTexte(Math.round(dureeBloc({ series:e.series, repos_s:e.repos_s, exercices:[e] }) / 60))
-      ].filter(Boolean).join(' · ')}</div>` : ''}
-      ${enAttente(e.exercice_id) ? `<span class="pastille-cm">${enAttente(e.exercice_id)} mot${
-        enAttente(e.exercice_id) > 1 ? 's' : ''} de ${S.moi.coach || 'votre coach'}</span>` : ''}
-      ${e.note ? `<div class="note-coach">${e.note}</div>` : ''}
-      ${e.cadence ? `<div class="cadbloc"><span class="cadence">${e.cadence}</span>${courbeCadence(e.cadence, false)}</div>` : ''}
-      ${e.charge_cible ? disques(e.charge_cible) : ''}
+  const cibleTexte = e.duree_s ? duree(e.duree_s) : e.reps_cible;
+
+  if (fini) {
+    return `<div class="entete-exo">
+      <div class="body">
+        <div class="nom">${e.nom}</div>
+        <div class="meta">${e.series} × ${cibleTexte}${chargeTexte(e) ? ' · ' + chargeTexte(e) : ''}${
+          n < e.series ? ' · arrêté à ' + n : ''}</div>
+      </div>
+      <button class="done-btn reprendre" data-rep="${e.exercice_id}"
+        title="Reprendre cet exercice" aria-label="Reprendre ${e.nom}">↺</button>
+    </div>`;
+  }
+
+  const auTemps = !!e.duree_s;
+  const cibleSec = auTemps && String(e.duree_s).toLowerCase() !== 'max' ? Number(e.duree_s) : 0;
+  const repsDep = Number(String(e.reps_cible).split('-')[0]) || 10;
+  const chargeDep = e.dernier ? e.dernier.charge : (e.charge_cible || (auTemps ? 0 : 20));
+
+  return `<div class="entete-exo">
+      <div class="body">
+        <div class="nom">${e.nom}</div>
+        <div class="meta">${e.series} × ${cibleTexte}${chargeTexte(e) ? ' · ' + chargeTexte(e) : ''}${
+          e.dernier && e.charge_cible ? ' · dernière fois ' + e.dernier.charge + ' kg' : ''}</div>
+        ${seul ? `<div class="meta">${[
+          e.repos_s ? 'repos ' + reposTexte(e.repos_s) : '',
+          dureeTexte(Math.round(dureeBloc({ series:e.series, repos_s:e.repos_s, exercices:[e] }) / 60))
+        ].filter(Boolean).join(' · ')}</div>` : ''}
+        ${enAttente(e.exercice_id) ? `<span class="pastille-cm">${enAttente(e.exercice_id)} mot${
+          enAttente(e.exercice_id) > 1 ? 's' : ''} de ${S.moi.coach || 'votre coach'}</span>` : ''}
+        ${e.note ? `<div class="note-coach">${e.note}</div>` : ''}
+        ${e.cadence ? `<div class="cadbloc"><span class="cadence">${e.cadence}</span>${courbeCadence(e.cadence, false)}</div>` : ''}
+        ${e.charge_cible ? disques(e.charge_cible) : ''}
+      </div>
+      <button class="done-btn ${n >= e.series ? 'max' : ''}" data-valider
+        aria-label="${n} sur ${e.series} séries — appui court : une série de plus, appui long : au maximum">${n}/${e.series}</button>
     </div>
-    ${fini
-      ? `<button class="done full reprendre" data-rep="${e.exercice_id}"
-           title="Reprendre cet exercice" aria-label="Reprendre ${e.nom}">↺</button>`
-      : `<div class="done ${n >= e.series ? 'full' : ''}">${n}/${e.series}</div>`}
-  ${ferme}`;
+    <div class="steppers-inline">
+      ${auTemps ? `
+      <div class="stepper-inline chrono"><div class="eyebrow">${cibleSec ? 'À tenir' : 'Durée'}</div>
+        <div class="val" data-val>${duree(cibleSec || 0)}</div>
+        <div class="row"><button data-go>Démarrer</button></div></div>` : `
+      <div class="stepper-inline"><div class="eyebrow">Répétitions</div>
+        <div class="val" data-val>${repsDep}</div>
+        <div class="row"><button data-r="-1">−</button><button data-r="1">+</button></div></div>`}
+      <div class="stepper-inline"><div class="eyebrow">Charge (kg)</div>
+        <div class="val" data-charge>${chargeDep}</div>
+        <div class="row"><button data-c="-2.5">−</button><button data-c="2.5">+</button></div></div>
+    </div>
+    <div class="origine"></div>
+    <div class="barre-exo">
+      <button class="lien" data-finir>Terminer cet exercice</button>
+      <button class="lien" data-detail="${e._i}">Détails</button>
+    </div>`;
+}
+
+/**
+ * Appui court déclenche `court`, appui long (550 ms par défaut) déclenche
+ * `long` à sa place — jamais les deux. Sert à la pastille de séries : une
+ * série de plus au tap, toutes les séries restantes à l'appui long.
+ */
+function appuiLong(el, court, long, delai) {
+  if (!el) return;
+  let t = null, longFait = false;
+  el.onpointerdown = () => { longFait = false; t = setTimeout(() => { longFait = true; long(); }, delai || 550); };
+  el.onpointerup = () => { clearTimeout(t); if (!longFait) court(); };
+  el.onpointercancel = () => clearTimeout(t);
+  el.onpointerleave = () => clearTimeout(t);
+}
+
+/** Fait défiler jusqu'à la carte d'un exercice — pas de navigation, tout
+ *  reste sur la même page : le déroulé de la séance se lit en scrollant. */
+function allerVersExercice(i) {
+  const el = document.querySelector(`.carte-exo[data-i="${i}"]`);
+  if (el) el.scrollIntoView({ behavior:'smooth', block:'center' });
+}
+
+/**
+ * Câble l'interactivité d'une carte d'exercice active : steppers, chrono,
+ * pastille de séries (tap = une de plus, appui long = au maximum), terminer,
+ * détails. Chaque exercice porte son propre reps/charge/chrono en fermeture
+ * — plusieurs peuvent être en cours à la fois dans le déroulé, contrairement
+ * à l'ancien panneau plein écran qui n'en affichait qu'un.
+ */
+function brancherCarteExo(e) {
+  const racine = document.querySelector(`.carte-exo[data-i="${e._i}"]`);
+  if (!racine) return;
+  const b = S.blocs[e._b];
+  const auTemps = !!e.duree_s;
+  const cibleSec = auTemps && String(e.duree_s).toLowerCase() !== 'max' ? Number(e.duree_s) : 0;
+
+  let reps = Number(String(e.reps_cible).split('-')[0]) || 10;
+  let charge = e.dernier ? e.dernier.charge : (e.charge_cible || (auTemps ? 0 : 20));
+  let ecoule = 0, chrono = null, tourne = false, go = null;
+
+  const maj = () => {
+    // La carte a pu être remplacée (exercice clos entretemps) pendant qu'un
+    // chrono tournait : on arrête plutôt que d'écrire dans un DOM disparu.
+    if (!document.body.contains(racine)) { clearInterval(chrono); chrono = null; return; }
+    const champ = racine.querySelector('[data-val]');
+    if (champ) {
+      if (auTemps) {
+        const reste = cibleSec ? Math.max(0, cibleSec - ecoule) : ecoule;
+        champ.textContent = duree(reste);
+        champ.classList.toggle('court', cibleSec > 0 && tourne && reste <= 5);
+      } else {
+        champ.textContent = reps;
+      }
+    }
+    const champCharge = racine.querySelector('[data-charge]');
+    if (champCharge) champCharge.textContent = charge;
+    majOrigine(racine, e, charge);
+    const doneBtn = racine.querySelector('[data-valider]');
+    if (doneBtn) {
+      const n = (S.faits[e.exercice_id] || []).length;
+      doneBtn.textContent = `${n}/${e.series}`;
+      doneBtn.classList.toggle('max', n >= e.series);
+    }
+  };
+  maj();
+
+  if (auTemps) {
+    go = racine.querySelector('[data-go]');
+    const stop = (libelle) => { clearInterval(chrono); chrono = null; tourne = false; if (go) go.textContent = libelle; maj(); };
+    if (go) go.onclick = () => {
+      if (tourne) return stop('Reprendre');
+      tourne = true; go.textContent = 'Arrêter'; maj();
+      chrono = setInterval(() => {
+        ecoule++;
+        if (cibleSec && ecoule >= cibleSec) { ecoule = cibleSec; bip(); stop('Terminé'); return; }
+        maj();
+      }, 1000);
+    };
+  } else {
+    racine.querySelectorAll('[data-r]').forEach(x => x.onclick = () => { reps = Math.max(1, reps + Number(x.dataset.r)); maj(); });
+  }
+  racine.querySelectorAll('[data-c]').forEach(x => x.onclick = () => { charge = Math.max(0, charge + Number(x.dataset.c)); maj(); });
+
+  const ouvert = x => S.finis.indexOf(x.exercice_id) === -1;
+
+  /**
+   * Même logique que l'ancien panneau : pause entre deux exercices d'un même
+   * tour, repos entre deux tours. On ne rouvre plus rien après coup — tout
+   * reste visible dans le déroulé, on fait juste défiler jusqu'au suivant.
+   */
+  const suite = (clos) => {
+    const faits = (S.faits[e.exercice_id] || []).length;
+    const N = b.exercices.length;
+    const apres = b.exercices.slice(e._e + 1).filter(ouvert);
+    if (N > 1 && apres.length) {
+      return lancerMinuteur(e.pause_s, 'Pause', () => allerVersExercice(apres[0]._i));
+    }
+    const restants = b.exercices.filter(ouvert);
+    if (!clos && faits < b.series && restants.length) {
+      return lancerMinuteur(b.repos_s, 'Repos', () => {
+        if (N > 1) allerVersExercice(restants[0]._i);
+      });
+    }
+  };
+
+  // Un double-tap rapide ne doit pas partir deux fois : la pastille se fige
+  // le temps de l'écriture, appui court comme appui long confondus.
+  let enCours = false;
+
+  const validerSerie = async () => {
+    if (enCours) return;
+    enCours = true;
+    try {
+      if (!(await assurerSeanceActive())) return;
+      const dureeALog = auTemps ? (ecoule || cibleSec) : 0;
+      if (auTemps && !dureeALog) { toast("Lancez le chrono d'abord"); return; }
+      const num = (S.faits[e.exercice_id] || []).length + 1;
+      const p = { serie_num:num, charge };
+      if (auTemps) p.duree_s = dureeALog; else p.reps = reps;
+      await enregistrerSerie(S.seanceId, e.exercice_id, p);
+      (S.faits[e.exercice_id] = S.faits[e.exercice_id] || [])
+        .push(auTemps ? { duree_s:dureeALog, charge } : { reps, charge });
+      if (auTemps) { ecoule = 0; if (go) go.textContent = 'Démarrer'; }
+      maj();
+      suite();
+    } catch (err) { toast('Non enregistré : ' + err.message); }
+    finally { enCours = false; }
+  };
+
+  const remplirAuMax = async () => {
+    if (enCours) return;
+    enCours = true;
+    try {
+      if (!(await assurerSeanceActive())) return;
+      const manquant = e.series - (S.faits[e.exercice_id] || []).length;
+      if (manquant <= 0) return;
+      const dureeALog = auTemps ? (ecoule || cibleSec) : 0;
+      if (auTemps && !dureeALog) { toast("Lancez le chrono au moins une fois d'abord"); return; }
+      for (let i = 0; i < manquant; i++) {
+        const num = (S.faits[e.exercice_id] || []).length + 1;
+        const p = { serie_num:num, charge };
+        if (auTemps) p.duree_s = dureeALog; else p.reps = reps;
+        await enregistrerSerie(S.seanceId, e.exercice_id, p);
+        (S.faits[e.exercice_id] = S.faits[e.exercice_id] || [])
+          .push(auTemps ? { duree_s:dureeALog, charge } : { reps, charge });
+      }
+      maj();
+      suite();
+    } catch (err) { toast('Non enregistré : ' + err.message); }
+    finally { enCours = false; }
+  };
+
+  appuiLong(racine.querySelector('[data-valider]'), validerSerie, remplirAuMax);
+
+  const finirBtn = racine.querySelector('[data-finir]');
+  if (finirBtn) finirBtn.onclick = async () => {
+    finirBtn.disabled = true;
+    if (!(await assurerSeanceActive())) { finirBtn.disabled = false; return; }
+    try {
+      await finirExercice(S.seanceId, e.exercice_id);
+      if (ouvert(e)) S.finis.push(e.exercice_id);
+      clearInterval(chrono);
+      const seul = b.exercices.length < 2;
+      suite(true);
+      rafraichirCarteExo(e, seul);
+    } catch (err) { toast(err.message); finirBtn.disabled = false; }
+  };
+
+  const detailBtn = racine.querySelector('[data-detail]');
+  if (detailBtn) detailBtn.onclick = () => ouvrirDetailExercice(e._i);
+}
+
+/**
+ * Regénère le contenu d'une carte après un changement d'état (clos ↔ actif)
+ * et recâble ce qu'il faut. Le conteneur .carte-exo garde son identité —
+ * seul son intérieur change — pour ne pas perdre la place dans le défilement.
+ */
+function rafraichirCarteExo(e, seul) {
+  const racine = document.querySelector(`.carte-exo[data-i="${e._i}"]`);
+  if (!racine) return;
+  const fini = S.finis.indexOf(e.exercice_id) !== -1;
+  racine.innerHTML = contenuCarteExo(e, seul);
+  racine.classList.toggle('clos', fini);
+  if (fini) {
+    wireReprendre(e, seul);
+  } else {
+    brancherCarteExo(e);
+  }
 }
 
 const arrondi = n => Math.round(n * 10) / 10;
@@ -2825,23 +3116,18 @@ function disques(kg) {
     ><i class="bague"></i>${gauche}<i class="fut"></i>${droite}<i class="bague"></i></span>`;
 }
 
-// ── Saisie des séries ────────────────────────────────────────
-async function ouvrirLogger(i) {
+// ── Détail d'un exercice ──────────────────────────────────────
+/**
+ * Détail d'un exercice : consigne complète, photo, cadence détaillée, séries
+ * déjà faites, commentaires. Une consultation, rien d'autre — saisir une
+ * série ou clore l'exercice se fait directement dans le déroulé de la
+ * séance, plus la peine d'ouvrir ce panneau pour ça.
+ */
+function ouvrirDetailExercice(i) {
   const e = S.exos[i];
   const b = S.blocs[e._b];
-  // Ouvrir le détail d'un exercice ne démarre rien : c'est une consultation,
-  // pas un engagement. La séance démarre au premier geste qui compte
-  // vraiment — valider une série — voir plus bas.
-
-  // Exercice au temps : duree_s renseigné. Un nombre = durée à tenir (décompte),
-  // 'max' = jusqu'à l'échec (le chrono monte).
-  const auTemps = !!e.duree_s;
-  const cible = auTemps && String(e.duree_s).toLowerCase() !== 'max' ? Number(e.duree_s) : 0;
   const N = b.exercices.length;
-
-  let reps = Number(String(e.reps_cible).split('-')[0]) || 10;
-  let charge = e.dernier ? e.dernier.charge : (e.charge_cible || (auTemps ? 0 : 20));
-  let ecoule = 0, chrono = null, tourne = false;
+  const faits = S.faits[e.exercice_id] || [];
 
   const L = $('#logger');
   L.classList.remove('hidden');
@@ -2858,122 +3144,14 @@ async function ouvrirLogger(i) {
       enAttente(e.exercice_id) ? ' · ' + enAttente(e.exercice_id) + ' à lire' : ''}</button></div>
     ${e.cadence ? `<div class="tempo"><strong>Cadence ${e.cadence}</strong><br>${tempo(e.cadence)}
       ${courbeCadence(e.cadence, true)}</div>` : ''}
-    <div class="sets" id="sets"></div>
-    <div class="steppers">
-      ${auTemps ? `
-      <div class="stepper chrono"><div class="eyebrow">${cible ? 'À tenir' : 'Durée'}</div>
-        <div class="val num" id="vChrono">${duree(cible || 0)}</div>
-        <div class="row"><button id="go">Démarrer</button></div></div>` : `
-      <div class="stepper"><div class="eyebrow">Répétitions</div>
-        <div class="val num" id="vReps">${reps}</div>
-        <div class="row"><button data-r="-1">−</button><button data-r="1">+</button></div></div>`}
-      <div class="stepper"><div class="eyebrow">Charge (kg)</div>
-        <div class="val num" id="vCharge">${charge}</div>
-        <div class="row"><button data-c="-2.5">−</button><button data-c="2.5">+</button></div></div>
-    </div>
-    <div id="origine" class="origine"></div>
-    <button class="valider">Valider la série ${(S.faits[e.exercice_id] || []).length + 1}</button>
-    <div class="barre"><button class="btn" id="finir" style="flex:1">Terminer cet exercice</button></div>`;
+    ${faits.length ? `<div class="sets">${faits.map((x, n) =>
+      `<span class="set">${n + 1} · ${x.duree_s ? duree(x.duree_s) : x.reps + ' × ' + x.charge + ' kg'}</span>`).join('')}</div>` : ''}`;
 
-  const maj = () => {
-    // Le logger a pu être fermé ou remplacé pendant que le chrono tournait :
-    // on arrête plutôt que d'écrire dans un DOM qui n'existe plus.
-    const champ = auTemps ? $('#vChrono') : $('#vReps');
-    if (!champ || L.classList.contains('hidden')) { clearInterval(chrono); chrono = null; return; }
-    if (auTemps) {
-      const reste = cible ? Math.max(0, cible - ecoule) : ecoule;
-      champ.textContent = duree(reste);
-      champ.classList.toggle('court', cible > 0 && tourne && reste <= 5);
-    } else {
-      champ.textContent = reps;
-    }
-    $('#vCharge').textContent = charge;
-    majOrigine(e, charge);
-    const btn = L.querySelector('.valider');
-    btn.textContent = `Valider la série ${(S.faits[e.exercice_id] || []).length + 1}`;
-    btn.disabled = auTemps && ecoule === 0;
-    $('#sets').innerHTML = (S.faits[e.exercice_id] || []).map((x, n) =>
-      `<span class="set">${n + 1} · ${x.duree_s ? duree(x.duree_s) : x.reps + ' × ' + x.charge + ' kg'}</span>`).join('');
-  };
-  maj();
-
-  if (auTemps) {
-    const go = L.querySelector('#go');
-    const stop = (libelle) => { clearInterval(chrono); chrono = null; tourne = false; go.textContent = libelle; maj(); };
-    go.onclick = () => {
-      if (tourne) return stop('Reprendre');
-      tourne = true; go.textContent = 'Arrêter'; maj();
-      chrono = setInterval(() => {
-        ecoule++;
-        if (cible && ecoule >= cible) { ecoule = cible; bip(); stop('Terminé'); return; }
-        maj();
-      }, 1000);
-    };
-  } else {
-    L.querySelectorAll('[data-r]').forEach(x => x.onclick = () => { reps = Math.max(1, reps + Number(x.dataset.r)); maj(); });
-  }
-  L.querySelectorAll('[data-c]').forEach(x => x.onclick = () => { charge = Math.max(0, charge + Number(x.dataset.c)); maj(); });
-  L.querySelector('.close').onclick = () => { clearInterval(chrono); L.classList.add('hidden'); vueSeance(); };
+  // Fermer se contente de cacher le panneau, sans recharger la séance : la
+  // page peut porter d'autres exercices avec un chrono en cours, un
+  // rechargement complet les perdrait.
+  L.querySelector('.close').onclick = () => L.classList.add('hidden');
   L.querySelector('#commenter').onclick = () => modalCommentaires(e.exercice_id, e.nom, null);
-
-  const ouvert = x => S.finis.indexOf(x.exercice_id) === -1;
-
-  /**
-   * Après une série validée, deux minuteurs distincts :
-   *  - il reste des exercices ouverts dans le bloc → PAUSE (pause_s), on enchaîne ;
-   *  - le tour est bouclé → REPOS (repos_s), puis retour au premier encore ouvert.
-   * `clos` force la sortie de l'exercice courant : le pratiquant l'a terminé de
-   * lui-même, sans forcément avoir fait toutes ses séries.
-   */
-  const suite = (clos) => {
-    const faits = (S.faits[e.exercice_id] || []).length;
-    const apres = b.exercices.slice(e._e + 1).filter(ouvert);
-
-    if (N > 1 && apres.length) {
-      return lancerMinuteur(e.pause_s, 'Pause', () => ouvrirLogger(apres[0]._i));
-    }
-    // Tour bouclé. Reste-t-il des tours à faire, sur des exercices encore ouverts ?
-    const restants = b.exercices.filter(ouvert);
-    if (!clos && faits < b.series && restants.length) {
-      return lancerMinuteur(b.repos_s, 'Repos', () => {
-        if (N > 1) ouvrirLogger(restants[0]._i);
-      });
-    }
-    clearInterval(chrono);
-    L.classList.add('hidden');
-    vueSeance();
-  };
-
-  L.querySelector('#finir').onclick = async function () {
-    this.disabled = true;
-    clearInterval(chrono); chrono = null; tourne = false;
-    if (!(await assurerSeanceActive())) { this.disabled = false; return; }
-    try {
-      await finirExercice(S.seanceId, e.exercice_id);
-      if (ouvert(e)) S.finis.push(e.exercice_id);
-      suite(true);
-    } catch (err) { toast(err.message); this.disabled = false; }
-  };
-
-  L.querySelector('.valider').onclick = async function () {
-    this.disabled = true;
-    clearInterval(chrono); chrono = null; tourne = false;
-    if (!(await assurerSeanceActive())) { this.disabled = false; return; }
-    try {
-      const num = (S.faits[e.exercice_id] || []).length + 1;
-      const p = { serie_num:num, charge };
-      if (auTemps) p.duree_s = ecoule; else p.reps = reps;
-      await enregistrerSerie(S.seanceId, e.exercice_id, p);
-      (S.faits[e.exercice_id] = S.faits[e.exercice_id] || [])
-        .push(auTemps ? { duree_s:ecoule, charge } : { reps, charge });
-      if (auTemps) { ecoule = 0; const g = L.querySelector('#go'); if (g) g.textContent = 'Démarrer'; }
-      maj();
-      suite();
-    } catch (err) {
-      toast('Non enregistré : ' + err.message);
-      this.disabled = false;
-    }
-  };
 }
 
 const PHASES = ['montée', 'position haute', 'descente', 'position basse'];
