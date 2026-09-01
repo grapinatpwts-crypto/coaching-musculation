@@ -1,98 +1,102 @@
 # Coaching Fitness — installation
 
 Application de suivi de musculation : 1 coach, ~40 pratiquants.
-Données stockées dans **votre** Google Sheet. Les pratiquants n'ont jamais accès au Sheet.
+Données stockées dans **votre** projet Firebase (Firestore). Les pratiquants n'ont
+jamais accès qu'à leurs propres données, imposé par les Security Rules — il n'y a
+pas de serveur applicatif entre le navigateur et la base.
 
 ## Architecture
 
 ```
- iPhone / Android          GitHub Pages              Apps Script            Google Sheet
- ┌──────────────┐          ┌────────────┐            ┌──────────┐          ┌──────────┐
- │ PWA installée│ ────────▶│ index.html │ ──POST────▶│  Code.gs │ ───────▶ │  Données │
- │ (icône)      │  token   │ (statique) │  + token   │ vérifie  │  lit /   │  privées │
- └──────────────┘  Google  └────────────┘            │ le token │  écrit   └──────────┘
-                                                     └──────────┘
+ iPhone / Android          GitHub Pages              Firebase
+ ┌──────────────┐          ┌────────────┐            ┌──────────────────────────┐
+ │ PWA installée│ ────────▶│ index.html │ ──SDK─────▶│ Auth (Google)             │
+ │ (icône)      │          │ (statique) │            │ Firestore (europe-west9) │
+ └──────────────┘          └────────────┘            │  ↳ Security Rules        │
+                                                       └──────────────────────────┘
 ```
 
-Le fichier statique ne contient **aucune donnée**. Toutes les lectures et écritures
-passent par le script, qui vérifie l'identité Google puis ne renvoie à chaque
-personne que ses propres lignes.
+Le fichier statique ne contient **aucune donnée**. Le SDK Firestore lit et écrit
+directement depuis le navigateur, authentifié par Firebase Auth (Google) ; la
+sécurité tient entièrement aux Security Rules (`firestore.rules`), qui cloisonnent
+chaque compte sur ses propres documents.
 
-## Étape 1 — Le Google Sheet
+## Étape 1 — Le projet Firebase
 
-1. Créez un Google Sheet nommé `Coaching Fitness`.
-2. `Extensions ▸ Apps Script`.
-3. Collez le contenu de `Code.gs` (remplacez tout le fichier existant).
-4. Enregistrez, puis rechargez le Sheet : un menu **Coaching Fitness** apparaît.
-5. `Coaching Fitness ▸ Installer les onglets` → les 5 onglets sont créés avec des exercices d'exemple.
+1. [console.firebase.google.com](https://console.firebase.google.com) ▸ **Créer un
+   projet**. Plan **Spark** (gratuit) suffit à cette échelle.
+2. **Authentication ▸ Sign-in method** : activer le fournisseur **Google**.
+3. **Firestore Database ▸ Créer une base** : mode production, région au choix
+   (proche de vos utilisateurs).
+4. **Authentication ▸ Settings ▸ Authorized domains** : ajouter le domaine où sera
+   hébergé le front-end (ex. `votrepseudo.github.io`), et `localhost` pour tester en
+   local.
+5. **Paramètres du projet ▸ Général** : ajouter une application Web, copier l'objet
+   de configuration (`apiKey`, `authDomain`, `projectId`...).
 
-## Étape 2 — Le projet Google Cloud
+## Étape 2 — Déployer les règles et les index
 
-1. Dans l'éditeur Apps Script : `Paramètres du projet ▸ Projet Google Cloud ▸ Modifier`.
-2. Créez ou associez un projet Cloud (gratuit).
-3. Ouvrez [console.cloud.google.com](https://console.cloud.google.com) sur ce projet.
+Depuis la racine du dépôt, avec la [CLI Firebase](https://firebase.google.com/docs/cli)
+(`npm install -g firebase-tools`, puis `firebase login`) :
 
-## Étape 3 — L'identifiant OAuth
+```bash
+firebase use --add          # associer ce dossier à votre projet
+firebase deploy --only firestore:rules,firestore:indexes
+```
 
-1. `API et services ▸ Écran de consentement OAuth` : type **Externe**, nom `Coaching Fitness`,
-   votre email en contact. Publiez l'application (sinon limite à 100 testeurs).
-2. `Identifiants ▸ Créer ▸ ID client OAuth ▸ Application Web`.
-3. **Origines JavaScript autorisées** : l'URL où sera hébergé le front-end,
-   par exemple `https://votrepseudo.github.io`.
-4. Copiez l'ID client (`....apps.googleusercontent.com`).
+`firestore.rules` porte toute la sécurité — à ne jamais déployer sans relire, une
+règle mal écrite est une faille immédiate. `firestore.indexes.json` déclare les
+index composites nécessaires aux requêtes multi-champs (historique par exercice,
+attributions actives, calendrier...).
 
-## Étape 4 — Déployer l'API
+## Étape 3 — Semer les données de départ
 
-Dans l'éditeur Apps Script :
+```bash
+cd scripts
+npm install
+```
 
-1. Renseignez en haut de `Code.gs` :
-   - `CLIENT_ID` : l'ID client de l'étape 3
-   - `COACH_EMAIL` : l'adresse Google du coach
-2. `Déployer ▸ Nouveau déploiement ▸ Application web`
-   - Exécuter en tant que : **moi**
-   - Qui a accès : **tout le monde**
-3. Copiez l'URL qui finit par `/exec`.
+Générez une clé de compte de service (**Paramètres du projet ▸ Comptes de
+service ▸ Générer une nouvelle clé privée**), enregistrez-la sous
+`scripts/service-account.json` (ignoré par git, ne jamais la commiter ni la
+déposer côté client — elle contourne les Security Rules).
 
-> « Tout le monde » signifie que l'URL est joignable, pas que les données sont
-> ouvertes : le script refuse toute requête sans token Google valide et non inscrit
-> dans l'onglet `Pratiquants`.
+```bash
+GOOGLE_APPLICATION_CREDENTIALS=./service-account.json node seed.mjs
+```
+
+Verse le catalogue d'exercices (`apps-script/Catalogue.js`, 171 fiches sous
+licence libre), dix programmes-types réutilisables, et crée le compte coach/admin
+(`CONFIG.COACH_EMAIL` dans `apps-script/Code.js`).
+
+## Étape 4 — Renseigner la configuration côté client
+
+Dans `index.html`, le module `<script type="module">` en tête de fichier :
+remplacez l'objet passé à `initializeApp({...})` par celui copié à l'étape 1.
+Ces valeurs sont publiques par nature (visibles dans le HTML envoyé au
+navigateur) — ce ne sont pas des secrets, la sécurité tient aux Security Rules.
 
 ## Étape 5 — Héberger le front-end
 
 Sur GitHub : nouveau dépôt public, déposez `index.html`, `manifest.json`, `sw.js`
-et vos trois icônes. Puis `Settings ▸ Pages ▸ Source : main / root`.
-
-Avant l'envoi, renseignez en haut du `<script>` de `index.html` :
-
-```js
-const API = 'https://script.google.com/macros/s/..../exec';
-const CLIENT_ID = '....apps.googleusercontent.com';
-```
+et vos icônes. Puis `Settings ▸ Pages ▸ Source : main / root`.
 
 Icônes à fournir : `icon-192.png`, `icon-512.png`, `icon-512-maskable.png`
 (fond `#14171C`, marge de 12 % pour la version maskable).
 
 ## Étape 6 — Inscrire les pratiquants
 
-Dans l'onglet `Pratiquants`, une ligne par personne :
+Connectez-vous en premier avec le compte du coach (`CONFIG.COACH_EMAIL` du seed) :
+Coach ▸ Athlètes ▸ **Inscrire un pratiquant**. L'email doit être exactement celui
+du compte Google de la personne — une adresse absente de `pratiquants/` obtient un
+refus poli à la connexion (`NON_INSCRIT`).
 
-| email | nom | actif | date_inscription | objectif |
-|---|---|---|---|---|
-| marie.d@gmail.com | Marie Dupont | VRAI | 12/09/2026 | Force |
+## Étape 7 — Donner un programme
 
-L'email doit être **exactement** celui de son compte Google. Une personne absente
-de cette liste obtient un refus poli à la connexion.
-
-## Étape 7 — Écrire les programmes
-
-Onglet `Programmes`, une ligne par exercice d'une séance :
-
-| id | email | jour | ordre | exercice_id | series | reps_cible | charge_cible | repos_s |
-|---|---|---|---|---|---|---|---|---|
-| P001 | marie.d@gmail.com | Lundi — Haut | 1 | EX001 | 4 | 8-10 | 40 | 120 |
-| P002 | marie.d@gmail.com | Lundi — Haut | 2 | EX005 | 3 | 10 | 25 | 90 |
-
-`jour` est libre : il devient l'onglet affiché dans l'app.
+Coach ▸ un athlète ▸ Programme ▸ **Donner un programme**, depuis un modèle
+existant (les dix programmes-types du seed, ou les vôtres). Pour verser vos
+propres programmes sans passer par le dépôt public : remplissez
+`modele-import.xlsx` puis `Réglages ▸ Importer un programme`.
 
 ## Étape 8 — Installer l'app sur téléphone
 
@@ -100,29 +104,27 @@ Onglet `Programmes`, une ligne par exercice d'une séance :
 - **iPhone (Safari uniquement)** : ouvrir le lien → bouton Partager → « Sur l'écran d'accueil ».
   Chrome sur iOS ne propose pas l'installation ; prévoyez une petite notice pour vos pratiquants.
 
-## Automatisations incluses
-
-- `rapportHebdo()` — envoie au coach la liste des pratiquants sans séance depuis
-  10 jours. Pour l'activer : éditeur Apps Script ▸ **Déclencheurs** ▸ ajouter un
-  déclencheur hebdomadaire sur cette fonction.
-
-Idées d'extensions faciles : export PDF du bilan mensuel (`DocumentApp`),
-graphique de progression dans le Sheet, notification au coach dès qu'un record est battu.
-
 ## Sécurité — ce qui est en place
 
-- Vérification serveur du token auprès de Google (`tokeninfo`), contrôle de `aud` et `exp`
-- Liste blanche : seuls les emails de l'onglet `Pratiquants` sont servis
-- Cloisonnement : chaque requête filtre sur l'email issu du token, jamais sur un
-  paramètre envoyé par le navigateur
-- Les fonctions coach vérifient l'email avant de renvoyer quoi que ce soit
-- `LockService` sur toutes les écritures, pour éviter les collisions quand
-  plusieurs personnes s'entraînent en même temps
+- Authentification Firebase (Google), cloisonnement par email issu du jeton
+- Toute la sécurité dans `firestore.rules` : lecture/écriture par collection,
+  jamais un paramètre envoyé par le navigateur qui décide de la cible
+- Rôle (`coach`/`pratiquant`) et statut lus par `get()` sur le document du compte
+  lui-même, pas par un jeton personnalisé — pas de Cloud Function, reste gratuit
+- Statut *Inactif*/*Archivé* bloque l'écriture d'un pratiquant, jamais la lecture
+- `admin:true` peut réécrire un historique déjà clos ; l'attribution des rôles
+  reste manuelle (pas d'écran dédié pour l'instant)
 
 ## Limites connues
 
-- Le Sheet reste confortable jusqu'à ~50 000 lignes de séries. Au-delà (plusieurs
-  années à 40 pratiquants), il faudra archiver les saisons passées dans un second Sheet.
-- Le mode hors ligne couvre l'affichage, pas la saisie : une série validée sans
-  réseau n'est pas enregistrée. Une file d'attente locale est possible plus tard.
-- Quotas Apps Script : largement suffisants pour 41 utilisateurs.
+- Écran de consentement Google (Firebase Auth) en mode **Test** par défaut : seuls
+  les comptes explicitement ajoutés peuvent se connecter. Passer en Production
+  avant d'ouvrir à plus de quelques comptes.
+- L'envoi d'e-mail direct depuis le compte du coach n'est pas construit ; le bouton
+  Prévenir propose WhatsApp, SMS et un lien `mailto:` en attendant.
+- Le mode hors ligne (lecture et écriture) est natif à Firestore
+  (`persistentLocalCache`) — aucune file à gérer, mais une coupure trop longue sans
+  jamais resynchroniser reste un cas non testé à cette échelle.
+
+Documentation technique complète : [`PROJET.md`](PROJET.md). Décisions et
+« pourquoi » : [`PRODUCTION.md`](PRODUCTION.md).

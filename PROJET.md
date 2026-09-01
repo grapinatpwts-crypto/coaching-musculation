@@ -26,17 +26,25 @@ Contraintes qui ont dicté l'architecture :
 ## 2. Architecture retenue
 
 ```
- iPhone / Android          GitHub Pages              Apps Script            Google Sheet
- ┌──────────────┐          ┌────────────┐            ┌──────────┐          ┌──────────┐
- │ PWA installée│ ────────▶│ index.html │ ──POST────▶│  Code.gs │ ───────▶ │  Données │
- │ (icône)      │  token   │ (statique) │  + token   │ vérifie  │  lit /   │  privées │
- └──────────────┘  Google  └────────────┘            │ le token │  écrit   └──────────┘
-                                                     └──────────┘
+ iPhone / Android          GitHub Pages              Firebase
+ ┌──────────────┐          ┌────────────┐            ┌──────────────────────────┐
+ │ PWA installée│ ────────▶│ index.html │ ──SDK─────▶│ Auth (Google)             │
+ │ (icône)      │          │ (statique) │            │ Firestore (europe-west9) │
+ └──────────────┘          └────────────┘            │  ↳ Security Rules        │
+                                                       └──────────────────────────┘
 ```
 
 Le front-end statique ne contient **aucune donnée**. L'authentification se fait par
-Google Identity Services côté navigateur ; le token est vérifié côté serveur par
-Apps Script, qui ne renvoie à chaque personne que ses propres lignes.
+Firebase Auth (provider Google) côté navigateur ; le SDK Firestore lit et écrit
+directement depuis le client — **il n'y a plus de routeur serveur du tout**. La
+sécurité tient entièrement aux Security Rules (`firestore.rules`), qui lisent le
+rôle du compte par `get()` sur son propre document plutôt que par un jeton
+personnalisé, pour rester sur le plan gratuit (pas de Cloud Function).
+
+Jusqu'à l'été 2026, le backend était Google Apps Script + Google Sheets (§ 12 et
+`apps-script/`, conservés en lecture, plus jamais appelés). Le détail du chantier de
+bascule, vague par vague, est dans `git log` de la branche `firestore` — chaque
+commit explique un « pourquoi ».
 
 ## 3. Coordonnées du projet
 
@@ -44,30 +52,35 @@ Apps Script, qui ne renvoie à chaque personne que ses propres lignes.
 |---|---|
 | Dépôt GitHub | `grapinatpwts-crypto/coaching-musculation` (public) |
 | App en ligne | https://grapinatpwts-crypto.github.io/coaching-musculation/ |
-| Projet Cloud | `coaching-musculation` |
-| ID client OAuth | `765877661024-r5p4dhadda0i9eb9996ctb8298f7m6h8.apps.googleusercontent.com` |
-| Origine JS autorisée | `https://grapinatpwts-crypto.github.io` |
-| URL API (`/exec`) | `https://script.google.com/macros/s/AKfycbw8wC_TmFuLzP8yTrOmX5wH5k3Yoc-AbauN3Hj9oF57Lc1NSA-MrclnkuTnKr8DtBpEiQ/exec` |
+| Projet Firebase | `coaching-musculation-f0c1c` (plan **Spark**, gratuit) |
+| Firestore | région `europe-west9`, règles dans `firestore.rules`, index dans `firestore.indexes.json` |
 | Coach | Jérémy — `grapinat.pwts@gmail.com` |
 | Salle du coach | Wellness Sport Club — Lyon Confluence |
 | Second compte test | `guillaume.rapinat@gmail.com` |
 
-L'ID client et l'URL de l'API sont publics par nature (visibles dans le HTML) —
-ce ne sont pas des secrets. Le code secret OAuth n'est pas utilisé et n'a pas été conservé.
+La configuration Firebase (`apiKey`, `authDomain`...) visible dans `index.html` est
+publique par nature — ce ne sont pas des secrets, la sécurité tient aux Security
+Rules, pas à leur confidentialité. La clé de compte de service
+(`scripts/service-account.json`, utilisée uniquement par `scripts/seed.mjs` en
+local) est le seul vrai secret du projet : ignorée par git, jamais envoyée au client.
 
-**État OAuth : mode Test**, 2 utilisateurs tests sur 100. Conséquences : seuls ces
-deux comptes peuvent se connecter, et leur session expire au bout de 7 jours.
-Le passage en Production (page *Audience*) sera nécessaire avant d'ouvrir aux
-40 pratiquants — décision volontairement reportée.
+**État de l'écran de consentement Google (Firebase Auth) : mode Test.** Conséquence :
+seuls les comptes explicitement ajoutés peuvent se connecter. Le passage en
+Production sera nécessaire avant d'ouvrir aux 40 pratiquants — décision
+volontairement reportée, voir `PRODUCTION.md` § 5.
 
 ## 4. Fichiers
 
 | Fichier | Emplacement | Rôle |
 |---|---|---|
-| `Code.gs` | `apps-script/`, synchronisé par clasp (§ 12) | API JSON, auth, logique métier |
-| `index.html` | dépôt GitHub | PWA complète (HTML + CSS + JS inline) |
+| `index.html` | dépôt GitHub | PWA complète (HTML + CSS + JS inline), lit/écrit Firestore directement |
+| `firestore.rules` | dépôt GitHub | toute la sécurité — lecture/écriture par collection, cloisonnement par email |
+| `firestore.indexes.json` | dépôt GitHub | index composites nécessaires aux requêtes (attributions, séances, séries, commentaires) |
+| `scripts/seed.mjs` | dépôt GitHub | seed initial (catalogue, modèles-types, compte coach) — exécuté une fois en local avec `firebase-admin`, jamais depuis le client |
 | `manifest.json` | dépôt GitHub | manifeste d'installation |
-| `sw.js` | dépôt GitHub | service worker, cache de la coquille |
+| `sw.js` | dépôt GitHub | service worker, cache de la coquille — `CACHE` à incrémenter à chaque déploiement |
+| `modele-import.xlsx` | dépôt GitHub | gabarit d'import de programme, lu par SheetJS dans le navigateur |
+| `apps-script/` | dépôt GitHub | **archive** de l'ancien backend Apps Script — jamais appelé, conservé pour référence (§ 12) |
 | `README.md` | non déposé | guide d'installation en 8 étapes |
 | `favicon.ico` | racine | monogramme officiel Wellness, source des icônes |
 | `assets/` | racine | logo Wellness pour fond sombre |
@@ -77,30 +90,46 @@ Le passage en Production (page *Audience*) sera nécessaire avant d'ouvrir aux
 marque à 72 % pour les icônes classiques, 76 % pour la maskable (12 % de marge par
 côté, zone sûre respectée). Régénérables : voir § 9.
 
-## 5. Schéma du Google Sheet
+## 5. Modèle de données Firestore
 
-| Onglet | Colonnes |
-|---|---|
-| `Pratiquants` | email, nom, **statut**, **telephone**, date_inscription, objectif, **notes**, actif |
-| `Exercices` | id, nom, **nom_en**, groupe, equipement, consigne, photo, video |
-| `Ajustements` | id, email, attribution_id, exercice_id, charge, note, maj_le |
-| `Modeles` | id, nom, categorie, difficulte, description, duree_semaines, statut, **source**, **video**, cree_le |
-| `ModeleLignes` | id, modele_id, jour, bloc, ordre, exercice_id, series, reps_cible, duree_s, charge_cible, **pct_rm**, cadence, pause_s, repos_s |
-| `Attributions` | id, email, modele_id, nom, date_debut, date_fin, statut, **paye**, notes, cree_le |
-| `Maxis` | id, email, exercice_id, rm_kg, date, source |
-| `Programmes` | id, **attribution_id**, email, jour, bloc, ordre, exercice_id, series, reps_cible, duree_s, charge_cible, **pct_rm**, cadence, pause_s, repos_s |
-| `Seances` | id, email, date, jour, duree_min, **duree_prevue**, ressenti, notes, exercices_finis |
-| `Activites` | id, email, date, sport, duree_min, distance_km, effort, notes, cree_le |
-| `Photos` | email, image, maj_le |
-| `Commentaires` | id, email, exercice_id, auteur, texte, date, lu |
-| `Series` | id, seance_id, email, exercice_id, serie_num, reps, **duree_s**, charge, horodatage |
+Nesté ce qui n'a jamais de sens hors de son parent (lignes de modèle, lignes de
+programme, séries d'une séance) ; gardé à plat ce qui doit être requêté par égalité
+sur l'email à travers tous les parents (`attributions`, `seances`).
 
-Sept exercices d'exemple créés par `setup()` : EX001 développé couché, EX002 squat,
-EX003 soulevé de terre, EX004 tractions, EX005 développé militaire, EX006 curl barre,
-EX007 gainage (exercice au temps).
+```
+pratiquants/{email}                         # doc ID = email en minuscules
+  nom, role, admin, statut, telephone, date_inscription, objectif, notes
+  resume: { nbSeances, derniereSeanceLe }    # dénormalisé, écrit par le pratiquant en fin de séance
+  pratiquants/{email}/prive/photo            # doc unique, coach-only
+  pratiquants/{email}/maxis/{exerciceId}     # doc ID = exercice_id, coach-only en écriture
+  pratiquants/{email}/activites/{activiteId} # auto-id, self-service
+  pratiquants/{email}/recurrences/{id}       # planning personnel, self-service
+
+exercices/{exerciceId}                       # doc ID = "EX001"...
+modeles/{modeleId}                           # auto-id, coach-only
+  modeles/{modeleId}/lignes/{ligneId}        # auto-id
+
+attributions/{attributionId}                 # auto-id, TOP-LEVEL (requêtes par email+statut)
+  email, modele_id, nom, date_debut, date_fin, statut, paye, notes, duree_semaines, cree_le
+  nb_jours, nb_exercices                     # dénormalisés, lus par les listes
+  attributions/{id}/programme/{ligneId}      # copie des lignes du modèle au moment de l'attribution
+  attributions/{id}/ajustements/{exerciceId} # doc ID = exercice_id, écrit par le pratiquant lui-même
+
+seances/{seanceId}                           # auto-id, TOP-LEVEL (requêtes par email+date)
+  email, date, jour, duree_min, duree_prevue, ressenti, notes, exercices_finis: string[]
+  seances/{seanceId}/series/{serieId}        # auto-id
+
+commentaires/{commentaireId}                 # TOP-LEVEL
+compteurs/exercices                          # doc unique { dernier }, transaction pour "EXnnn"
+```
+
+Les champs eux-mêmes ont presque tous survécu tels quels au portage (`cadence`,
+`pct_rm`, `duree_s`, `pause_s`...) — c'est la couche données qui a changé
+(`api()` → SDK Firestore direct), pas la forme des objets que les écrans
+consomment. Les sous-sections qui suivent restent donc valables mot pour mot.
 
 `jour` est un texte libre (ex. « Lundi — Haut ») : il devient l'onglet affiché dans
-l'app. Les jours sont triés par jour de semaine (`triJours_`), pas alphabétiquement —
+l'app. Les jours sont triés par jour de semaine (`triJours`), pas alphabétiquement —
 sinon « Jeudi » passait avant « Lundi ».
 
 ### Les blocs
@@ -112,12 +141,10 @@ n'intervient qu'à la fin du tour. `ordre` classe les exercices à l'intérieur 
 `series` et `repos_s` sont lus sur la **première ligne du bloc** et valent pour tout
 le bloc ; `reps_cible` et `charge_cible` restent propres à chaque ligne.
 
-Une ligne seule dans son bloc = une série classique, comportement d'avant. Sur un
-Sheet déjà installé, `Coaching Fitness ▸ Migration : colonne bloc` crée la colonne et recopie
-`ordre` dedans — chaque ligne devient son propre bloc, rien ne change visuellement.
+Une ligne seule dans son bloc = une série classique, comportement d'avant.
 
 C'est le niveau « Travail » du modèle AppSheet (§ 13), repris dans sa forme légère :
-une colonne, pas une table. La version complète — programmes réutilisables,
+un champ, pas une collection à part. La version complète — programmes réutilisables,
 versionnés, affectés à plusieurs pratiquants — n'est pas faite.
 
 ### Les deux minuteurs
@@ -159,55 +186,109 @@ Une valeur numérique donne un décompte (le gainage à 45 s), la valeur `max` u
 chrono qui monte jusqu'à l'échec. La série enregistrée porte alors `duree_s` au lieu
 de `reps` — c'est pour ça que `logSerie_` accepte l'un **ou** l'autre.
 
-## 6. API — actions disponibles
+## 6. Accès aux données — fonctions `index.html`
 
-Toutes en POST sur l'URL `/exec`, corps `{token, action, payload}`,
-`Content-Type: text/plain;charset=utf-8`.
+Plus d'API : chaque écran appelle le SDK Firestore directement. La table ci-dessous
+mappe l'ancienne action serveur à la fonction qui l'a remplacée, pour retrouver un
+comportement documenté dans un vieux commit ou un commentaire Apps Script.
 
-| Action | Payload | Retour |
+| Ancienne action | Fonction actuelle | Notes |
 |---|---|---|
-| `bootstrap` | — | profil, jours, nb séances, estCoach |
-| `seance` | `{jour}` | `{seance_id, debut, faits, finis, blocs}` — `faits` les séries déjà saisies, `finis` les exercices clos |
-| `demarrer` | `{jour}` | `{seance_id}` |
-| `serie` | `{seance_id, exercice_id, serie_num, reps \| duree_s, charge}` | confirmation |
-| `terminer` | `{seance_id, duree_min?, ressenti, notes}` | clôt la séance ; durée déduite du début si absente |
-| `finirExercice` | `{seance_id, exercice_id}` | clôt un exercice sans exiger toutes ses séries |
-| `reprendreExercice` | `{seance_id, exercice_id}` | rouvre un exercice clos par erreur |
-| `historique` | `{exercice_id}` | 30 dernières séries |
-| `calendrier` | `{depuis?, jusqua?, email?}` | séances **et activités** de la période, chacune marquée d'un `type` |
-| `catalogue` | — | bibliothèque d'exercices complète |
-| `coachAthletes` | — | liste des pratiquants + jours d'inactivité |
-| `coachDetail` | `{email}` | 15 dernières séances détaillées |
-| `exerciceSave` | `{id?, nom, groupe, equipement, consigne, video}` | crée ou met à jour ; sans `id` c'est une création |
-| `exerciceSuppr` | `{id}` | refuse si l'exercice est employé dans un programme |
-| `programme` | `{email, attribution_id?}` | contenu d'une attribution ; par défaut celle en cours |
-| `programmeSave` | `{email, attribution_id, jour, blocs}` | réécrit **un seul jour** |
-| `programmeJour` | `{attribution_id, jour}` | supprime un jour entier |
-| `modeles` | — | liste des modèles génériques + nombre de jours et d'exercices |
-| `modele` | `{id}` | un modèle avec son contenu |
-| `modeleSave` | `{id?, nom, categorie, difficulte, description, duree_semaines, statut}` | fiche du modèle |
-| `modeleJourSave` | `{modele_id, jour, blocs}` | réécrit un jour du modèle |
-| `modeleJour` | `{modele_id, jour}` | supprime un jour du modèle |
-| `modeleSuppr` | `{id}` | supprime le modèle et son contenu |
-| `attributions` | `{email}` | historique des programmes d'un pratiquant |
-| `attribuer` | `{email, modele_id?, nom?, date_debut?}` | donne un programme, en copiant le modèle |
-| `attributionMaj` | `{id, statut?, nom?, date_fin?, notes?}` | modifie une attribution |
-| `attributionSuppr` | `{id}` | supprime l'attribution **et ses lignes** |
-
-Les cinq dernières sont réservées au coach (`guardCoach_`). `calendrier` accepte un
-`email` **uniquement** si l'appelant est le coach : pour tout le monde d'autre, la
-cible est l'email du token (`cibleEmail_`), jamais un paramètre client.
+| `bootstrap` | `chargerProfil` | lecture directe de `pratiquants/{email}` |
+| `seance` | `dataSeance` / `chargerSeance` | assemble aussi maxi, ajustement, historique borné (5 dernières séries/exercice) |
+| `demarrer` | `demarrerSeance` | invariant global (§ voir plus bas), pas par jour |
+| `serie` | `enregistrerSerie` | |
+| `terminer` | `terminerSeance` | met aussi à jour `resume.nbSeances` du profil, même lot |
+| `finirExercice` / `reprendreExercice` | `finirExercice` / `reprendreExercice` | `arrayUnion`/`arrayRemove` sur `exercices_finis` |
+| `annuler` | `supprimerSeance` | |
+| `historique` | `dataHistorique` | |
+| `calendrier` | `dataCalendrier` | |
+| `catalogue` | `dataCatalogue` | |
+| `coachAthletes` | `dataCoachAthletes` | assiduité approximée depuis `resume.nbSeances`, pas un vrai recalcul — évite de lire l'historique de tous les athlètes à chaque ouverture |
+| `coachDetail` | `dataCoachDetail` | |
+| `exerciceSave` / `exerciceSuppr` | `sauverExercice` / `supprimerExercice` | l'id `EXnnn` vient d'une transaction sur `compteurs/exercices`, plus un scan du plus grand id |
+| `programme` | `dataProgramme` | |
+| `programmeSave` / `programmeJour` | `sauverLignesJour` / `supprimerLignesJour` | partagées avec les modèles, même structure |
+| `modeles` / `modele` | `dataModeles` / `dataModele` | |
+| `modeleSave` / `modeleSuppr` | `sauverModele` / `supprimerModele` | |
+| `modeleJourSave` / `modeleJour` | `sauverLignesJour` / `supprimerLignesJour` | |
+| `attributions` | `dataAttributions` | |
+| `attribuer` | `creerAttribution` | pas de vraie transaction, voir § 8 |
+| `attributionMaj` / `attributionSuppr` | `majAttribution` / `supprimerAttribution` | |
+| `ajuster` | `ajusterCharge` | écrit par le pratiquant sur sa propre attribution |
+| `pratiquantCreer` / `pratiquantSave` | `creerPratiquant` / `sauverPratiquant` | |
+| `photoSave` / `photoSuppr` | `sauverPhoto` / `supprimerPhoto` | coach uniquement, règle |
+| `maxis` / `maxiSave` / `maxiSuppr` | `dataMaxis` / `sauverMaxi` / `supprimerMaxi` | l'estimation Epley n'est plus persistée, voir § 8 |
+| `commenter` / `commentairesLus` | `commenter` / `marquerCommentairesLus` | |
+| `activiteSave` / `activiteSuppr` | `sauverActivite` / `supprimerActivite` | |
+| `messageType` | `dataMessageType` | composé côté client, plus de serveur à appeler |
+| `notifierMail` | *(pas d'équivalent)* | nécessite le second projet Apps Script du § 7 de PRODUCTION.md, pas construit ; `mailto:` en attendant |
+| `lot`, `maintenance.*` | *(retirés)* | `lot` n'amortissait qu'une latence Apps Script disparue ; `maintenance.*` est le travail de `scripts/seed.mjs` |
 
 ## 7. Sécurité en place
 
-- Vérification serveur du token via `oauth2.googleapis.com/tokeninfo`, contrôle de `aud` et `exp`
-- Liste blanche : seuls les emails de l'onglet `Pratiquants` obtiennent une réponse
-- Cloisonnement : le filtre se fait sur l'email issu du token, jamais sur un paramètre client
-- Les actions coach vérifient l'email avant tout retour
-- `LockService` sur toutes les écritures
-- Cache de 5 min sur la vérification des tokens (`CacheService`)
+Portée entièrement par `firestore.rules`, plus aucun routeur serveur derrière le
+SDK — une règle mal écrite est une faille immédiate, pas un bug discret :
+
+- `estMoi(email)` : le champ `email.lower()` du jeton Firebase Auth doit égaler la
+  cible de la lecture/écriture — jamais un paramètre du client
+- `estCoach()` / `estAdmin()` : lus par `get()` sur `pratiquants/{email}`, pas par
+  un custom claim — évite toute Cloud Function, reste sur le plan Spark
+- `statutOk()` : un pratiquant *Inactif*/*Archivé* ne peut plus écrire (mais lit
+  toujours), même règle qu'avant sous Apps Script
+- Modèles et catalogue d'exercices en écriture : coach uniquement ; le pratiquant ne
+  voit jamais un modèle, seulement sa copie dans `attributions/{id}/programme`
+- Photos, Maxis (écriture) : réservées au coach — un pratiquant ne gère ni ses
+  photos de suivi ni son propre 1RM mesuré
+- Activités libres, ajustements de charge, planning personnel : self-service,
+  écrits par le pratiquant sur ses propres documents
+- `admin:true` peut réécrire un historique déjà clos (séance, série) et attribuer
+  les rôles ; le journal d'audit prévu au plan (`audit/`) n'est pas construit
 
 ## 8. Pièges rencontrés — à ne pas réapprendre
+
+### Firestore (backend actuel)
+
+**Un pratiquant qui lit `modeles/{id}` directement se fait refuser.** La règle est
+coach-only : la durée d'un programme, par exemple, doit être copiée sur l'attribution
+à sa création (`duree_semaines`) plutôt que relue depuis le modèle source — sinon
+l'écran d'accueil du pratiquant plante en silence à « Missing or insufficient
+permissions » dès qu'il a un programme actif.
+
+**Les transactions du SDK client ne lisent pas de requête, seulement des documents
+un par un.** L'invariant « pas deux séances ouvertes à la fois » ou « une seule
+attribution En cours » ne peut donc pas être une vraie transaction côté navigateur :
+c'est une lecture puis une écriture, avec le bouton désactivé pendant l'appel comme
+seule garde contre un double-tap. Risque accepté, pas contourné.
+
+**`serverTimestamps: 'estimate'` est nécessaire dès qu'on relit un document tout
+juste écrit.** Sans cette option, un champ `serverTimestamp()` pas encore confirmé
+par le serveur vaut `null` — une séance qu'on vient de créer semble alors ne pas
+exister, et un contrôle d'invariant qui la cherche la rate.
+
+**Composite index et `collectionGroup`** : une requête qui traverse plusieurs
+parents (ex. l'historique d'un exercice, tous jours confondus, via
+`collectionGroup('series')`) exige un index composite déclaré dans
+`firestore.indexes.json` et déployé — sinon Firestore refuse la requête avec un
+lien de création dans le message d'erreur, pas un résultat vide.
+
+**Toute écriture qui n'a pas de filet (`try/catch`) autour de son chargement laisse
+l'écran bloqué sur « Chargement… » pour toujours** si Firestore refuse pour une
+raison quelconque, sans le moindre message — pas d'erreur réseau bruyante comme
+avec un appel HTTP classique. Chaque écran (`vueX`) doit encadrer sa lecture
+principale.
+
+**L'estimation du 1RM par formule d'Epley n'est plus recalculée sur tout
+l'historique.** Les règles réservent l'écriture de `maxis` au coach ; le client ne
+peut donc plus persister une estimation. `dataSeance` l'approxime en mémoire depuis
+les cinq dernières séries connues de l'exercice (déjà lues pour « dernier »/
+« record »), pas depuis toute la carrière du pratiquant — une estimation moins
+précise mais bornée.
+
+### Apps Script (backend historique, `apps-script/`)
+
+Conservé pour mémoire : rien de tout ça n'est plus appelé, mais utile si le second
+projet autonome pour l'e-mail (PRODUCTION.md § 7) doit être construit.
 
 **Apps Script ne peut pas héberger la PWA.** Ses pages sont servies dans une iframe
 sandboxée : ni service worker, ni Google Sign-In fiable. D'où la séparation
@@ -315,9 +396,11 @@ suivis, et le coach peut rouvrir n'importe lequel pour le consulter ou le corrig
 Une attribution peut naître **sans modèle** : page blanche, pour du sur-mesure.
 `modele_id` reste alors vide.
 
-`getSeance_` et `bootstrap_` lisent les lignes de l'attribution en cours, via
-`lignesProgramme_()`. Sans attribution, on retombe sur les lignes non rattachées :
-un Sheet non migré continue de fonctionner.
+`dataSeance` et `chargerProfil` lisent les lignes de l'attribution en cours via
+`attributionActive` (`attributions/{id}/programme`). Sans attribution active, le
+pratiquant voit l'écran « Aucun programme pour l'instant » — plus de repli sur des
+lignes non rattachées, chaque ligne de programme appartient désormais à une
+attribution précise.
 
 ### L'éditeur est le même des deux côtés
 
@@ -367,20 +450,12 @@ ouverte, avec les séries déjà saisies ; `demarrerSeance_` la réutilise au li
 créer une seconde. Auparavant les données étaient bien écrites dans le Sheet, mais
 les compteurs de l'écran repartaient de zéro après un rechargement.
 
-## 8 quinquies. Aucune migration obligatoire
+## 8 quinquies. Aucune migration obligatoire (historique, Apps Script)
 
-`feuille_()` crée l'onglet manquant depuis `SCHEMA`, et complète l'en-tête avec les
-colonnes déclarées mais absentes. `lire_()` renvoie un tableau vide sur un onglet
-inexistant.
-
-Conséquence : **ajouter une colonne ou un onglet à `SCHEMA` suffit**, le classeur se
-met à niveau au premier usage. Une version antérieure exigeait de lancer la migration
-avant de pouvoir seulement se connecter — `bootstrap_` lisait `Attributions`, absent,
-et `getDataRange()` échouait sur `null`.
-
-`Coaching Fitness ▸ Migration : aligner les colonnes` reste utile pour une chose que
-l'auto-création ne fait pas : rattacher les lignes de `Programmes` antérieures au
-modèle d'attribution à une attribution « Programme courant ».
+Cette section décrivait l'auto-création des onglets/colonnes manquants sous
+Sheets — sans objet avec Firestore, qui n'a pas de schéma à faire évoluer : un champ
+absent sur un document se lit simplement comme absent, sans étape préalable. Conservé
+pour mémoire, comme le reste des sections marquées « historique » de ce chapitre.
 
 ## 8 sexies. Charges en pourcentage du max
 
@@ -394,11 +469,16 @@ Squat · 5 tours
   └─ 12 reps à 60 %  ─┘ top set puis back-off
 ```
 
-**D'où vient le 1RM.** Une valeur saisie par le coach dans `Maxis` fait foi. À
-défaut, il est estimé depuis les séries réalisées par la formule d'Epley,
-`1RM ≈ charge × (1 + reps / 30)`, en retenant la **meilleure** estimation et non la
-plus récente — un maxi ne se perd pas d'une séance à l'autre. Les séries de plus de
-15 répétitions sont ignorées, Epley y devient trop optimiste.
+**D'où vient le 1RM.** Une valeur saisie par le coach dans `pratiquants/{email}/maxis`
+fait foi — écriture réservée au coach par les règles, un pratiquant ne peut pas la
+poser lui-même. À défaut, `dataSeance` l'estime depuis les **cinq dernières** séries
+connues de l'exercice (déjà lues pour « dernier »/« record », pas de lecture
+supplémentaire) par la formule d'Epley, `1RM ≈ charge × (1 + reps / 30)`, en retenant
+la meilleure des cinq. Avant la migration Firestore, le serveur retenait la meilleure
+de **toute la carrière** du pratiquant — un calcul qu'un navigateur ne peut plus se
+permettre en lecture à chaque ouverture de séance ; l'estimation est donc un peu
+moins précise qu'avant, mais bornée. Les séries de plus de 15 répétitions sont
+ignorées, Epley y devient trop optimiste.
 
 La charge obtenue est arrondie au multiple de 2,5 kg, le plus petit saut réel sur une
 barre. L'app affiche la charge **et** son origine — « 107,5 kg · 90 % de 120 kg » —
@@ -414,30 +494,21 @@ revenir à l'estimation.
 ## 8 sexies. Hors ligne
 
 Une salle en sous-sol coupe le réseau, et c'est précisément là que la saisie a lieu.
-Deux mécanismes, indépendants.
 
-**Les lectures sont mises en cache.** `lire()` tente le réseau, et sert la dernière
-copie connue en cas d'échec. L'app s'ouvre et affiche le programme du jour sans
-connexion.
+**Avant la migration Firestore**, deux mécanismes maison géraient ça : un cache de
+lecture dans `localStorage` (`lire()`), et une file d'écriture rejouée au retour du
+réseau (`ecrire()`), limitée à cinq actions qui décrivent un fait daté plutôt qu'un
+état global. Une séance démarrée hors ligne recevait un identifiant provisoire
+(`LOC-…`), substitué partout une fois la séance vraiment créée au rejeu.
 
-**Les écritures sont mises en file.** `ecrire()` tente l'envoi ; sans réseau, l'action
-est empilée dans `localStorage` et la séance continue sans blocage. La file est
-rejouée dans l'ordre au retour du réseau, à l'ouverture de l'app, et toutes les
-20 secondes tant qu'elle n'est pas vide. Un bandeau indique le nombre d'actions en
-attente.
-
-Seules cinq actions sont différables — `demarrer`, `serie`, `finirExercice`,
-`reprendreExercice`, `terminer`. Elles décrivent un fait daté, pas un état global :
-les rejouer plus tard reste juste. Rien de ce que compose le coach n'est différé.
-
-**Le cas de la séance créée hors ligne.** `demarrer` ne peut pas renvoyer
-d'identifiant serveur : l'app en fabrique un provisoire, `LOC-…`, et les séries s'y
-rattachent. Au rejeu, la séance est créée pour de bon et l'identifiant est substitué
-partout, y compris dans l'état courant. Aucune ligne ne part avec un `LOC-`.
-
-Vérifié sous Node, hors navigateur : séance démarrée hors ligne, deux séries, une
-clôture d'exercice, rechargement, retour du réseau — quatre actions rejouées dans
-l'ordre sur le bon identifiant.
+**Depuis la migration**, tout ce mécanisme a disparu — `persistentLocalCache` du SDK
+Firestore fait ce travail nativement : les lectures sont servies depuis le cache
+local, les écritures sont appliquées optimistiquement (l'ID du document est généré
+côté client dès l'appel, avant même la confirmation réseau) et rejouées dans l'ordre
+au retour du réseau. Plus de file à gérer à la main, plus d'identifiant provisoire :
+chaque écriture a son ID définitif dès le départ. Le bandeau « Hors ligne » restant
+dans `index.html` est un indicateur générique lié à `navigator.onLine`, plus lié à
+un mécanisme de file.
 
 ## 8 septies. Courbes de progression
 
@@ -664,17 +735,20 @@ le produit vendu : il n'a rien à faire dans un dépôt public, et sa diffusion 
 L'usage personnel — remettre dans son propre suivi un programme qu'on a acheté —
 ne pose pas ce problème.
 
-### L'onglet Import
+### Le gabarit d'import
 
-Pour verser un programme sans passer par le dépôt : un onglet **Import** du classeur
-sert de sas. On y colle un tableau où **les exercices sont désignés par leur nom**,
-puis `Coach ▸ Réglages ▸ Importer la feuille` le transforme en modèle.
+Pour verser un programme sans passer par le dépôt : `modele-import.xlsx`, à la
+racine, sert de gabarit — une notice, la fiche du modèle (onglet **Fiche**), la
+grille à remplir (onglet **Programme**, exercices désignés par leur nom), et la
+liste des exercices disponibles en référence. Rempli, `Réglages ▸ Importer un
+programme` le lit dans le navigateur (SheetJS) et écrit un modèle dans Firestore —
+plus d'aller-retour par un onglet du classeur Google, l'ancien sas a disparu avec
+Sheets.
 
-Rien n'est créé si un seul nom est introuvable — la fonction renvoie la liste des
-noms en défaut. Mieux vaut refuser que produire un programme troué.
+Rien n'est créé si un seul nom d'exercice de l'onglet Programme est introuvable au
+catalogue — `importerModele` renvoie la liste des noms en défaut plutôt que de
+produire un programme troué.
 
-Le fichier `modele-import.xlsx`, à la racine, sert de gabarit : une notice, la fiche
-du modèle, la grille à remplir, et la liste des exercices disponibles en référence.
 **Il ne contient aucun contenu acheté**, seulement la structure.
 
 ## 8 quindecies. L'accueil du pratiquant
@@ -757,45 +831,33 @@ retrouve la remarque sur l'épaule qui coinçait, à côté des charges de l'ép
 C'est aussi pour ça qu'il n'y a pas de notification : le mot attend sur l'exercice,
 et se voit au moment où on en a besoin — quand on est devant la barre.
 
-## 8 octodecies. Vitesse
+## 8 octodecies. Vitesse (historique, Apps Script)
 
-Chaque action passe par Apps Script, qui met une à deux secondes rien qu'à répondre.
-Le reste venait de nous : une action lisait **3 à 9 onglets entiers**, parfois deux
-fois le même.
+Cette section détaillait l'optimisation d'un modèle devenu obsolète : chaque action
+passait par Apps Script, qui mettait 0,5 à 2 s rien qu'à répondre, sur un « classeur
+entier en mémoire » relu à chaque fois — mémoire de requête, cache des onglets
+stables, photos différées, affichage immédiat depuis une copie locale (`lireVite()`).
+C'est précisément cette latence incompressible qui a motivé le passage à Firestore
+(PRODUCTION.md § 1) : les lectures vont directement du navigateur à la base, sans
+serveur entre les deux, et `persistentLocalCache` sert le hors-ligne nativement.
 
-| Action | Lectures avant | Après |
-|---|---|---|
-| `getSeance_` | 9 | 6 |
-| `programme_` | 5 | 2 |
-| `accueil_` | 6 | 4 |
-| `coachAthletes_` | 7 | 5, et sans les photos |
+**Ce qui reste comme discipline, sous une autre forme :**
 
-Quatre mesures, de la plus rentable à la moins visible.
+- **Dénormaliser plutôt que recalculer à volée** — `resume.nbSeances` sur le profil
+  évite de lire l'historique de tous les athlètes à l'ouverture de la liste
+  (`dataCoachAthletes`) ; `nb_jours`/`nb_exercices` sur les attributions et modèles
+  évitent de lire leurs sous-collections juste pour les compter.
+- **Photos différées** : toujours vrai, `dataPhotos` part après la liste des
+  athlètes, pas avec.
+- **Historique borné** : la formule d'Epley et « dernier/record » ne lisent plus
+  que les cinq dernières séries d'un exercice, pas toute la carrière (§ 8, Pièges
+  Firestore).
 
-**Mémoire de requête.** `lire_` ne lit un onglet qu'une fois par requête. Toute
-écriture oublie l'onglet concerné.
-
-**Cache des onglets stables.** `Exercices`, `Modeles` et `ModeleLignes` changent
-rarement et pèsent lourd — le catalogue fait 171 lignes avec consignes et adresses
-d'images. Ils sont gardés cinq minutes dans le cache du script, invalidés à
-l'écriture. Au-delà de 90 ko, on s'en passe : une entrée de cache plafonne à 100 ko.
-
-**En-têtes vérifiés une fois.** `feuille_` complétait les colonnes manquantes à
-chaque écriture, donc relisait la ligne de titres à chaque fois.
-
-**Photos différées.** Elles ne partent plus avec la liste des athlètes : la liste
-s'affiche avec les initiales, les images arrivent ensuite en une requête. Quelques
-centaines de kilo-octets quittent le chemin critique.
-
-**Affichage immédiat.** `lireVite()` rend la copie en cache tout de suite et
-rafraîchit derrière : l'accueil s'affiche instantanément, puis se corrige si le
-serveur dit autre chose. C'est ce qui change le plus la sensation.
-
-### Le plafond connu
-
-Les photos vivent dans le classeur, ce qui évitait tout service externe. À quelques
-dizaines de pratiquants, lire l'onglet `Photos` charge toutes les images d'un coup.
-Au-delà de cent, il faudra les déplacer — Drive, ou un onglet par tranche.
+**Le plafond des photos reste le même dans l'esprit**, juste porté ailleurs :
+encodées en base64 dans un document Firestore (`prive/photo`) plutôt qu'une cellule
+de classeur, chaque photo tient large sous la limite de 1 Mo par document. Au-delà
+de cent pratiquants, les déplacer vers un stockage dédié reste l'idée de secours
+(PRODUCTION.md § 6).
 
 ## 8 novodecies. On clique la ligne, pas l'icône
 
@@ -1014,29 +1076,39 @@ les bouts, les deux comptent.
 
 ## 10. Prochaines étapes
 
-Ce qui reste, par ordre d'utilité décroissante.
+Ce qui reste, par ordre d'utilité décroissante — le détail et le « pourquoi » sont
+dans `PRODUCTION.md` § 5.
 
-1. **Importer la bibliothèque**, puis **créer le programme d'exemple**, depuis
-   Coach ▸ Réglages. Compléter ensuite des exercices propres au coach (§ 8 nonies).
-2. **Installer sur téléphone** et juger l'ergonomie réelle, téléphone en main
-   entre deux séries. Safari sur iOS, Chrome sur Android.
+1. **Importer les vrais programmes de Jérémy** depuis `Réglages ▸ Importer un
+   programme`, avec `modele-import.xlsx` rempli. Le catalogue, lui, est déjà le vrai
+   (171 exercices, seedé une fois par `scripts/seed.mjs`).
+2. **Éprouver l'app en salle**, téléphone en main entre deux séries. Safari sur iOS,
+   Chrome sur Android.
 3. **Décider ce que le pratiquant peut ajuster d'autre** que la charge — les
    répétitions, par exemple (§ 8 octies).
-4. **Activer le déclencheur hebdomadaire** sur `rapportHebdo()`, depuis l'éditeur
-   Apps Script (`Déclencheurs ▸ Ajouter`). Il n'écrit qu'au coach, jamais aux
-   pratiquants : l'automatiser ne contredit pas le principe du § 1. L'envoi manuel
-   existe déjà dans Coach ▸ Réglages.
-5. **Passer l'écran OAuth en Production** avant d'ouvrir aux 40 pratiquants.
-   En mode Test, seuls deux comptes se connectent et leur session expire à 7 jours.
+4. **Construire l'écran de tableau de bord** qui remplace l'ancien rapport
+   hebdomadaire par e-mail (`rapportHebdo`, disparu avec Apps Script) — assiduité de
+   tous les athlètes en un coup d'œil, à la demande plutôt qu'un envoi programmé.
+5. **Passer l'écran de consentement Google (Firebase Auth) en Production** avant
+   d'ouvrir aux 40 pratiquants. En mode Test, seuls les comptes explicitement
+   ajoutés se connectent.
 
 ## 11. Idées d'évolution non implémentées
 
 - Notification au coach lors d'un record battu
-- Export PDF du bilan mensuel via `DocumentApp`
+- Export PDF du bilan mensuel — plus de `DocumentApp` sans un Apps Script dédié ;
+  une lib JS côté client est la piste la plus simple maintenant
 - Comparaison entre pratiquants suivant le même modèle
-- Archivage annuel : le Sheet reste confortable jusqu'à ~50 000 lignes de séries
+- Archivage annuel des séries — moins urgent qu'avec un classeur, Firestore n'a pas
+  de plafond de lignes comparable
+- Envoi d'e-mail direct depuis le compte du coach : second projet Apps Script
+  autonome, sans classeur (PRODUCTION.md § 7) — `mailto:` fait l'affaire en attendant
 
 ## 12. Outillage local — clasp
+
+**`apps-script/` n'est plus le backend de l'app** (§ 2) : ce qui suit reste vrai pour
+qui touche à cette archive, ou construit le second projet Apps Script autonome dédié
+à l'e-mail (PRODUCTION.md § 7) — plus pour développer l'app elle-même.
 
 `clasp` est la CLI officielle Google qui synchronise un dossier local avec un projet
 Apps Script. Elle supprime les copier-coller vers l'éditeur en ligne.
