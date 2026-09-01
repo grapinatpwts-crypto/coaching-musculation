@@ -2311,6 +2311,10 @@ async function vueSeance() {
       vueSeance();
     } catch (err) { toast(err.message); this.disabled = false; }
   });
+  $('#liste').querySelectorAll('[data-valider]').forEach(b => {
+    const e = S.exos[Number(b.dataset.valider)];
+    appuiLong(b, () => validerSerieRapide(e), () => remplirSerieAuMax(e));
+  });
 }
 
 // ── Séance : lecture et écritures ────────────────────────────
@@ -2721,15 +2725,22 @@ function reposTexte(sec) {
 const enAttente = id => ((S.nonLus || {}).exercices || {})[id] || 0;
 
 /** Carte d'un exercice. series et repos_s sont hérités de son bloc. */
+/**
+ * Carte compacte de l'écran séance. La pastille de séries est un bouton :
+ * appui court = une série de plus (valeurs par défaut, comme au premier tour
+ * du panneau de saisie), appui long = les séries restantes d'un coup —
+ * câblé juste après dans vueSeance via appuiLong. Le reste de la carte
+ * ouvre toujours le panneau complet (ouvrirLogger) pour ajuster reps/charge
+ * ou lancer un chrono.
+ * Toujours une <div>, jamais <button> : un bouton dans un bouton est
+ * invalide, et la pastille doit rester cliquable indépendamment.
+ */
 function carte(e, seul) {
   const n = (S.faits[e.exercice_id] || []).length;
   const fini = S.finis.indexOf(e.exercice_id) !== -1;
   const cible = e.duree_s ? duree(e.duree_s) : e.reps_cible;
-  // Un exercice clos garde une carte cliquable, plus un bouton pour le rouvrir.
-  // D'où une <div> avec deux zones : imbriquer un bouton dans un bouton est invalide.
-  const [ouvre, ferme] = fini ? ['<div class="card clos">', '</div>'] : [`<button class="card" data-i="${e._i}">`, '</button>'];
-  return `${ouvre}
-    <div class="body" ${fini ? `data-i="${e._i}"` : ''}>
+  return `<div class="card ${fini ? 'clos' : ''}">
+    <div class="body" data-i="${e._i}">
       <div class="nom">${e.nom}</div>
       <div class="meta">${e.series} × ${cible}${chargeTexte(e) ? ' · ' + chargeTexte(e) : ''}${
         fini && n < e.series ? ' · arrêté à ' + n : ''}${
@@ -2747,8 +2758,64 @@ function carte(e, seul) {
     ${fini
       ? `<button class="done full reprendre" data-rep="${e.exercice_id}"
            title="Reprendre cet exercice" aria-label="Reprendre ${e.nom}">↺</button>`
-      : `<div class="done ${n >= e.series ? 'full' : ''}">${n}/${e.series}</div>`}
-  ${ferme}`;
+      : `<button class="done ${n >= e.series ? 'full' : ''}" data-valider="${e._i}"
+           aria-label="${n} sur ${e.series} séries — appui court : une série de plus, appui long : au maximum">${n}/${e.series}</button>`}
+  </div>`;
+}
+
+/**
+ * Appui court déclenche `court`, appui long (550 ms) déclenche `long` à sa
+ * place — jamais les deux.
+ */
+function appuiLong(el, court, long, delai) {
+  if (!el) return;
+  let t = null, longFait = false;
+  el.onpointerdown = () => { longFait = false; t = setTimeout(() => { longFait = true; long(); }, delai || 550); };
+  el.onpointerup = () => { clearTimeout(t); if (!longFait) court(); };
+  el.onpointercancel = () => clearTimeout(t);
+  el.onpointerleave = () => clearTimeout(t);
+}
+
+/**
+ * Une série de plus depuis la pastille, sans ouvrir le panneau — reps/charge
+ * par défaut, les mêmes qu'ouvrirLogger propose au départ. Ouvrir le panneau
+ * reste le seul moyen d'ajuster reps/charge/durée avant de valider.
+ */
+async function validerSerieRapide(e) {
+  if (!(await assurerSeanceActive())) return;
+  const auTemps = !!e.duree_s;
+  const cible = auTemps && String(e.duree_s).toLowerCase() !== 'max' ? Number(e.duree_s) : 0;
+  if (auTemps && !cible) { toast("Ouvrez l'exercice pour chronométrer une série"); return; }
+  const reps = Number(String(e.reps_cible).split('-')[0]) || 10;
+  const charge = e.dernier ? e.dernier.charge : (e.charge_cible || (auTemps ? 0 : 20));
+  try {
+    const p = { serie_num: (S.faits[e.exercice_id] || []).length + 1, charge };
+    if (auTemps) p.duree_s = cible; else p.reps = reps;
+    await enregistrerSerie(S.seanceId, e.exercice_id, p);
+    vueSeance();
+  } catch (err) { toast('Non enregistré : ' + err.message); }
+}
+
+/** Toutes les séries restantes d'un coup, aux mêmes valeurs par défaut. */
+async function remplirSerieAuMax(e) {
+  if (!(await assurerSeanceActive())) return;
+  let deja = (S.faits[e.exercice_id] || []).length;
+  const manquant = e.series - deja;
+  if (manquant <= 0) return;
+  const auTemps = !!e.duree_s;
+  const cible = auTemps && String(e.duree_s).toLowerCase() !== 'max' ? Number(e.duree_s) : 0;
+  if (auTemps && !cible) { toast("Ouvrez l'exercice pour chronométrer une série"); return; }
+  const reps = Number(String(e.reps_cible).split('-')[0]) || 10;
+  const charge = e.dernier ? e.dernier.charge : (e.charge_cible || (auTemps ? 0 : 20));
+  try {
+    for (let i = 0; i < manquant; i++) {
+      deja++;
+      const p = { serie_num: deja, charge };
+      if (auTemps) p.duree_s = cible; else p.reps = reps;
+      await enregistrerSerie(S.seanceId, e.exercice_id, p);
+    }
+    vueSeance();
+  } catch (err) { toast('Non enregistré : ' + err.message); }
 }
 
 const arrondi = n => Math.round(n * 10) / 10;
