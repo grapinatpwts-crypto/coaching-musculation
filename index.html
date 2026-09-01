@@ -1065,7 +1065,7 @@ async function dataPratiquant(email) {
     derniere,
     joursDepuis: derniere ? Math.floor((Date.now() - new Date(derniere)) / 86400000) : null,
     attributions, activites: activites.slice(0, 12),
-    recurrences: recurrences.filter(r => r.actif)
+    recurrences
   };
 }
 
@@ -1232,6 +1232,7 @@ function semaineCourante(jours, seances, recurrences) {
   const lundi = new Date();
   lundi.setDate(lundi.getDate() - ((lundi.getDay() + 6) % 7));
   lundi.setHours(0, 0, 0, 0);
+  const dimanche = new Date(lundi.getTime() + 6 * 86400000);
   const rang = j => {
     const t = String(j).toLowerCase();
     for (let i = 0; i < SEMAINE.length; i++) if (t.indexOf(SEMAINE[i].toLowerCase()) !== -1) return i;
@@ -1239,10 +1240,26 @@ function semaineCourante(jours, seances, recurrences) {
   };
   const parRang = {};
   jours.forEach(j => { const r = rang(j); if (r !== -1 && !(r in parRang)) parRang[r] = j; });
+
+  // Récurrent hebdomadaire : dans la fenêtre date_debut/date_fin si posée.
+  // Le mensuel ne prétend pas savoir quelle semaine du mois on est — il n'a
+  // pas sa place dans un bandeau qui ne montre qu'une semaine, seulement
+  // dans la liste de gestion et sur la fiche du coach.
+  // Ponctuel : sa date tombe cette semaine-ci.
   const recParRang = {};
-  (recurrences || []).filter(r => r.actif).forEach(r => {
-    const ri = rang(r.jour);
-    if (ri !== -1) (recParRang[ri] = recParRang[ri] || []).push(r);
+  (recurrences || []).forEach(r => {
+    if (r.recurrent) {
+      if (r.frequence !== 'semaine') return;
+      if (r.date_debut && dimanche < new Date(r.date_debut)) return;
+      if (r.date_fin && lundi > new Date(r.date_fin)) return;
+      const ri = rang(r.jour);
+      if (ri !== -1) (recParRang[ri] = recParRang[ri] || []).push(r);
+    } else if (r.date) {
+      const d = new Date(r.date);
+      if (d < lundi || d > dimanche) return;
+      const ri = Math.round((d - lundi) / 86400000);
+      (recParRang[ri] = recParRang[ri] || []).push(r);
+    }
   });
 
   return [0, 1, 2, 3, 4, 5, 6].map(i => {
@@ -1390,11 +1407,14 @@ async function supprimerActivite(id) {
 }
 
 /**
- * Planning récurrent du pratiquant courant — un engagement extérieur qui
- * revient chaque semaine (cours, club...), distinct des séances du coach et
- * des activités déjà faites : c'est une intention affichée, pas un fait
- * enregistré. La consigner comme faite reste un geste à part, via
- * « Consigner une activité », le jour où elle a vraiment eu lieu.
+ * Planning du pratiquant courant — un engagement extérieur (cours, club...),
+ * distinct des séances du coach et des activités déjà faites : c'est une
+ * intention affichée, pas un fait enregistré. La consigner comme faite reste
+ * un geste à part, via « Consigner une activité », le jour où elle a
+ * vraiment eu lieu. Deux formes : récurrent (jour de la semaine, fréquence,
+ * fenêtre date_debut/date_fin), ou ponctuel (une date unique) — jamais les
+ * deux à la fois, `recurrent` distingue laquelle des deux séries de champs
+ * fait foi.
  */
 async function dataRecurrences(email) {
   const { db, collection, getDocs } = FB;
@@ -1407,21 +1427,42 @@ async function dataRecurrences(email) {
   const list = [];
   snap.forEach(d => {
     const r = d.data();
-    list.push({ id: d.id, sport: r.sport, jour: r.jour, heure: r.heure || '',
-      duree_min: Number(r.duree_min) || 0, notes: r.notes || '', actif: r.actif !== false });
+    list.push({
+      id: d.id, sport: r.sport, recurrent: r.recurrent !== false,
+      jour: r.jour || '', frequence: r.frequence || 'semaine',
+      date_debut: r.date_debut || '', date_fin: r.date_fin || '',
+      date: r.date || '',
+      heure: r.heure || '', duree_min: Number(r.duree_min) || 0, notes: r.notes || ''
+    });
   });
-  return list.sort((a, b) => rang(a.jour) - rang(b.jour) || a.heure.localeCompare(b.heure));
+  return list.sort((a, b) =>
+    (a.recurrent ? rang(a.jour) : 7) - (b.recurrent ? rang(b.jour) : 7) || a.heure.localeCompare(b.heure));
 }
 
-/** Ajoute ou modifie une entrée du planning récurrent. Sans id, une création. */
+/** Ajoute ou modifie une entrée du planning. Sans id, une création. */
 async function sauverRecurrence(p) {
   const { db, doc, collection, addDoc, updateDoc } = FB;
   const sport = String(p.sport || '').trim();
-  const jour = String(p.jour || '').trim();
   if (!sport) throw new Error('SPORT_REQUIS');
-  if (!jour) throw new Error('JOUR_REQUIS');
-  const champs = { sport, jour, heure: String(p.heure || ''), duree_min: Number(p.duree_min) || 0,
-    notes: String(p.notes || ''), actif: p.actif !== false };
+  const recurrent = !!p.recurrent;
+  const champs = {
+    sport, recurrent, heure: String(p.heure || ''), duree_min: Number(p.duree_min) || 0,
+    notes: String(p.notes || '')
+  };
+  if (recurrent) {
+    const jour = String(p.jour || '').trim();
+    if (!jour) throw new Error('JOUR_REQUIS');
+    champs.jour = jour;
+    champs.frequence = p.frequence === 'mois' ? 'mois' : 'semaine';
+    champs.date_debut = String(p.date_debut || '');
+    champs.date_fin = String(p.date_fin || '');
+    champs.date = '';
+  } else {
+    const date = String(p.date || '').trim();
+    if (!date) throw new Error('DATE_REQUISE');
+    champs.date = date;
+    champs.jour = ''; champs.frequence = ''; champs.date_debut = ''; champs.date_fin = '';
+  }
   if (p.id) {
     await updateDoc(doc(db, 'pratiquants', S.email, 'recurrences', p.id), champs);
     return { id: p.id };
@@ -1899,9 +1940,7 @@ async function vueAccueil() {
     </div>
     <div class="barre" style="margin-top:10px">
       <button class="btn" id="gererPlanning" style="flex:1">${
-        a.recurrences.filter(r => r.actif).length
-          ? 'Planning récurrent · ' + a.recurrences.filter(r => r.actif).length
-          : '＋ Planning récurrent'}</button>
+        a.recurrences.length ? 'Mon planning · ' + a.recurrences.length : '＋ Mon planning'}</button>
     </div>
 
     ${a.activites.length ? `
@@ -2007,8 +2046,21 @@ function modalActivite(x) {
  * devient jamais une séance enregistrée tout seul — « Consigner une
  * activité » reste le geste qui compte pour l'assiduité, le jour où on y va.
  */
+/** Résumé lisible d'une entrée de planning, récurrente ou ponctuelle. */
+function texteRecurrence(r) {
+  if (r.recurrent) {
+    const freq = r.frequence === 'mois' ? 'chaque mois' : 'chaque semaine';
+    const fenetre = [
+      r.date_debut ? 'du ' + new Date(r.date_debut).toLocaleDateString('fr-FR') : '',
+      r.date_fin ? 'au ' + new Date(r.date_fin).toLocaleDateString('fr-FR') : ''
+    ].filter(Boolean).join(' ');
+    return [r.jour, freq, r.heure, fenetre].filter(Boolean).join(' · ');
+  }
+  return [r.date ? new Date(r.date).toLocaleDateString('fr-FR') : '', r.heure].filter(Boolean).join(' · ');
+}
+
 function modalPlanningRecurrent(liste) {
-  const w = modal('Planning récurrent', `
+  const w = modal('Mon planning', `
     <div id="prList"></div>
     <div class="barre" style="margin-top:14px">
       <button class="btn plein" id="prAjout" style="flex:1">＋ Ajouter</button></div>
@@ -2018,7 +2070,7 @@ function modalPlanningRecurrent(liste) {
     w.querySelector('#prList').innerHTML = liste.length
       ? liste.map(r => `<div class="ligne" data-r="${r.id}">
           <div class="g">
-            <div class="nom">${r.jour}${r.heure ? ' · ' + r.heure : ''}${r.actif ? '' : ' · en pause'}</div>
+            <div class="nom">${texteRecurrence(r)}</div>
             <div class="meta">${r.sport}${r.duree_min ? ' · ' + r.duree_min + ' min' : ''}${r.notes ? ' · ' + r.notes : ''}</div>
           </div>
         </div>`).join('')
@@ -2033,7 +2085,8 @@ function modalPlanningRecurrent(liste) {
 }
 
 function modalEditerRecurrence(r, liste, rafraichirParent) {
-  const x = r || { id:'', sport:'', jour:SEMAINE[0], heure:'', duree_min:'', notes:'', actif:true };
+  const x = r || { id:'', sport:'', recurrent:true, jour:SEMAINE[0], frequence:'semaine',
+                   date_debut:'', date_fin:'', date:'', heure:'', duree_min:'', notes:'' };
   const w = modal(r ? 'Modifier' : 'Ajouter au planning', `
     <div class="champ"><label>Activité</label>
       <select class="f" id="rSport">
@@ -2042,35 +2095,72 @@ function modalEditerRecurrence(r, liste, rafraichirParent) {
           ${lst.map(s => `<option ${s === x.sport ? 'selected' : ''}>${s}</option>`).join('')}
         </optgroup>`).join('')}
       </select></div>
-    <div class="champ"><label>Jour</label>
-      <select class="f" id="rJour">${SEMAINE.map(j => `<option ${j === x.jour ? 'selected' : ''}>${j}</option>`).join('')}</select></div>
+    <label class="paye"><input type="checkbox" id="rRecurrent" ${x.recurrent ? 'checked' : ''}><span>Récurrent</span></label>
+
+    <div id="rBlocRecurrent">
+      <div class="duo">
+        <div class="champ"><label>Jour</label>
+          <select class="f" id="rJour">${SEMAINE.map(j => `<option ${j === x.jour ? 'selected' : ''}>${j}</option>`).join('')}</select></div>
+        <div class="champ"><label>Fréquence</label>
+          <select class="f" id="rFrequence">
+            <option value="semaine" ${x.frequence !== 'mois' ? 'selected' : ''}>Chaque semaine</option>
+            <option value="mois" ${x.frequence === 'mois' ? 'selected' : ''}>Chaque mois</option>
+          </select></div>
+      </div>
+      <div class="duo">
+        <div class="champ"><label>Date de début</label><input class="f" id="rDebut" type="date" value="${x.date_debut}"></div>
+        <div class="champ"><label>Date de fin</label><input class="f" id="rFin" type="date" value="${x.date_fin}"></div>
+      </div>
+    </div>
+    <div id="rBlocPonctuel" class="hidden">
+      <div class="champ"><label>Date</label><input class="f" id="rDate" type="date" value="${x.date}"></div>
+    </div>
+
     <div class="duo">
       <div class="champ"><label>Heure</label><input class="f" id="rHeure" type="time" value="${x.heure}"></div>
       <div class="champ"><label>Durée (min)</label><input class="f" id="rDuree" type="number" min="0" step="5" value="${x.duree_min || ''}"></div>
     </div>
     <div class="champ"><label>Notes</label><input class="f" id="rNotes" value="${x.notes}" placeholder="Club, adresse…"></div>
-    <label class="paye"><input type="checkbox" id="rActif" ${x.actif ? 'checked' : ''}><span>Actif</span></label>
     <div class="barre" style="margin-top:14px"><button class="btn" id="rAnn">Annuler</button>
       <button class="btn plein" id="rOk" style="flex:1">Enregistrer</button></div>
     ${r ? '<div class="barre"><button class="btn danger" id="rDel">Supprimer</button></div>' : ''}`);
+
+  const recCase = w.querySelector('#rRecurrent');
+  const majBlocs = () => {
+    w.querySelector('#rBlocRecurrent').classList.toggle('hidden', !recCase.checked);
+    w.querySelector('#rBlocPonctuel').classList.toggle('hidden', recCase.checked);
+  };
+  recCase.onchange = majBlocs;
+  majBlocs();
 
   w.querySelector('#rAnn').onclick = w.fermer;
   w.querySelector('#rOk').onclick = async function () {
     const sport = w.querySelector('#rSport').value;
     if (!sport) return toast('Choisissez une activité');
     this.disabled = true;
+    const recurrent = recCase.checked;
     const champs = {
-      sport, jour: w.querySelector('#rJour').value,
+      sport, recurrent,
+      jour: w.querySelector('#rJour').value, frequence: w.querySelector('#rFrequence').value,
+      date_debut: w.querySelector('#rDebut').value, date_fin: w.querySelector('#rFin').value,
+      date: w.querySelector('#rDate').value,
       heure: w.querySelector('#rHeure').value, duree_min: w.querySelector('#rDuree').value,
-      notes: w.querySelector('#rNotes').value, actif: w.querySelector('#rActif').checked
+      notes: w.querySelector('#rNotes').value
     };
     try {
       const res = await sauverRecurrence(Object.assign({ id: x.id || undefined }, champs));
+      champs.duree_min = Number(champs.duree_min) || 0;
+      if (!recurrent) { champs.jour = ''; champs.frequence = ''; champs.date_debut = ''; champs.date_fin = ''; }
+      else champs.date = '';
       if (r) Object.assign(r, champs);
       else liste.push(Object.assign({ id: res.id }, champs));
       w.fermer(); rafraichirParent();
       toast('Planning enregistré');
-    } catch (err) { toast(err.message); this.disabled = false; }
+    } catch (err) {
+      toast(err.message === 'JOUR_REQUIS' ? 'Choisissez un jour'
+          : err.message === 'DATE_REQUISE' ? 'Donnez une date' : err.message);
+      this.disabled = false;
+    }
   };
   if (r) w.querySelector('#rDel').onclick = async function () {
     this.disabled = true;
@@ -3547,10 +3637,10 @@ async function vueFiche() {
 
     ${f.recurrences.length ? `
       <div class="eyebrow" style="margin:22px 0 10px">Contraintes du pratiquant</div>
-      <p class="consigne" style="margin-bottom:10px">Engagements extérieurs récurrents, déclarés par le pratiquant.</p>
+      <p class="consigne" style="margin-bottom:10px">Engagements extérieurs, déclarés par le pratiquant.</p>
       ${f.recurrences.map(r => `<div class="ligne">
         <div class="g">
-          <div class="nom">${r.jour}${r.heure ? ' · ' + r.heure : ''}${r.duree_min ? ' · ' + r.duree_min + ' min' : ''}</div>
+          <div class="nom">${texteRecurrence(r)}${r.duree_min ? ' · ' + r.duree_min + ' min' : ''}</div>
           <div class="meta">${r.sport}${r.notes ? ' · ' + r.notes : ''}</div>
         </div>
       </div>`).join('')}` : ''}
