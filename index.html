@@ -1047,10 +1047,11 @@ async function dataPratiquant(email) {
   const p = snap.data();
   const resume = p.resume || {};
   const derniere = versDate(resume.derniereSeanceLe);
-  const [photo, attributions, activites] = await Promise.all([
+  const [photo, attributions, activites, recurrences] = await Promise.all([
     dataPhotos([email]),
     dataAttributions(email),
-    dataActivites(email, { depuis: new Date(Date.now() - 90 * 86400000).toISOString() })
+    dataActivites(email, { depuis: new Date(Date.now() - 90 * 86400000).toISOString() }),
+    dataRecurrences(email)
   ]);
 
   return {
@@ -1063,7 +1064,8 @@ async function dataPratiquant(email) {
     nbSeries: Number(resume.nbSeries) || 0,
     derniere,
     joursDepuis: derniere ? Math.floor((Date.now() - new Date(derniere)) / 86400000) : null,
-    attributions, activites: activites.slice(0, 12)
+    attributions, activites: activites.slice(0, 12),
+    recurrences: recurrences.filter(r => r.actif)
   };
 }
 
@@ -1394,9 +1396,9 @@ async function supprimerActivite(id) {
  * enregistré. La consigner comme faite reste un geste à part, via
  * « Consigner une activité », le jour où elle a vraiment eu lieu.
  */
-async function dataRecurrences() {
+async function dataRecurrences(email) {
   const { db, collection, getDocs } = FB;
-  const snap = await getDocs(collection(db, 'pratiquants', S.email, 'recurrences'));
+  const snap = await getDocs(collection(db, 'pratiquants', email || S.email, 'recurrences'));
   const rang = j => {
     const t = String(j).toLowerCase();
     for (let i = 0; i < SEMAINE.length; i++) if (t.indexOf(SEMAINE[i].toLowerCase()) !== -1) return i;
@@ -1405,7 +1407,8 @@ async function dataRecurrences() {
   const list = [];
   snap.forEach(d => {
     const r = d.data();
-    list.push({ id: d.id, sport: r.sport, jour: r.jour, heure: r.heure || '', notes: r.notes || '', actif: r.actif !== false });
+    list.push({ id: d.id, sport: r.sport, jour: r.jour, heure: r.heure || '',
+      duree_min: Number(r.duree_min) || 0, notes: r.notes || '', actif: r.actif !== false });
   });
   return list.sort((a, b) => rang(a.jour) - rang(b.jour) || a.heure.localeCompare(b.heure));
 }
@@ -1417,7 +1420,8 @@ async function sauverRecurrence(p) {
   const jour = String(p.jour || '').trim();
   if (!sport) throw new Error('SPORT_REQUIS');
   if (!jour) throw new Error('JOUR_REQUIS');
-  const champs = { sport, jour, heure: String(p.heure || ''), notes: String(p.notes || ''), actif: p.actif !== false };
+  const champs = { sport, jour, heure: String(p.heure || ''), duree_min: Number(p.duree_min) || 0,
+    notes: String(p.notes || ''), actif: p.actif !== false };
   if (p.id) {
     await updateDoc(doc(db, 'pratiquants', S.email, 'recurrences', p.id), champs);
     return { id: p.id };
@@ -1860,12 +1864,6 @@ async function vueAccueil() {
           j.jour ? '<i class="pt"></i>' : ''}${j.recurrences.length ? '<i class="pt libre"></i>' : ''}</span>` : ''}
       </button>`).join('')}
     </div>
-    <div class="barre" style="margin-top:10px;margin-bottom:22px">
-      <button class="btn" id="gererPlanning" style="flex:1">${
-        a.recurrences.filter(r => r.actif).length
-          ? 'Planning récurrent · ' + a.recurrences.filter(r => r.actif).length
-          : '＋ Planning récurrent'}</button>
-    </div>
 
     ${a.prochaine ? `
       <div class="eyebrow">Prochaine séance</div>
@@ -1898,6 +1896,12 @@ async function vueAccueil() {
 
     <div class="barre" style="margin-top:26px">
       <button class="btn plein" id="consigner" style="flex:1">＋ Consigner une activité</button>
+    </div>
+    <div class="barre" style="margin-top:10px">
+      <button class="btn" id="gererPlanning" style="flex:1">${
+        a.recurrences.filter(r => r.actif).length
+          ? 'Planning récurrent · ' + a.recurrences.filter(r => r.actif).length
+          : '＋ Planning récurrent'}</button>
     </div>
 
     ${a.activites.length ? `
@@ -2015,7 +2019,7 @@ function modalPlanningRecurrent(liste) {
       ? liste.map(r => `<div class="ligne" data-r="${r.id}">
           <div class="g">
             <div class="nom">${r.jour}${r.heure ? ' · ' + r.heure : ''}${r.actif ? '' : ' · en pause'}</div>
-            <div class="meta">${r.sport}${r.notes ? ' · ' + r.notes : ''}</div>
+            <div class="meta">${r.sport}${r.duree_min ? ' · ' + r.duree_min + ' min' : ''}${r.notes ? ' · ' + r.notes : ''}</div>
           </div>
         </div>`).join('')
       : `<div class="empty" style="padding:14px 0">Rien pour l'instant.</div>`;
@@ -2029,7 +2033,7 @@ function modalPlanningRecurrent(liste) {
 }
 
 function modalEditerRecurrence(r, liste, rafraichirParent) {
-  const x = r || { id:'', sport:'', jour:SEMAINE[0], heure:'', notes:'', actif:true };
+  const x = r || { id:'', sport:'', jour:SEMAINE[0], heure:'', duree_min:'', notes:'', actif:true };
   const w = modal(r ? 'Modifier' : 'Ajouter au planning', `
     <div class="champ"><label>Activité</label>
       <select class="f" id="rSport">
@@ -2038,10 +2042,11 @@ function modalEditerRecurrence(r, liste, rafraichirParent) {
           ${lst.map(s => `<option ${s === x.sport ? 'selected' : ''}>${s}</option>`).join('')}
         </optgroup>`).join('')}
       </select></div>
+    <div class="champ"><label>Jour</label>
+      <select class="f" id="rJour">${SEMAINE.map(j => `<option ${j === x.jour ? 'selected' : ''}>${j}</option>`).join('')}</select></div>
     <div class="duo">
-      <div class="champ"><label>Jour</label>
-        <select class="f" id="rJour">${SEMAINE.map(j => `<option ${j === x.jour ? 'selected' : ''}>${j}</option>`).join('')}</select></div>
       <div class="champ"><label>Heure</label><input class="f" id="rHeure" type="time" value="${x.heure}"></div>
+      <div class="champ"><label>Durée (min)</label><input class="f" id="rDuree" type="number" min="0" step="5" value="${x.duree_min || ''}"></div>
     </div>
     <div class="champ"><label>Notes</label><input class="f" id="rNotes" value="${x.notes}" placeholder="Club, adresse…"></div>
     <label class="paye"><input type="checkbox" id="rActif" ${x.actif ? 'checked' : ''}><span>Actif</span></label>
@@ -2056,8 +2061,8 @@ function modalEditerRecurrence(r, liste, rafraichirParent) {
     this.disabled = true;
     const champs = {
       sport, jour: w.querySelector('#rJour').value,
-      heure: w.querySelector('#rHeure').value, notes: w.querySelector('#rNotes').value,
-      actif: w.querySelector('#rActif').checked
+      heure: w.querySelector('#rHeure').value, duree_min: w.querySelector('#rDuree').value,
+      notes: w.querySelector('#rNotes').value, actif: w.querySelector('#rActif').checked
     };
     try {
       const res = await sauverRecurrence(Object.assign({ id: x.id || undefined }, champs));
@@ -2086,7 +2091,9 @@ async function vueMesProgrammes() {
     <div id="zone"><div class="empty">Chargement…</div></div>`;
   $('#retourAccueil').onclick = () => { S.vue = 'accueil'; rendre(); };
 
-  const list = await dataMesProgrammes();
+  let list;
+  try { list = await dataMesProgrammes(); }
+  catch (err) { $('#zone').innerHTML = `<div class="empty">Impossible de charger.<br>${err.message}</div>`; return; }
   $('#zone').innerHTML = list.map(pr => `
     <details class="pli" ${pr.statut === 'En cours' ? 'open' : ''}>
       <summary>
@@ -2130,7 +2137,9 @@ async function vueSeance() {
     S.jour = b.dataset.jour; vueSeance();
   });
 
-  const blocs = await chargerSeance(S.jour);
+  let blocs;
+  try { blocs = await chargerSeance(S.jour); }
+  catch (err) { $('#liste').innerHTML = `<div class="empty">Impossible de charger.<br>${err.message}</div>`; return; }
   $('#liste').innerHTML = blocs.map(b => {
     const seul = b.exercices.length < 2;
     const cartes = b.exercices.map((e, k) => carte(e, seul) +
@@ -2229,11 +2238,18 @@ async function dataSeance(jour) {
     getDocs(collection(db, 'pratiquants', email, 'maxis')),
     catalogueParId(),
     seanceOuverteDuJour(jour),
+    // Résilient exercice par exercice : « dernier »/« record »/le maxi estimé sont
+    // un confort, pas l'essentiel — une requête qui échoue sur un exercice ne doit
+    // pas empêcher d'afficher la séance elle-même.
     Promise.all(idsExosJour.map(async id => {
-      const snap = await getDocs(query(collectionGroup(db, 'series'),
-        where('email', '==', email), where('exercice_id', '==', id),
-        orderBy('horodatage', 'desc'), limit(5)));
-      return [id, snap.docs.map(d => d.data())];
+      try {
+        const snap = await getDocs(query(collectionGroup(db, 'series'),
+          where('email', '==', email), where('exercice_id', '==', id),
+          orderBy('horodatage', 'desc'), limit(5)));
+        return [id, snap.docs.map(d => d.data())];
+      } catch (err) {
+        return [id, []];
+      }
     })).then(Object.fromEntries)
   ]);
 
@@ -3114,7 +3130,10 @@ async function vueProgres() {
   dataStatistiques(S.email, 12)
     .then(d => { const z = $('#stats'); if (z) z.innerHTML = blocStats(d); })
     .catch(() => {});
-  if (!S.exos.length && S.jour) await chargerSeance(S.jour);
+  if (!S.exos.length && S.jour) {
+    try { await chargerSeance(S.jour); }
+    catch (err) { $('#liste').innerHTML = `<div class="empty">Impossible de charger.<br>${err.message}</div>`; return; }
+  }
   if (!S.exos.length) { $('#liste').innerHTML = `<div class="empty">Enregistrez une première séance pour voir vos courbes.</div>`; return; }
 
   let histoires;
@@ -3171,7 +3190,8 @@ async function peindreCalendrier() {
   if (!c.seances) {
     z.innerHTML = `<div class="empty">Chargement…</div>`;
     const p = { depuis: new Date(Date.now() - 365 * 86400000).toISOString() };
-    c.seances = await dataCalendrier(c.email || S.email, p);
+    try { c.seances = await dataCalendrier(c.email || S.email, p); }
+    catch (err) { z.innerHTML = `<div class="empty">Impossible de charger.<br>${err.message}</div>`; return; }
   }
 
   const parJour = {};
@@ -3525,6 +3545,16 @@ async function vueFiche() {
         <button class="poignee" data-prevenir="${a.id}" aria-label="Prévenir">✉</button>
       </div>`).join('') || `<div class="empty" style="padding:18px 0">Aucun programme donné.</div>`}
 
+    ${f.recurrences.length ? `
+      <div class="eyebrow" style="margin:22px 0 10px">Contraintes du pratiquant</div>
+      <p class="consigne" style="margin-bottom:10px">Engagements extérieurs récurrents, déclarés par le pratiquant.</p>
+      ${f.recurrences.map(r => `<div class="ligne">
+        <div class="g">
+          <div class="nom">${r.jour}${r.heure ? ' · ' + r.heure : ''}${r.duree_min ? ' · ' + r.duree_min + ' min' : ''}</div>
+          <div class="meta">${r.sport}${r.notes ? ' · ' + r.notes : ''}</div>
+        </div>
+      </div>`).join('')}` : ''}
+
     <div class="eyebrow" style="margin:22px 0 10px">Assiduité</div>
     <div id="statsAthlete"><div class="empty" style="padding:14px 0">Chargement…</div></div>
 
@@ -3720,7 +3750,9 @@ function modalFiche(f) {
 }
 
 async function vueHistoriqueAthlete() {
-  const d = await dataCoachDetail(S.coach.email);
+  let d;
+  try { d = await dataCoachDetail(S.coach.email); }
+  catch (err) { $('#zone').innerHTML = `<div class="empty">Impossible de charger.<br>${err.message}</div>`; return; }
   $('#zone').innerHTML = d.length
     ? d.map(carteHistorique).join('')
     : `<div class="empty">Rien d'enregistré pour l'instant.<br>
@@ -3863,7 +3895,8 @@ const SEMAINE = ['Lundi', 'Mardi', 'Mercredi', 'Jeudi', 'Vendredi', 'Samedi', 'D
 
 // ── Bibliothèque d'exercices ─────────────────────────────────
 async function vueBibliotheque() {
-  S.cat = await dataCatalogue();
+  try { S.cat = await dataCatalogue(); }
+  catch (err) { $('#zone').innerHTML = `<div class="empty">Impossible de charger.<br>${err.message}</div>`; return; }
   peindreBibliotheque();
 }
 
@@ -4321,7 +4354,8 @@ function ordreDifficulte(d) {
 }
 
 async function vueModeles() {
-  S.modeles = await dataModeles();
+  try { S.modeles = await dataModeles(); }
+  catch (err) { $('#zone').innerHTML = `<div class="empty">Impossible de charger.<br>${err.message}</div>`; return; }
   return S.coach.categorie ? peindreCategorie() : peindreCategories();
 }
 
@@ -4484,10 +4518,13 @@ async function vueModele() {
   // Les deux lectures partent ensemble. Le groupage en un seul aller-retour
   // (`lot`) n'existait que pour amortir la latence d'Apps Script ; Firestore
   // répond en parallèle, souvent depuis son cache local.
-  const [m, cat] = await Promise.all([
-    dataModele(S.coach.modele),
-    S.cat ? null : dataCatalogue()      // le sélecteur d'exercices s'en sert
-  ]);
+  let m, cat;
+  try {
+    [m, cat] = await Promise.all([
+      dataModele(S.coach.modele),
+      S.cat ? null : dataCatalogue()      // le sélecteur d'exercices s'en sert
+    ]);
+  } catch (err) { $('#zone').innerHTML = `<div class="empty">Impossible de charger.<br>${err.message}</div>`; return; }
   S.modele = m;
   if (cat) S.cat = cat;
   const jours = m.jours.map(j => j.jour);
@@ -4525,7 +4562,9 @@ async function vueModele() {
 
 // ── Maxis d'un pratiquant ────────────────────────────────────
 async function vueMaxis(filtre) {
-  const list = await dataMaxis(S.coach.email);
+  let list;
+  try { list = await dataMaxis(S.coach.email); }
+  catch (err) { $('#zone').innerHTML = `<div class="empty">Impossible de charger.<br>${err.message}</div>`; return; }
   S.maxis = list;
   peindreMaxis(filtre);
 }
