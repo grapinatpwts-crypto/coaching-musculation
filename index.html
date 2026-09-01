@@ -796,6 +796,385 @@ async function joursDuProgramme(email) {
   return jours.sort(triJours);
 }
 
+// ── Données : lectures Firestore ─────────────────────────────
+
+/** Une date Firestore peut être un Timestamp ou une chaîne : on rend toujours une chaîne. */
+function versDate(v) {
+  if (!v) return null;
+  if (typeof v.toDate === 'function') return v.toDate().toISOString();
+  return String(v);
+}
+
+/**
+ * Commentaires en attente. Le coach voit ce que les pratiquants ont écrit,
+ * le pratiquant ce que le coach lui a répondu.
+ *
+ * Le total du coach compte ici les seuls messages de pratiquants non lus.
+ * L'ancienne version comptait tous les commentaires non lus, y compris les
+ * siens restés non lus par le pratiquant — un compteur qui ne voulait rien dire.
+ */
+async function dataNonLus() {
+  const { db, collection, query, where, getDocs } = FB;
+  if (S.moi && S.moi.estCoach) {
+    const snap = await getDocs(query(collection(db, 'commentaires'),
+      where('auteur', '==', 'pratiquant'), where('lu', '==', false)));
+    const parEmail = {};
+    snap.forEach(d => {
+      const e = String(d.data().email || '').toLowerCase();
+      parEmail[e] = (parEmail[e] || 0) + 1;
+    });
+    return { total: snap.size, parEmail };
+  }
+  const snap = await getDocs(query(collection(db, 'commentaires'),
+    where('email', '==', S.email), where('auteur', '==', 'coach'), where('lu', '==', false)));
+  const exercices = {};
+  snap.forEach(d => {
+    const x = d.data().exercice_id;
+    exercices[x] = (exercices[x] || 0) + 1;
+  });
+  return { total: snap.size, exercices };
+}
+
+/** Avancement d'un programme, à l'identique de l'ancien `progression_`. */
+function progression(att, resume) {
+  if (!att) return null;
+  const parSemaine = Number(att.nb_jours) || 0;
+  const debut = att.date_debut ? new Date(att.date_debut) : null;
+  const fin = att.date_fin ? new Date(att.date_fin) : new Date();
+  const joursEcoules = debut ? Math.max(0, Math.floor((fin - debut) / 86400000)) : 0;
+  const semaineCourante = debut ? Math.floor(joursEcoules / 7) + 1 : 0;
+
+  const duree = Number(att.duree_semaines) || 0;
+  const faites = Number((resume || {}).seancesDepuisAttribution) || 0;
+  const semainesRef = duree || Math.max(1, semaineCourante);
+  const attendues = parSemaine * semainesRef;
+
+  return {
+    parSemaine, semaine: semaineCourante, duree_semaines: duree,
+    faites, attendues, part: attendues ? Math.min(1, faites / attendues) : 0
+  };
+}
+
+/**
+ * Liste d'accueil du coach. Trois requêtes, quel que soit le nombre d'athlètes :
+ * les profils, les attributions en cours, les commentaires en attente.
+ *
+ * L'ancienne version lisait l'historique de séances de tout le monde pour
+ * compter les séances faites. Ça passait avec un serveur qui avait déjà le
+ * classeur en main ; depuis le navigateur ce serait des milliers de documents à
+ * chaque ouverture de l'écran. Les compteurs vivent donc sur le profil
+ * (`resume`), écrits au fil des séances — voir PRODUCTION.md, dénormalisation.
+ */
+async function dataCoachAthletes() {
+  const { db, collection, query, where, getDocs } = FB;
+  const [prats, atts, attente] = await Promise.all([
+    getDocs(collection(db, 'pratiquants')),
+    getDocs(query(collection(db, 'attributions'), where('statut', '==', 'En cours'))),
+    dataNonLus()
+  ]);
+
+  const active = {};
+  atts.forEach(a => {
+    const d = a.data();
+    const e = String(d.email || '').toLowerCase();
+    const debut = versDate(d.date_debut);
+    // L'invariant « une seule en cours » peut se casser sur un double envoi :
+    // on garde la plus récente, comme le faisait `attributionActive_`.
+    if (!active[e] || new Date(debut) > new Date(active[e].date_debut)) {
+      active[e] = { id: a.id, ...d, date_debut: debut, date_fin: versDate(d.date_fin) };
+    }
+  });
+
+  const list = [];
+  prats.forEach(doc => {
+    const p = doc.data();
+    if (p.role === 'coach') return;          // le coach ne se suit pas lui-même
+    const email = doc.id;
+    const att = active[email] || null;
+    const derniere = versDate((p.resume || {}).derniereSeanceLe);
+
+    list.push({
+      email, nom: p.nom || email.split('@')[0],
+      commentaires: (attente.parEmail || {})[email] || 0,
+      // Sans statut explicite : Nouveau tant qu'il n'a pas de programme, Actif dès qu'il en a un.
+      statut: String(p.statut || (att ? 'Actif' : 'Nouveau')),
+      telephone: p.telephone || '', objectif: p.objectif || '',
+      nbSeances: Number((p.resume || {}).nbSeances) || 0,
+      derniere,
+      joursDepuis: derniere ? Math.floor((Date.now() - new Date(derniere)) / 86400000) : null,
+      programme: att ? {
+        id: att.id, nom: att.nom, paye: att.paye === true,
+        date_debut: att.date_debut, modele_id: att.modele_id || ''
+      } : null,
+      progression: progression(att, p.resume)
+    });
+  });
+
+  const rang = { Nouveau: 0, Actif: 1, Inactif: 2, 'Archivé': 3 };
+  return list.sort((a, b) => {
+    const d = (rang[a.statut] || 1) - (rang[b.statut] || 1);
+    if (d !== 0) return d;
+    return (b.joursDepuis === null ? 9999 : b.joursDepuis) - (a.joursDepuis === null ? 9999 : a.joursDepuis);
+  });
+}
+
+// ── Blocs et durées ──────────────────────────────────────────
+// Le regroupement en jours se faisait côté serveur (`grouperEnJours_`), mais il
+// ne touchait jamais au classeur : il traverse le changement de base tel quel.
+// L'estimation de durée, elle, existait déjà ici pour l'éditeur — on s'appuie
+// sur `dureeBloc`, plus bas, plutôt que d'en écrire une seconde version.
+
+const repsTexte = v => (v === undefined || v === null ? '' : String(v));
+const numBloc = l => Number(l.bloc || l.ordre) || 1;
+
+/** Durée d'un jour entier : ses blocs, les changements de poste, l'échauffement. */
+function estimerDuree(blocs) {
+  if (!blocs || !blocs.length) return 0;
+  const secondes = blocs.reduce((t, b) => t + dureeBloc(b), 0)
+    + Math.max(0, blocs.length - 1) * TRANSITION_MIN * 60
+    + ECHAUFFEMENT_MIN * 60;
+  return Math.round(secondes / 60);
+}
+
+/** Lignes plates → jours, chacun découpé en blocs (supersets et circuits). */
+function grouperEnJours(lignes, noms) {
+  const jours = [];
+  const parJour = {};
+  lignes.slice().sort((a, b) => {
+    const j = triJours(a.jour, b.jour);
+    if (j !== 0) return j;
+    const d = numBloc(a) - numBloc(b);
+    return d !== 0 ? d : Number(a.ordre) - Number(b.ordre);
+  }).forEach(l => {
+    const j = String(l.jour);
+    if (!parJour[j]) { parJour[j] = { jour: j, blocs: [], _n: {} }; jours.push(parJour[j]); }
+    const num = numBloc(l);
+    if (!parJour[j]._n[num]) {
+      parJour[j]._n[num] = {
+        bloc: num, series: Number(l.series) || 3, repos_s: Number(l.repos_s) || 90, exercices: []
+      };
+      parJour[j].blocs.push(parJour[j]._n[num]);
+    }
+    parJour[j]._n[num].exercices.push({
+      exercice_id: l.exercice_id,
+      nom: noms[l.exercice_id] || l.exercice_id,
+      reps_cible: repsTexte(l.reps_cible),
+      duree_s: l.duree_s === '' || l.duree_s === undefined ? '' : l.duree_s,
+      charge_cible: Number(l.charge_cible) || 0,
+      pct_rm: Number(String(l.pct_rm).replace('%', '')) || 0,
+      cadence: l.cadence || '',
+      pause_s: Number(l.pause_s) || 0,
+      note: l.note || ''
+    });
+  });
+  jours.forEach(j => { delete j._n; j.duree_estimee = estimerDuree(j.blocs); });
+  return jours;
+}
+
+// ── Lectures : catalogue, modèles, fiches ────────────────────
+
+/** Catalogue complet, trié par groupe puis par nom. Lisible par tous. */
+async function dataCatalogue() {
+  const { db, collection, getDocs } = FB;
+  const snap = await getDocs(collection(db, 'exercices'));
+  const list = [];
+  snap.forEach(d => {
+    const e = d.data();
+    list.push({
+      id: d.id, nom: e.nom, nom_en: e.nom_en || '', groupe: e.groupe || '',
+      equipement: e.equipement || '', consigne: e.consigne || '',
+      photo: e.photo || '', video: e.video || ''
+    });
+  });
+  return list.sort((a, b) => {
+    const g = String(a.groupe).localeCompare(String(b.groupe), 'fr');
+    return g !== 0 ? g : String(a.nom).localeCompare(String(b.nom), 'fr');
+  });
+}
+
+/** Noms des exercices, indexés par identifiant — nécessaire au rendu des programmes. */
+async function nomsExercices() {
+  if (!S.nomsEx) {
+    S.nomsEx = {};
+    (await dataCatalogue()).forEach(e => { S.nomsEx[e.id] = e.nom; });
+  }
+  return S.nomsEx;
+}
+
+/** Liste des modèles. Les compteurs sont portés par le document (voir seed). */
+async function dataModeles() {
+  const { db, collection, getDocs } = FB;
+  const snap = await getDocs(collection(db, 'modeles'));
+  const list = [];
+  snap.forEach(d => {
+    const m = d.data();
+    list.push({
+      id: d.id, nom: m.nom, categorie: m.categorie || '', difficulte: m.difficulte || '',
+      description: m.description || '', duree_semaines: Number(m.duree_semaines) || 0,
+      statut: m.statut || 'Brouillon', source: m.source || '', video: m.video || '',
+      nbJours: Number(m.nb_jours) || 0, nbExercices: Number(m.nb_exercices) || 0
+    });
+  });
+  return list.sort((a, b) => String(a.nom).localeCompare(String(b.nom), 'fr'));
+}
+
+/** Un modèle et son contenu, regroupé en jours puis en blocs. */
+async function dataModele(id) {
+  const { db, doc, getDoc, collection, getDocs } = FB;
+  const [snap, lignes, noms] = await Promise.all([
+    getDoc(doc(db, 'modeles', id)),
+    getDocs(collection(db, 'modeles', id, 'lignes')),
+    nomsExercices()
+  ]);
+  if (!snap.exists()) throw new Error('MODELE_INTROUVABLE');
+  const m = snap.data();
+  return {
+    id: snap.id, nom: m.nom, categorie: m.categorie || '', difficulte: m.difficulte || '',
+    description: m.description || '', duree_semaines: Number(m.duree_semaines) || 0,
+    statut: m.statut || 'Brouillon', source: m.source || '', video: m.video || '',
+    jours: grouperEnJours(lignes.docs.map(l => l.data()), noms)
+  };
+}
+
+/** Historique des programmes d'un pratiquant, du plus récent au plus ancien. */
+async function dataAttributions(email) {
+  const { db, collection, query, where, getDocs } = FB;
+  const snap = await getDocs(query(collection(db, 'attributions'), where('email', '==', email)));
+  const list = [];
+  snap.forEach(d => {
+    const a = d.data();
+    list.push({
+      id: d.id, email: a.email, modele_id: a.modele_id || '', nom: a.nom,
+      date_debut: versDate(a.date_debut), date_fin: versDate(a.date_fin) || '',
+      statut: a.statut || 'En cours', notes: a.notes || '',
+      paye: a.paye === true,
+      nbJours: Number(a.nb_jours) || 0, nbExercices: Number(a.nb_exercices) || 0
+    });
+  });
+  return list.sort((a, b) => new Date(b.date_debut) - new Date(a.date_debut));
+}
+
+/** Activités libres d'un pratiquant sur une fenêtre de dates. */
+async function dataActivites(email, p) {
+  const { db, collection, getDocs } = FB;
+  const fin = p && p.jusqua ? new Date(p.jusqua) : new Date();
+  const debut = p && p.depuis ? new Date(p.depuis) : new Date(fin.getTime() - 365 * 86400000);
+  const snap = await getDocs(collection(db, 'pratiquants', email, 'activites'));
+  const list = [];
+  snap.forEach(doc => {
+    const a = doc.data();
+    const d = new Date(versDate(a.date));
+    if (d < debut || d > fin) return;
+    list.push({
+      id: doc.id, date: versDate(a.date), sport: a.sport,
+      duree_min: Number(a.duree_min) || 0, distance_km: Number(a.distance_km) || 0,
+      effort: Number(a.effort) || 0, notes: a.notes || ''
+    });
+  });
+  return list.sort((a, b) => new Date(b.date) - new Date(a.date));
+}
+
+/** Photos de suivi, une lecture par athlète — elles ne sont demandées qu'une fois. */
+async function dataPhotos(emails) {
+  const { db, doc, getDoc } = FB;
+  const paires = await Promise.all((emails || []).map(async e => {
+    try {
+      const s = await getDoc(doc(db, 'pratiquants', e, 'prive', 'photo'));
+      return s.exists() && s.data().image ? [e, s.data().image] : null;
+    } catch (err) { return null; }
+  }));
+  const out = {};
+  paires.forEach(p => { if (p) out[p[0]] = p[1]; });
+  return out;
+}
+
+/** Fil de commentaires d'un exercice, pour un pratiquant. */
+async function dataCommentaires(email, exerciceId) {
+  if (!exerciceId) throw new Error('EXERCICE_REQUIS');
+  const { db, collection, query, where, getDocs } = FB;
+  const snap = await getDocs(query(collection(db, 'commentaires'),
+    where('email', '==', email), where('exercice_id', '==', exerciceId)));
+  const list = [];
+  snap.forEach(d => {
+    const c = d.data();
+    list.push({ id: d.id, auteur: c.auteur, texte: c.texte, date: versDate(c.date), lu: c.lu === true });
+  });
+  return list.sort((a, b) => new Date(a.date) - new Date(b.date));
+}
+
+/** Fiche complète d'un pratiquant : identité, statut, historique des programmes. */
+async function dataPratiquant(email) {
+  const { db, doc, getDoc } = FB;
+  const snap = await getDoc(doc(db, 'pratiquants', email));
+  if (!snap.exists()) throw new Error('PRATIQUANT_INCONNU');
+  const p = snap.data();
+  const resume = p.resume || {};
+  const derniere = versDate(resume.derniereSeanceLe);
+  const [photo, attributions, activites] = await Promise.all([
+    dataPhotos([email]),
+    dataAttributions(email),
+    dataActivites(email, { depuis: new Date(Date.now() - 90 * 86400000).toISOString() })
+  ]);
+
+  return {
+    email, nom: p.nom || email.split('@')[0],
+    photo: photo[email] || '',
+    statut: String(p.statut || 'Actif'),
+    telephone: p.telephone || '', objectif: p.objectif || '', notes: p.notes || '',
+    date_inscription: versDate(p.date_inscription) || '',
+    nbSeances: Number(resume.nbSeances) || 0,
+    nbSeries: Number(resume.nbSeries) || 0,
+    derniere,
+    joursDepuis: derniere ? Math.floor((Date.now() - new Date(derniere)) / 86400000) : null,
+    attributions, activites: activites.slice(0, 12)
+  };
+}
+
+/** Les 25 derniers faits d'un pratiquant : séances détaillées et activités libres. */
+async function dataCoachDetail(email) {
+  const { db, collection, query, where, orderBy, limit, getDocs } = FB;
+  const [snap, noms, libres] = await Promise.all([
+    getDocs(query(collection(db, 'seances'), where('email', '==', email),
+      orderBy('date', 'desc'), limit(25))),
+    nomsExercices(),
+    dataActivites(email, {})
+  ]);
+
+  const seances = await Promise.all(snap.docs.map(async d => {
+    const s = d.data();
+    const series = (await getDocs(collection(db, 'seances', d.id, 'series'))).docs
+      .map(x => x.data())
+      .sort((a, b) => Number(a.serie_num) - Number(b.serie_num));
+
+    let volume = 0;
+    const ordre = [], parEx = {};
+    series.forEach(x => {
+      const reps = Number(x.reps) || 0, charge = Number(x.charge) || 0;
+      volume += reps * charge;
+      const k = String(x.exercice_id);
+      if (!parEx[k]) { parEx[k] = { exercice: noms[k] || k, series: [] }; ordre.push(k); }
+      parEx[k].series.push({ reps, charge });
+    });
+
+    return {
+      type: 'seance', date: versDate(s.date), jour: s.jour,
+      duree_min: Number(s.duree_min) || 0,
+      ressenti: s.ressenti || '', notes: s.notes || '',
+      nbSeries: series.length, volume: Math.round(volume),
+      exercices: ordre.map(k => parEx[k])
+    };
+  }));
+
+  const activites = libres.map(a => ({
+    type: 'activite', date: a.date, sport: a.sport || 'Activité',
+    duree_min: a.duree_min, distance_km: a.distance_km, effort: a.effort, notes: a.notes
+  }));
+
+  return seances.concat(activites)
+    .sort((a, b) => new Date(b.date) - new Date(a.date))
+    .slice(0, 25);
+}
+
 window.onload = () => {
   // Une session déjà ouverte revient par ce même canal, sans rien à restaurer.
   FB.onAuthStateChanged(FB.auth, async user => {
@@ -1821,7 +2200,7 @@ async function modalCommentaires(exerciceId, nomExercice, email) {
 
   const peindre = async () => {
     let fil;
-    try { fil = await api('commentaires', { exercice_id: exerciceId, email }); }
+    try { fil = await dataCommentaires(email, exerciceId); }
     catch (err) { w.querySelector('#fil').innerHTML = `<div class="empty">${err.message}</div>`; return; }
 
     const jeSuisCoach = !!S.moi.estCoach;
@@ -1844,7 +2223,7 @@ async function modalCommentaires(exerciceId, nomExercice, email) {
 
   w.querySelector('#cmAnn').onclick = () => {
     w.fermer();
-    api('nonLus').then(n => {
+    dataNonLus().then(n => {
       S.nonLus = n;
       if (S.vue === 'seance') vueSeance();
       if (S.vue === 'athletes' && S.coach && !S.coach.email) listeAthletes();
@@ -1865,7 +2244,7 @@ async function modalCommentaires(exerciceId, nomExercice, email) {
 
 /** Rafraîchit les compteurs de commentaires en attente, sans bloquer l'écran. */
 function majPastilles() {
-  api('nonLus').then(n => {
+  dataNonLus().then(n => {
     S.nonLus = n;
     if (S.vue === 'athletes' && S.coach && !S.coach.email) listeAthletes();
     if (S.vue === 'accueil') { const b = $('#pastilleAccueil'); if (b) b.textContent = n.total || ''; }
@@ -2201,8 +2580,7 @@ function tel(n) {
 
 async function listeAthletes() {
   let list;
-  try { list = await lireVite('coachAthletes', {}, 'athletes',
-    () => { if (S.vue === 'athletes' && S.coach && !S.coach.email) listeAthletes(); }); }
+  try { list = await dataCoachAthletes(); }
   catch (err) { $('#zone').innerHTML = `<div class="empty">${err.message}</div>`; return; }
   S.athletes = list;
 
@@ -2220,7 +2598,8 @@ async function listeAthletes() {
   // Les photos arrivent après : la liste s'affiche sans attendre quelques
   // centaines de kilo-octets d'images.
   if (S.photos) remplirPhotos();
-  else api('photos').then(ph => { S.photos = ph; remplirPhotos(); }).catch(() => {});
+  else dataPhotos((S.athletes || []).map(a => a.email))
+    .then(ph => { S.photos = ph; remplirPhotos(); }).catch(() => {});
   $('#zone').querySelectorAll('[data-email]').forEach(b => b.onclick = () => {
     S.coach.email = b.dataset.email;
     S.coach.nom = b.dataset.nom;
@@ -2308,10 +2687,8 @@ function modalInscrire() {
 
 // ── Fiche d'un pratiquant ────────────────────────────────────
 async function vueFiche() {
-  const cle = 'fiche:' + S.coach.email;
   let f;
-  try { f = await lireVite('pratiquant', { email:S.coach.email }, cle,
-    () => { if (S.coach.email && S.coach.sous === 'fiche') vueFiche(); }); }
+  try { f = await dataPratiquant(S.coach.email); }
   catch (err) { $('#zone').innerHTML = `<div class="empty">${err.message}</div>`; return; }
   S.fiche = f;
   const t = tel(f.telephone);
@@ -2575,7 +2952,7 @@ function modalFiche(f) {
 }
 
 async function vueHistoriqueAthlete() {
-  const d = await api('coachDetail', { email: S.coach.email });
+  const d = await dataCoachDetail(S.coach.email);
   $('#zone').innerHTML = d.length
     ? d.map(carteHistorique).join('')
     : `<div class="empty">Rien d'enregistré pour l'instant.<br>
@@ -2718,8 +3095,7 @@ const SEMAINE = ['Lundi', 'Mardi', 'Mercredi', 'Jeudi', 'Vendredi', 'Samedi', 'D
 
 // ── Bibliothèque d'exercices ─────────────────────────────────
 async function vueBibliotheque() {
-  S.cat = await lireVite('catalogue', {}, 'catalogue',
-    () => { if (S.coach && S.coach.onglet === 'biblio') vueBibliotheque(); });
+  S.cat = await dataCatalogue();
   peindreBibliotheque();
 }
 
@@ -3135,8 +3511,7 @@ function ordreDifficulte(d) {
 }
 
 async function vueModeles() {
-  S.modeles = await lireVite('modeles', {}, 'modeles',
-    () => { if (S.vue === 'modeles' && S.coach && !S.coach.modele) vueModeles(); });
+  S.modeles = await dataModeles();
   return S.coach.categorie ? peindreCategorie() : peindreCategories();
 }
 
@@ -3296,9 +3671,13 @@ function modalModele(m) {
 
 /** Écran d'un modèle : sa fiche, puis le même éditeur de jours que pour un pratiquant. */
 async function vueModele() {
-  const demandes = [{ action:'modele', payload:{ id:S.coach.modele } }];
-  if (!S.cat) demandes.push({ action:'catalogue' });   // le sélecteur d'exercices s'en sert
-  const [m, cat] = await apiLot(demandes);
+  // Les deux lectures partent ensemble. Le groupage en un seul aller-retour
+  // (`lot`) n'existait que pour amortir la latence d'Apps Script ; Firestore
+  // répond en parallèle, souvent depuis son cache local.
+  const [m, cat] = await Promise.all([
+    dataModele(S.coach.modele),
+    S.cat ? null : dataCatalogue()      // le sélecteur d'exercices s'en sert
+  ]);
   S.modele = m;
   if (cat) S.cat = cat;
   const jours = m.jours.map(j => j.jour);
@@ -3492,7 +3871,7 @@ async function vueProgramme() {
 
 /** Donner un programme : depuis un modèle, ou vierge pour du sur-mesure. */
 async function modalAttribuer() {
-  const mods = await api('modeles');
+  const mods = await dataModeles();
   const cats = [...new Set(mods.map(m => (m.categorie || '').trim()).filter(Boolean))].sort();
   const difs = [...new Set(mods.map(m => (m.difficulte || '').trim()).filter(Boolean))]
     .sort((a, b) => ordreDifficulte(a) - ordreDifficulte(b));

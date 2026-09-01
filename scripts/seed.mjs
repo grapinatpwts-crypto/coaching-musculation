@@ -99,13 +99,6 @@ async function seedProgrammes(idsParNom) {
   let crees = 0;
   for (const p of PROGRAMMES_TYPES) {
     const modeleRef = db.collection('modeles').doc();
-    const modele = {
-      nom: p.nom, categorie: p.categorie, difficulte: p.difficulte,
-      duree_semaines: p.duree_semaines || 0, statut: p.statut || 'Actif',
-      description: p.description || '', source: p.source || '', video: p.video || '',
-      cree_le: admin.firestore.FieldValue.serverTimestamp()
-    };
-    await modeleRef.set(modele);
 
     const lignes = [];
     p.jours.forEach(([nomJour, blocs]) => {
@@ -115,6 +108,18 @@ async function seedProgrammes(idsParNom) {
           if (ligne) { ligne.jour = nomJour; lignes.push(ligne); }
         });
       });
+    });
+
+    // nb_jours / nb_exercices sont dénormalisés : la liste des modèles les affiche
+    // pour chaque entrée, et sans eux il faudrait lire toutes les sous-collections
+    // de lignes à chaque ouverture de l'écran.
+    await modeleRef.set({
+      nom: p.nom, categorie: p.categorie, difficulte: p.difficulte,
+      duree_semaines: p.duree_semaines || 0, statut: p.statut || 'Actif',
+      description: p.description || '', source: p.source || '', video: p.video || '',
+      nb_jours: new Set(lignes.map((l) => l.jour)).size,
+      nb_exercices: lignes.length,
+      cree_le: admin.firestore.FieldValue.serverTimestamp()
     });
 
     await ecrireParLots(lignes.map((l) => (batch) => batch.set(modeleRef.collection('lignes').doc(), l)));
@@ -139,7 +144,24 @@ async function seedCoach() {
   console.log(`Compte coach/admin créé : ${email}`);
 }
 
+/**
+ * Vide ce que ce script écrit, pour pouvoir le rejouer sans doublonner les
+ * modèles (créés avec un identifiant automatique). Ne touche à rien d'autre :
+ * ni aux comptes, ni aux séances.
+ */
+async function vider() {
+  for (const modele of (await db.collection('modeles').get()).docs) {
+    const lignes = await modele.ref.collection('lignes').get();
+    await ecrireParLots(lignes.docs.map((l) => (batch) => batch.delete(l.ref)));
+    await modele.ref.delete();
+  }
+  const ex = await db.collection('exercices').get();
+  await ecrireParLots(ex.docs.map((d) => (batch) => batch.delete(d.ref)));
+  console.log(`Purge : ${ex.size} exercices et les modèles supprimés.`);
+}
+
 async function main() {
+  if (process.argv.includes('--reset')) await vider();
   const idsParNom = await seedExercices();
   await seedProgrammes(idsParNom);
   await seedCoach();
