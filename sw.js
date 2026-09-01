@@ -1,10 +1,11 @@
 /**
  * Service worker — met en cache la coquille de l'app.
- * Les appels à l'API Apps Script ne sont jamais mis en cache : ils doivent
- * toujours refléter les données réelles du Google Sheet.
+ * Les appels Firestore (SDK, requêtes réseau propres) ne sont jamais interceptés
+ * ici : ce cache ne vise que le same-origin GET, Firestore gère son propre cache
+ * hors ligne (persistentLocalCache, voir le module de bootstrap dans index.html).
  * Incrémentez CACHE à chaque mise en ligne pour forcer la mise à jour.
  */
-const CACHE = 'coaching-fitness-v3';
+const CACHE = 'coaching-fitness-v4';
 const SHELL = ['./', './index.html', './manifest.json', './icon-192.png', './icon-512.png',
                './assets/monogramme-w.png'];
 
