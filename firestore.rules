@@ -1,0 +1,150 @@
+rules_version = '2';
+
+// Sécurité entièrement portée par ces règles — il n'y a plus de routeur serveur
+// (guardCoach_/cibleEmail_/ECRITURES_PRATIQUANT côté Apps Script) derrière le SDK.
+// Le rôle et le flag admin sont lus par lookup de document (get()/exists()), pas par
+// custom claims : ça évite toute Cloud Function et reste sur le plan Spark gratuit.
+//
+// Comportements repris tels quels du backend Apps Script actuel (apps-script/Code.js) :
+// - un pratiquant ne lit/écrit que ses propres données ; le coach peut cibler n'importe qui
+// - statut Inactif/Archivé bloque l'écriture pour un pratiquant (ECRITURES_PRATIQUANT),
+//   pas la lecture
+// - Modeles/ModeleLignes : lecture ET écriture réservées au coach (le pratiquant ne voit
+//   jamais un modèle directement, seulement sa copie personnalisée dans Programmes)
+// - Photos, Maxis (écriture) : réservées au coach — un pratiquant ne gère ni ses photos
+//   de suivi ni son propre 1RM, c'est le coach qui les saisit
+// - Activites, Ajustements (écriture) : laissées au pratiquant, self-service
+// - admin:true peut modifier/supprimer un historique déjà clos (séance, série) et
+//   attribuer les rôles — toujours journalisé côté client dans audit/ (Étape 6 du plan)
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function uid() {
+      return request.auth.token.email.lower();
+    }
+    function monProfil() {
+      return get(/databases/$(database)/documents/pratiquants/$(uid()));
+    }
+    function estCoach() {
+      return request.auth != null && monProfil().data.role == 'coach';
+    }
+    function estAdmin() {
+      return request.auth != null && monProfil().data.admin == true;
+    }
+    function estMoi(email) {
+      return request.auth != null && uid() == email;
+    }
+    function statutOk() {
+      return monProfil().data.statut != 'Inactif' && monProfil().data.statut != 'Archivé';
+    }
+
+    // ── Pratiquants ────────────────────────────────────────────────────
+    match /pratiquants/{email} {
+      allow read: if estMoi(email) || estCoach();
+
+      // le pratiquant modifie ses champs de contact/objectif, jamais son statut/rôle
+      allow update: if estMoi(email)
+        && request.resource.data.diff(resource.data).affectedKeys()
+             .hasOnly(['telephone', 'objectif', 'notes']);
+
+      // le coach gère la fiche, jamais role/admin (réservé admin)
+      allow update: if estCoach()
+        && request.resource.data.diff(resource.data).affectedKeys()
+             .hasOnly(['nom', 'statut', 'telephone', 'objectif', 'notes', 'date_inscription', 'resume']);
+
+      allow update: if estAdmin();
+      allow create: if estCoach() || estAdmin();
+
+      // Photo de suivi : réservée au coach, comme aujourd'hui (photos_/photoSave_/photoSuppr_
+      // sont coach-only côté Apps Script — le pratiquant ne gère pas ses propres photos)
+      match /prive/photo {
+        allow read, write: if estCoach();
+      }
+
+      // 1RM : lecture par le concerné ou le coach, écriture réservée au coach
+      match /maxis/{exerciceId} {
+        allow read: if estMoi(email) || estCoach();
+        allow write: if estCoach();
+      }
+
+      // Activités libres : gérées par le pratiquant lui-même
+      match /activites/{activiteId} {
+        allow read: if estMoi(email) || estCoach();
+        allow write: if estMoi(email) && statutOk();
+      }
+    }
+
+    // ── Catalogue d'exercices ──────────────────────────────────────────
+    match /exercices/{exerciceId} {
+      allow read: if request.auth != null;
+      allow write: if estCoach();
+    }
+
+    // Compteur pour la numérotation séquentielle EXnnn (exerciceSave_ en création)
+    match /compteurs/{compteurId} {
+      allow read, write: if estCoach();
+    }
+
+    // ── Modèles génériques ─────────────────────────────────────────────
+    // Jamais lus/écrits directement par le pratiquant : il voit sa copie dans
+    // attributions/{id}/programme, pas le modèle source.
+    match /modeles/{modeleId} {
+      allow read, write: if estCoach();
+      match /lignes/{ligneId} {
+        allow read, write: if estCoach();
+      }
+    }
+
+    // ── Attributions (modèle -> pratiquant, datée) ─────────────────────
+    match /attributions/{attributionId} {
+      allow read: if estMoi(resource.data.email) || estCoach();
+      allow create: if estCoach();
+      allow update, delete: if estCoach();
+
+      match /programme/{ligneId} {
+        allow read: if estMoi(get(/databases/$(database)/documents/attributions/$(attributionId)).data.email) || estCoach();
+        allow write: if estCoach();
+      }
+
+      // La charge que le pratiquant se fixe lui-même sur SA propre attribution
+      match /ajustements/{exerciceId} {
+        allow read: if estMoi(get(/databases/$(database)/documents/attributions/$(attributionId)).data.email) || estCoach();
+        allow write: if estMoi(get(/databases/$(database)/documents/attributions/$(attributionId)).data.email) && statutOk();
+      }
+    }
+
+    // ── Séances réalisées ───────────────────────────────────────────────
+    match /seances/{seanceId} {
+      allow read: if estMoi(resource.data.email) || estCoach();
+      allow create: if estMoi(request.resource.data.email) && statutOk();
+      // le pratiquant ne modifie/annule que tant que la séance est encore ouverte
+      allow update, delete: if estMoi(resource.data.email) && statutOk()
+                                && resource.data.duree_min == '';
+      // réécriture/suppression d'un historique déjà clos : réservé admin, journalisé (Étape 6)
+      allow update, delete: if estAdmin();
+
+      match /series/{serieId} {
+        allow read: if estMoi(get(/databases/$(database)/documents/seances/$(seanceId)).data.email) || estCoach();
+        allow create: if estMoi(get(/databases/$(database)/documents/seances/$(seanceId)).data.email) && statutOk();
+        allow update, delete: if estAdmin();
+      }
+    }
+
+    // ── Commentaires (fil par exercice et par pratiquant) ──────────────
+    match /commentaires/{commentaireId} {
+      allow read: if estMoi(resource.data.email) || estCoach();
+      allow create: if (estMoi(request.resource.data.email) && statutOk()) || estCoach();
+      // marquer comme lu
+      allow update: if (estMoi(resource.data.email) || estCoach())
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['lu']);
+    }
+
+    // ── Journal d'audit (Étape 6) ───────────────────────────────────────
+    match /audit/{entreeId} {
+      allow read: if estAdmin();
+      allow create: if estAdmin();
+      allow update, delete: if false;
+    }
+  }
+}

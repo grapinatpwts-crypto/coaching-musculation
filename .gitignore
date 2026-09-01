@@ -8,6 +8,11 @@ creds.json
 client_secret*.json
 *-creds.json
 
+# Clé de compte de service Firebase (scripts/seed.mjs) — jamais dans le dépôt
+scripts/service-account*.json
+.firebase/
+firebase-debug.log
+
 # Contenus privés : programmes du coach, sources achetées.
 # Le dépôt est public, ces fichiers restent sur le poste et dans le Sheet.
 programme-*.xlsx

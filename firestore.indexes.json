@@ -1,0 +1,40 @@
+{
+  "indexes": [
+    {
+      "collectionGroup": "series",
+      "queryScope": "COLLECTION_GROUP",
+      "fields": [
+        { "fieldPath": "email", "order": "ASCENDING" },
+        { "fieldPath": "exercice_id", "order": "ASCENDING" },
+        { "fieldPath": "horodatage", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "attributions",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "email", "order": "ASCENDING" },
+        { "fieldPath": "statut", "order": "ASCENDING" },
+        { "fieldPath": "date_debut", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "seances",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "email", "order": "ASCENDING" },
+        { "fieldPath": "date", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "commentaires",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "email", "order": "ASCENDING" },
+        { "fieldPath": "auteur", "order": "ASCENDING" },
+        { "fieldPath": "lu", "order": "ASCENDING" }
+      ]
+    }
+  ],
+  "fieldOverrides": []
+}
