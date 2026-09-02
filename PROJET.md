@@ -486,6 +486,25 @@ les cinq dernières séries connues de l'exercice (déjà lues pour « dernier �
 « record »), pas depuis toute la carrière du pratiquant — une estimation moins
 précise mais bornée.
 
+### Dates et fuseau
+
+**Une date seule n'est pas un instant.** Une activité, une récurrence ponctuelle
+ou une `fin_prevue` portent `'AAAA-MM-JJ'` ; `new Date('2026-09-02')` en fait
+minuit **UTC**, soit 2 h du matin à Paris. Deux conséquences vues en vrai le
+2026-09-03 :
+
+- un écart calculé en millisecondes (`Date.now() - date`) donnait « il y a
+  0 jour » — donc « aujourd'hui » — pour l'activité de la veille consultée à
+  00 h 28. Un écart de jours se compte entre deux **minuits locaux** :
+  `dateDeCle(cleJour(a)) - dateDeCle(cleJour(b))`, le motif déjà employé par
+  `semainesEntre` ;
+- une fenêtre bornée à l'instant présent (`fin = new Date()`) faisait
+  disparaître l'activité du jour entre minuit et 2 h. Les bornes de
+  `dataActivites` couvrent maintenant des journées entières.
+
+La règle : dès qu'on compare des dates seules, passer par `cleJour` /
+`dateDeCle`, jamais par une soustraction d'instants.
+
 ### Apps Script (backend historique, `apps-script/`)
 
 Conservé pour mémoire : rien de tout ça n'est plus appelé, mais utile si le second

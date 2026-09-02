@@ -1165,11 +1165,20 @@ async function dataPrevisions(email, attDeja) {
   };
 }
 
-/** Activités libres d'un pratiquant sur une fenêtre de dates. */
+/**
+ * Activités libres d'un pratiquant sur une fenêtre de dates.
+ *
+ * Les bornes couvrent des JOURS entiers, pas des instants. Une activité n'a
+ * qu'une date (« 2026-09-03 »), lue à minuit UTC donc 2 h du matin ici : bornée
+ * à l'instant présent, celle du jour disparaissait de l'écran entre minuit et
+ * 2 h — l'heure exacte où on consigne sa séance du soir.
+ */
 async function dataActivites(email, p) {
   const { db, collection, getDocs } = FB;
   const fin = p && p.jusqua ? new Date(p.jusqua) : new Date();
   const debut = p && p.depuis ? new Date(p.depuis) : new Date(fin.getTime() - 365 * 86400000);
+  fin.setHours(23, 59, 59, 999);
+  debut.setHours(0, 0, 0, 0);
   const snap = await getDocs(collection(db, 'pratiquants', email, 'activites'));
   const list = [];
   snap.forEach(doc => {
@@ -1402,7 +1411,7 @@ function seanceFaiteCeJourLa(seances, jour, date) {
  * planning récurrent (arts martiaux, club...) qui tombe ce jour-là. Évite
  * d'aller au calendrier juste pour voir où on en est cette semaine.
  */
-function semaineCourante(jours, seances, recurrences, prev) {
+function semaineCourante(jours, seances, recurrences, prev, activites) {
   const lundi = new Date();
   lundi.setDate(lundi.getDate() - ((lundi.getDay() + 6) % 7));
   lundi.setHours(0, 0, 0, 0);
@@ -1436,6 +1445,15 @@ function semaineCourante(jours, seances, recurrences, prev) {
     }
   });
 
+  // Les activités consignées sont des faits, au même titre qu'une séance : le
+  // bandeau les montrait absentes alors que le calendrier les affichait. On les
+  // range par clé de jour local, comme le calendrier le fait.
+  const actParCle = {};
+  (activites || []).forEach(a => {
+    const k = cleJour(new Date(a.date));
+    (actParCle[k] = actParCle[k] || []).push(a);
+  });
+
   return [0, 1, 2, 3, 4, 5, 6].map(i => {
     const date = new Date(lundi.getTime() + i * 86400000);
     // Le bandeau lit le programme par la même lucarne que le calendrier :
@@ -1446,7 +1464,8 @@ function semaineCourante(jours, seances, recurrences, prev) {
     return { jour, annulee: !!(prevues[0] && prevues[0].annulee),
              aujourdhui: date.toDateString() === new Date().toDateString(),
              fait: jour ? seanceFaiteCeJourLa(seances, jour, date) : false,
-             recurrences: recParRang[i] || [] };
+             recurrences: recParRang[i] || [],
+             activites: actParCle[cleJour(date)] || [] };
   });
 }
 
@@ -1494,7 +1513,7 @@ async function dataAccueil() {
 
   return {
     jours,
-    semaine: semaineCourante(jours, seances, recurrences, prev),
+    semaine: semaineCourante(jours, seances, recurrences, prev, activites),
     recurrences,
     prochaine: prochaine ? { jour: prochaine.jour, dans: prochaine.dans,
       duree_estimee: estimerDuree(blocsBruts(att, prochaine.jour)) } : null,
@@ -2137,6 +2156,7 @@ async function vueAccueil() {
   // posé. Une séance déjà faite est en aplat, ce qui reste à venir en contour.
   const itemsSemaine = j => (j.jour
     ? [{ nom: nomCourt(j.jour), coach: true, fait: j.fait, annulee: j.annulee, heure: '' }] : [])
+    .concat((j.activites || []).map(x => ({ nom: x.sport, coach: false, fait: true, heure: '' })))
     .concat((j.recurrences || []).map(r => ({ nom: r.sport, coach: false, fait: false, heure: r.heure || '' })));
   $('#zone').innerHTML = `
     <div class="eyebrow">Cette semaine</div>
@@ -2206,20 +2226,26 @@ async function vueAccueil() {
 }
 
 function carteActivite(x) {
-  const d = new Date(x.date);
-  const jours = Math.floor((Date.now() - d) / 86400000);
+  // Un écart de JOURS, pas d'heures. À 00 h 28, l'activité de la veille n'a que
+  // 22 h : l'ancien calcul en millisecondes tombait sur 0 et la disait
+  // « aujourd'hui ». On compare deux minuits locaux, comme partout ailleurs.
+  const jours = Math.round(
+    (dateDeCle(cleJour(new Date())) - dateDeCle(cleJour(new Date(x.date)))) / 86400000);
   const detail = [
-    x.duree_min ? x.duree_min + ' min' : '',
+    dureeCompacte(x.duree_min),
     x.distance_km ? x.distance_km + ' km' : '',
     x.effort ? 'effort ' + x.effort + '/10' : ''
   ].filter(Boolean).join(' · ');
+  // Une date future est saisissable : « il y a -1 j » ne veut rien dire.
+  const quandCa = jours === 0 ? "aujourd'hui" : jours === 1 ? 'hier'
+    : jours > 1 ? 'il y a ' + jours + ' j'
+    : jours === -1 ? 'demain' : 'dans ' + (-jours) + ' j';
   return `<button class="ligne" data-act="${x.id}" style="width:100%;text-align:left">
     <div class="g">
       <div class="nom">${x.sport}</div>
       <div class="meta">${detail || 'sans détail'}</div>
     </div>
-    <span class="meta" style="white-space:nowrap">${
-      jours === 0 ? "aujourd'hui" : jours === 1 ? 'hier' : 'il y a ' + jours + ' j'}</span>
+    <span class="meta" style="white-space:nowrap">${quandCa}</span>
   </button>`;
 }
 
@@ -4435,7 +4461,7 @@ async function vueFiche() {
           <div class="nom">${x.sport}</div>
           <div class="meta">${[
             new Date(x.date).toLocaleDateString('fr-FR'),
-            x.duree_min ? x.duree_min + ' min' : '',
+            dureeCompacte(x.duree_min),
             x.distance_km ? x.distance_km + ' km' : '',
             x.effort ? 'effort ' + x.effort + '/10' : ''].filter(Boolean).join(' · ')}</div>
           ${x.notes ? `<div class="meta">${x.notes}</div>` : ''}
