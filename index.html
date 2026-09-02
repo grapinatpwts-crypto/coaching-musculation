@@ -724,6 +724,36 @@ function progression(att, resume) {
  * chaque ouverture de l'écran. Les compteurs vivent donc sur le profil
  * (`resume`), écrits au fil des séances — voir PRODUCTION.md, dénormalisation.
  */
+/**
+ * Tous les comptes, coachs compris — contrairement à `dataCoachAthletes`, qui
+ * écarte les coachs parce qu'un coach ne se suit pas lui-même. Ici c'est
+ * justement le rôle qu'on regarde, il faut donc voir tout le monde.
+ */
+async function dataComptes() {
+  const { db, collection, getDocs } = FB;
+  const snap = await getDocs(collection(db, 'pratiquants'));
+  const list = [];
+  snap.forEach(d => {
+    const p = d.data();
+    list.push({
+      email: d.id, nom: p.nom || d.id,
+      coach: p.role === 'coach', admin: p.admin === true, statut: p.statut || ''
+    });
+  });
+  return list.sort((a, b) => Number(b.coach) - Number(a.coach) || a.nom.localeCompare(b.nom));
+}
+
+/**
+ * Donne ou retire un rôle. Réservé à l'admin par `firestore.rules` — la règle
+ * qui laisse le coach modifier une fiche liste ses champs et n'y met ni `role`
+ * ni `admin` ; seule la règle `estAdmin()` ouvre le document en entier.
+ * Le refus, lui, ne dépend pas de cet écran.
+ */
+async function majRoles(email, champs) {
+  const { db, doc, updateDoc } = FB;
+  await updateDoc(doc(db, 'pratiquants', email), champs);
+}
+
 async function dataCoachAthletes() {
   const { db, collection, query, where, getDocs } = FB;
   const [prats, atts, attente] = await Promise.all([
@@ -4692,8 +4722,74 @@ function vueReglages() {
         modele-import.xlsx rempli en modèle. Les exercices sont désignés par leur nom —
         aucun identifiant à manipuler.</div>
       <div class="barre"><button class="btn" id="import" style="flex:1">Importer</button></div>
-    </div>`;
+    </div>
+
+    ${S.moi.admin ? `
+    <div class="eyebrow" style="margin-top:26px">Administration</div>
+    <div class="card" style="display:block">
+      <div class="nom">Rôles</div>
+      <div class="meta" style="margin-top:4px;line-height:1.45">Donne ou retire le rôle
+        coach et le rôle admin. Le coach gère les athlètes et les programmes ; l'admin
+        attribue les rôles et peut reprendre un historique déjà clos.</div>
+      <div class="barre"><button class="btn" id="roles" style="flex:1">Gérer les rôles</button></div>
+    </div>` : ''}`;
   $('#import').onclick = modalImportFeuille;
+  const ro = $('#roles');
+  if (ro) ro.onclick = modalRoles;
+}
+
+/**
+ * Attribution des rôles, réservée à l'admin. L'écran n'apparaît que pour lui,
+ * mais c'est `firestore.rules` qui refuse vraiment : cacher un bouton n'a
+ * jamais protégé une base.
+ *
+ * On ne touche pas à ses propres rôles. Un admin qui se retire `admin` ne peut
+ * plus se le rendre — il faudrait rouvrir le document depuis la console
+ * Firebase — et un admin qui se retire `coach` perd l'écran Réglages, donc
+ * l'accès à cette liste. Deux façons de se verrouiller dehors, une seule règle
+ * pour les fermer.
+ */
+async function modalRoles() {
+  let comptes;
+  try { comptes = await dataComptes(); }
+  catch (err) { return toast(err.message); }
+
+  const w = modal('Rôles', `
+    <p class="consigne">Un rôle prend effet à la prochaine connexion du compte concerné.</p>
+    <div id="roList"></div>
+    <div class="barre" style="margin-top:14px"><button class="btn" id="roFerme" style="flex:1">Fermer</button></div>`);
+
+  const peindre = () => {
+    w.querySelector('#roList').innerHTML = comptes.map(c => {
+      const moi = c.email === S.email;
+      return `<div class="ligne">
+        <div class="g">
+          <div class="nom">${c.nom}${moi ? ' · vous' : ''}</div>
+          <div class="meta">${c.email}${c.statut && c.statut !== 'Actif' ? ' · ' + c.statut : ''}</div>
+        </div>
+        <button class="btn ${c.coach ? 'plein' : ''}" data-role="coach" data-email="${c.email}"
+          ${moi ? 'disabled' : ''} aria-pressed="${c.coach}">Coach</button>
+        <button class="btn ${c.admin ? 'plein' : ''}" data-role="admin" data-email="${c.email}"
+          ${moi ? 'disabled' : ''} aria-pressed="${c.admin}">Admin</button>
+      </div>`;
+    }).join('');
+
+    w.querySelectorAll('[data-role]').forEach(b => b.onclick = async function () {
+      const c = comptes.find(x => x.email === this.dataset.email);
+      const coach = this.dataset.role === 'coach';
+      const valeur = !(coach ? c.coach : c.admin);
+      this.disabled = true;
+      try {
+        await majRoles(c.email, coach ? { role: valeur ? 'coach' : 'pratiquant' } : { admin: valeur });
+        if (coach) c.coach = valeur; else c.admin = valeur;
+        toast(`${c.nom} · ${coach ? 'coach' : 'admin'} ${valeur ? 'attribué' : 'retiré'}`);
+        peindre();
+      } catch (err) { toast(err.message); this.disabled = false; }
+    });
+  };
+  peindre();
+
+  w.querySelector('#roFerme').onclick = w.fermer;
 }
 
 // ── Import Excel (gabarit modele-import.xlsx) ────────────────

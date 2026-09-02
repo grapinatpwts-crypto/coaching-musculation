@@ -334,6 +334,30 @@ SDK — une règle mal écrite est une faille immédiate, pas un bug discret :
 - `admin:true` peut réécrire un historique déjà clos (séance, série) et attribuer
   les rôles ; le journal d'audit prévu au plan (`audit/`) n'est pas construit
 
+### Attribution des rôles (Réglages ▸ Rôles)
+
+Un écran réservé à l'admin — `S.moi.admin` décide de son affichage, mais c'est
+`firestore.rules` qui refuse vraiment : la règle qui laisse un coach modifier
+une fiche énumère ses champs et n'y met ni `role` ni `admin`, seule
+`estAdmin()` ouvre le document en entier. Cacher un bouton n'a jamais protégé
+une base.
+
+`dataComptes()` liste **tout le monde**, coachs compris — contrairement à
+`dataCoachAthletes()` qui les écarte, un coach ne se suivant pas lui-même. Ici
+c'est le rôle qu'on regarde. Deux bascules par ligne : `role` bascule entre
+`'coach'` et `'pratiquant'`, `admin` entre `true` et `false`.
+
+**On ne touche pas à ses propres rôles**, les deux boutons de sa ligne sont
+désactivés. Deux façons de se verrouiller dehors sinon : se retirer `admin`, et
+plus personne ne peut le rendre sans passer par la console Firebase ; se retirer
+`coach`, et l'écran Réglages — donc cette liste — disparaît. Une seule règle
+ferme les deux.
+
+Le rôle est lu au chargement du profil : il prend effet à la prochaine
+connexion du compte concerné, ce que la modale annonce. Et le **premier** admin
+ne vient pas d'ici mais de `scripts/seed.mjs` — il n'y a pas d'amorçage depuis
+l'app, par construction.
+
 ## 8. Pièges rencontrés — à ne pas réapprendre
 
 ### Firestore (backend actuel)

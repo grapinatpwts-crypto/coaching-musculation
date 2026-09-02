@@ -120,7 +120,9 @@ personnel déclaré par le pratiquant et suivi de paiement. Bibliothèque de 171
 exercices. Modèles génériques réutilisables, rangés par catégorie puis par
 difficulté, importables depuis un fichier Excel. Attribution datée, le même modèle
 pouvant être redonné. Éditeur de programme avec glisser-déposer. Notes sur les
-exercices, visibles du pratiquant. Écran Réglages, réduit à l'import de programme
+exercices, visibles du pratiquant. Écran Réglages avec l'attribution des rôles pour l'admin — coach et admin, donnés
+ou retirés compte par compte, jamais sur soi-même. Réglages par ailleurs réduit à
+l'import de programme
 depuis la migration Firestore — les opérations de maintenance du classeur
 (catalogue de départ, jeu d'essai...) n'ont plus de raison d'être, ce travail est
 fait une fois par `scripts/seed.mjs`.

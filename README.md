@@ -112,8 +112,9 @@ propres programmes sans passer par le dépôt public : remplissez
 - Rôle (`coach`/`pratiquant`) et statut lus par `get()` sur le document du compte
   lui-même, pas par un jeton personnalisé — pas de Cloud Function, reste gratuit
 - Statut *Inactif*/*Archivé* bloque l'écriture d'un pratiquant, jamais la lecture
-- `admin:true` peut réécrire un historique déjà clos ; l'attribution des rôles
-  reste manuelle (pas d'écran dédié pour l'instant)
+- `admin:true` peut réécrire un historique déjà clos et attribuer les rôles,
+  depuis Réglages ▸ Rôles — un écran qui n'apparaît que pour lui. Le premier
+  admin, lui, vient du seed : il n'y a pas d'amorçage depuis l'app
 
 ## Limites connues
 
