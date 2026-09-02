@@ -118,8 +118,10 @@ Accueil listant les athlètes avec statut, programme et barre d'assiduité. Fich
 contacts WhatsApp, appel et e-mail, statut, historique des programmes, planning
 personnel déclaré par le pratiquant et suivi de paiement. Bibliothèque de 171
 exercices. Modèles génériques réutilisables, rangés par catégorie puis par
-difficulté, importables depuis un fichier Excel. Attribution datée, le même modèle
-pouvant être redonné. Éditeur de programme avec glisser-déposer. Notes sur les
+difficulté, importables depuis un fichier Excel. Attribution datée avec durée et fin prévue pilotables, le même modèle
+pouvant être redonné. Les séances du programme se déroulent au calendrier, où
+chacune peut être déplacée ou annulée par l'athlète, supprimée par le coach —
+sans que le rythme des suivantes ne bouge. Éditeur de programme avec glisser-déposer. Notes sur les
 exercices, visibles du pratiquant. Écran Réglages avec l'attribution des rôles pour l'admin — coach et admin, donnés
 ou retirés compte par compte, jamais sur soi-même. Réglages par ailleurs réduit à
 l'import de programme

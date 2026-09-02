@@ -111,6 +111,8 @@ modeles/{modeleId}                           # auto-id, coach-only
 
 attributions/{attributionId}                 # auto-id, TOP-LEVEL (requêtes par email+statut)
   email, modele_id, nom, date_debut, date_fin, statut, paye, notes, duree_semaines, cree_le
+  fin_prevue                                 # 'AAAA-MM-JJ' — le plan ; date_fin est la clôture réelle
+  attributions/{id}/planning/{AAAA-MM-JJ}    # exceptions : séance déplacée, annulée, supprimée
   nb_jours, nb_exercices                     # dénormalisés, lus par les listes
   attributions/{id}/programme/{ligneId}      # copie des lignes du modèle au moment de l'attribution
   attributions/{id}/ajustements/{exerciceId} # doc ID = exercice_id, écrit par le pratiquant lui-même
@@ -176,6 +178,52 @@ repos ne se distinguent que dans l'enchaînement automatique, où le mot dit
 d'où vient le temps mort ; lancé à la main, un chrono de 30 s est un chrono de
 30 s. La déduplication porte donc sur la seule durée : un repos et une pause
 de même longueur ne font qu'un bouton.
+
+### Une séance planifiée n'est pas un document
+
+Le programme dit « lundi, mercredi, vendredi, du 1er au 28 » : c'est une
+**règle**, que le calendrier déroule (`previsionsDuJour`). Aucune occurrence
+n'est écrite — un programme de quatre semaines sans imprévu ne coûte pas un
+seul document.
+
+Un imprévu est donc une **exception** à la règle, dans
+`attributions/{id}/planning/{AAAA-MM-JJ}`. Le doc ID est la date d'origine :
+l'écriture est idempotente et deux exceptions ne peuvent pas se contredire sur
+la même date. Un seul jour de programme peut tomber un jour donné — les jours
+sont des jours de la semaine, distincts par construction.
+
+| `etat` | Effet | Qui |
+|---|---|---|
+| `deplacee` | quitte sa date, reparaît à `date_cible` | athlète et coach |
+| `annulee` | reste visible, barrée et estompée | athlète et coach |
+| `supprimee` | disparaît des deux côtés | coach seul |
+
+**Annuler et supprimer ne disent pas la même chose.** L'athlète annule : il ne
+fera pas celle-là, et le coach doit pouvoir le voir — c'est un fait, pas un
+reproche, donc l'étiquette reste. Le coach supprime : il retire la séance du
+programme, elle n'a plus lieu d'être affichée. Les règles le tiennent, pas
+seulement l'écran : `create, update` n'accepte de l'athlète que `'deplacee'` et
+`'annulee'`.
+
+**Un déplacement ne bouge que son occurrence.** Décaler tout le reste
+réécrirait le programme pour un imprévu d'un jour ; le rythme est justement ce
+qui ne doit pas bouger.
+
+### Fin prévue, fin réelle
+
+Deux champs, deux natures. `fin_prevue` (chaîne `AAAA-MM-JJ`, comme le planning
+personnel, pour qu'aucun fuseau ne décale un jour) est **le plan** : elle borne
+la projection au calendrier et se pilote depuis Programme ▸ Dates. `date_fin`
+reste **le fait** : la clôture, posée le jour où le coach clôt.
+
+Durée et fin prévue disent la même chose de deux façons : `finPrevueDe()` et
+`semainesEntre()` se répondent, et la modale recalcule l'une quand on saisit
+l'autre — le coach n'a pas à compter les semaines. La dernière journée est
+incluse : quatre semaines à partir du mardi 1er finissent le lundi 28.
+
+Les attributions créées avant `fin_prevue` n'en ont pas ; la lecture retombe
+sur `duree_semaines`, déjà copiée du modèle. Un programme de quatre semaines
+donné hier est donc borné sans rien ressaisir.
 
 ### Le calendrier et le bandeau nomment ce qu'ils montrent
 

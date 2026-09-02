@@ -125,6 +125,22 @@ service cloud.firestore {
         allow write: if estCoach();
       }
 
+      // Exceptions au rythme du programme : une séance déplacée, annulée ou
+      // supprimée. Le pratiquant déplace et annule les siennes — se raviser sur
+      // une date n'est pas modifier le programme. Supprimer reste au coach :
+      // retirer une séance du programme est sa décision, pas celle de l'athlète.
+      match /planning/{jourCle} {
+        function monAttribution() {
+          return estMoi(get(/databases/$(database)/documents/attributions/$(attributionId)).data.email);
+        }
+        allow read: if monAttribution() || estCoach();
+        allow create, update: if estCoach()
+          || (monAttribution() && statutOk()
+              && request.resource.data.etat in ['deplacee', 'annulee']);
+        // Rétablir, c'est effacer l'exception : ouvert aux deux.
+        allow delete: if estCoach() || (monAttribution() && statutOk());
+      }
+
       // La charge que le pratiquant se fixe lui-même sur SA propre attribution
       match /ajustements/{exerciceId} {
         allow read: if estMoi(get(/databases/$(database)/documents/attributions/$(attributionId)).data.email) || estCoach();

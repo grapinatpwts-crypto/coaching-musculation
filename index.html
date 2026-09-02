@@ -158,6 +158,9 @@ header h2{font-size:30px;text-transform:uppercase;line-height:1}
 .eti.coach{background:var(--brand);border-color:var(--brand);color:var(--on-brand)}
 .eti.coach.prevu{background:none;color:var(--brand-ink)}
 .eti.plus{background:none;border-color:transparent;color:var(--dust);font-weight:600;padding:1px 3px}
+/* Annulée : barrée et estompée. Elle reste lisible — c'est un fait à voir, pas
+   un reproche à effacer. */
+.eti.annulee{text-decoration:line-through;opacity:.55}
 .card.clos .nom{color:var(--dust)}
 .card.clos{display:flex;align-items:center;gap:12px}
 .card.clos .body{opacity:.72;flex:1;min-width:0;cursor:pointer}
@@ -935,6 +938,27 @@ async function dataModele(id) {
 }
 
 /** Historique des programmes d'un pratiquant, du plus récent au plus ancien. */
+/**
+ * La fin **prévue** d'une attribution, distincte de `date_fin` qui note la
+ * clôture réelle : l'une est un plan, l'autre un fait. Un programme de quatre
+ * semaines commencé le mardi 1er finit le lundi 28 — la dernière journée est
+ * incluse, d'où le jour retranché.
+ */
+function finPrevueDe(debut, semaines) {
+  const n = Number(semaines) || 0;
+  if (!debut || !n) return '';
+  const d = new Date(debut);
+  d.setDate(d.getDate() + n * 7 - 1);
+  return cleJour(d);
+}
+
+/** L'inverse : combien de semaines entières entre deux dates. */
+function semainesEntre(debut, fin) {
+  if (!debut || !fin) return 0;
+  const jours = Math.round((dateDeCle(cleJour(new Date(fin))) - dateDeCle(cleJour(new Date(debut)))) / 86400000) + 1;
+  return jours > 0 ? Math.max(1, Math.round(jours / 7)) : 0;
+}
+
 async function dataAttributions(email) {
   const { db, collection, query, where, getDocs } = FB;
   const snap = await getDocs(query(collection(db, 'attributions'), where('email', '==', email)));
@@ -944,6 +968,7 @@ async function dataAttributions(email) {
     list.push({
       id: d.id, email: a.email, modele_id: a.modele_id || '', nom: a.nom,
       date_debut: versDate(a.date_debut), date_fin: versDate(a.date_fin) || '',
+      fin_prevue: a.fin_prevue || '', duree_semaines: Number(a.duree_semaines) || 0,
       statut: a.statut || 'En cours', notes: a.notes || '',
       paye: a.paye === true,
       nbJours: Number(a.nb_jours) || 0, nbExercices: Number(a.nb_exercices) || 0
@@ -971,7 +996,9 @@ async function dataProgramme(email, attributionId) {
     email,
     attribution: att ? {
       id: att.id, nom: att.nom, modele_id: att.modele_id || '',
-      date_debut: versDate(att.date_debut), date_fin: versDate(att.date_fin) || '', statut: att.statut
+      date_debut: versDate(att.date_debut), date_fin: versDate(att.date_fin) || '',
+      fin_prevue: att.fin_prevue || '', duree_semaines: Number(att.duree_semaines) || 0,
+      statut: att.statut
     } : null,
     jours: grouperEnJours(lignesData, noms)
   };
@@ -1011,9 +1038,17 @@ async function creerAttribution(email, p) {
   // `duree_semaines` copiée depuis le modèle plutôt que relue au moment de
   // l'accueil : le pratiquant n'a pas le droit de lire `modeles` (réservé au
   // coach), seulement sa copie ici. Même logique que nb_jours/nb_exercices.
+  // Le coach peut couper ou rallonger la durée du modèle au moment de donner.
+  if (Number(p.duree_semaines) > 0) dureeSemaines = Number(p.duree_semaines);
+  const debut = p.date_debut ? dateDeCle(p.date_debut) : new Date();
+
   const ref = await addDoc(collection(db, 'attributions'), {
     email, modele_id: p.modele_id || '', nom,
-    date_debut: p.date_debut ? new Date(p.date_debut) : serverTimestamp(),
+    date_debut: p.date_debut ? debut : serverTimestamp(),
+    // `fin_prevue` est le plan — une chaîne AAAA-MM-JJ, comme le planning
+    // personnel, pour qu'aucun fuseau ne décale un jour. `date_fin` reste la
+    // clôture réelle, posée le jour où le coach clôt.
+    fin_prevue: finPrevueDe(debut, dureeSemaines),
     date_fin: '', statut: 'En cours', paye: false, notes: String(p.notes || ''),
     nb_jours: new Set(lignesModele.map(l => l.jour)).size,
     nb_exercices: lignesModele.length,
@@ -1042,6 +1077,9 @@ async function majAttribution(id, patch) {
   if (patch.paye !== undefined) data.paye = patch.paye === true;
   if (patch.notes !== undefined) data.notes = patch.notes;
   if (patch.date_fin !== undefined) data.date_fin = patch.date_fin ? serverTimestamp() : '';
+  if (patch.date_debut !== undefined) data.date_debut = dateDeCle(patch.date_debut);
+  if (patch.duree_semaines !== undefined) data.duree_semaines = Number(patch.duree_semaines) || 0;
+  if (patch.fin_prevue !== undefined) data.fin_prevue = String(patch.fin_prevue || '');
   await updateDoc(doc(db, 'attributions', id), data);
 }
 
@@ -1053,6 +1091,70 @@ async function supprimerAttribution(id) {
   lignes.docs.forEach(d => b.delete(d.ref));
   b.delete(doc(db, 'attributions', id));
   await b.commit();
+}
+
+/**
+ * Les séances du programme ne sont pas des documents : c'est une règle —
+ * « lundi, mercredi, vendredi, du 1er au 28 » — que le calendrier déroule.
+ * Une occasion déplacée ou annulée est donc une **exception** à cette règle,
+ * et rien d'autre n'est écrit : un programme de quatre semaines sans imprévu
+ * ne coûte aucun document.
+ *
+ * Doc ID = la date d'origine (`2026-09-07`), ce qui rend l'écriture idempotente
+ * et interdit deux exceptions contradictoires sur la même date. Un seul jour de
+ * programme peut tomber un jour donné — les jours sont des jours de la semaine,
+ * distincts par construction.
+ *
+ *   etat 'deplacee'  → `date_cible` porte la nouvelle date
+ *   etat 'annulee'   → l'athlète ne la fera pas ; elle reste visible, barrée
+ *   etat 'supprimee' → le coach la retire ; elle disparaît des deux côtés
+ */
+async function dataPlanningSeances(attributionId) {
+  const { db, collection, getDocs } = FB;
+  const snap = await getDocs(collection(db, 'attributions', attributionId, 'planning'));
+  const parDate = {};
+  snap.forEach(d => {
+    const x = d.data();
+    parDate[d.id] = {
+      cle: d.id, jour: x.jour || '', etat: x.etat || '',
+      date_cible: x.date_cible || '', par: x.par || ''
+    };
+  });
+  return parDate;
+}
+
+/** Pose ou remplace l'exception d'une date. `etat` vide efface l'exception. */
+async function poserExceptionSeance(attributionId, cle, x) {
+  const { db, doc, setDoc, deleteDoc, serverTimestamp } = FB;
+  const ref = doc(db, 'attributions', attributionId, 'planning', cle);
+  if (!x || !x.etat) { await deleteDoc(ref); return; }
+  await setDoc(ref, {
+    jour: String(x.jour || ''), etat: x.etat,
+    date_cible: String(x.date_cible || ''),
+    par: S.moi.estCoach ? 'coach' : 'athlete', le: serverTimestamp()
+  });
+}
+
+/**
+ * Ce qu'il reste à faire du programme en cours : ses jours, sa fenêtre, et ses
+ * exceptions. Seule l'attribution « En cours » est projetée — une attribution
+ * close n'a plus de prévision utile, son passé est déjà dans l'historique.
+ */
+async function dataPrevisions(email, attDeja) {
+  const att = attDeja || await attributionActive(email);
+  if (!att) return null;
+  const jours = [...new Set((att.lignes || []).map(l => l.jour).filter(Boolean))];
+  let planning = {};
+  try { planning = await dataPlanningSeances(att.id); } catch (err) {}
+  // `fin_prevue` n'existe que sur les attributions créées depuis qu'on la
+  // pose. Avant, seule `duree_semaines` était copiée du modèle : on en déduit
+  // la fin plutôt que de laisser courir sans borne un programme qui en a une.
+  const debut = att.date_debut ? cleJour(versDate(att.date_debut)) : '';
+  return {
+    id: att.id, email, debut,
+    fin: att.fin_prevue || finPrevueDe(debut && dateDeCle(debut), att.duree_semaines),
+    jours, planning
+  };
 }
 
 /** Activités libres d'un pratiquant sur une fenêtre de dates. */
@@ -1292,7 +1394,7 @@ function seanceFaiteCeJourLa(seances, jour, date) {
  * planning récurrent (arts martiaux, club...) qui tombe ce jour-là. Évite
  * d'aller au calendrier juste pour voir où on en est cette semaine.
  */
-function semaineCourante(jours, seances, recurrences) {
+function semaineCourante(jours, seances, recurrences, prev) {
   const lundi = new Date();
   lundi.setDate(lundi.getDate() - ((lundi.getDay() + 6) % 7));
   lundi.setHours(0, 0, 0, 0);
@@ -1328,8 +1430,13 @@ function semaineCourante(jours, seances, recurrences) {
 
   return [0, 1, 2, 3, 4, 5, 6].map(i => {
     const date = new Date(lundi.getTime() + i * 86400000);
-    const jour = parRang[i] || null;
-    return { jour, aujourdhui: date.toDateString() === new Date().toDateString(),
+    // Le bandeau lit le programme par la même lucarne que le calendrier :
+    // fenêtre du programme et exceptions comprises. Sans ça, une séance
+    // déplacée serait à deux endroits, et une séance supprimée toujours là.
+    const prevues = previsionsDuJour(prev, date);
+    const jour = prev ? (prevues[0] ? prevues[0].prevu.jour : null) : (parRang[i] || null);
+    return { jour, annulee: !!(prevues[0] && prevues[0].annulee),
+             aujourdhui: date.toDateString() === new Date().toDateString(),
              fait: jour ? seanceFaiteCeJourLa(seances, jour, date) : false,
              recurrences: recParRang[i] || [] };
   });
@@ -1375,10 +1482,11 @@ async function dataAccueil() {
   const progression = att ? progressionAttribution({ ...att, duree_semaines: dureeS }, seances) : null;
 
   const triees = seances.slice().sort((a, b) => dateDe(a.date) - dateDe(b.date));
+  const prev = att ? await dataPrevisions(email, att) : null;
 
   return {
     jours,
-    semaine: semaineCourante(jours, seances, recurrences),
+    semaine: semaineCourante(jours, seances, recurrences, prev),
     recurrences,
     prochaine: prochaine ? { jour: prochaine.jour, dans: prochaine.dans,
       duree_estimee: estimerDuree(blocsBruts(att, prochaine.jour)) } : null,
@@ -1964,7 +2072,8 @@ async function vueAccueil() {
   // Le bandeau dit la même chose que le calendrier, dans les mêmes couleurs :
   // rouge pour la séance du coach, encre du texte pour ce que le pratiquant a
   // posé. Une séance déjà faite est en aplat, ce qui reste à venir en contour.
-  const itemsSemaine = j => (j.jour ? [{ nom: nomCourt(j.jour), coach: true, fait: j.fait, heure: '' }] : [])
+  const itemsSemaine = j => (j.jour
+    ? [{ nom: nomCourt(j.jour), coach: true, fait: j.fait, annulee: j.annulee, heure: '' }] : [])
     .concat((j.recurrences || []).map(r => ({ nom: r.sport, coach: false, fait: false, heure: r.heure || '' })));
   $('#zone').innerHTML = `
     <div class="eyebrow">Cette semaine</div>
@@ -2120,19 +2229,46 @@ function modalActivite(x) {
  * devient jamais une séance enregistrée tout seul — « Consigner une
  * activité » reste le geste qui compte pour l'assiduité, le jour où on y va.
  */
-/** Résumé lisible d'une entrée de planning, récurrente ou ponctuelle. */
-function texteRecurrence(r) {
-  if (r.recurrent) {
-    // « chaque mois » n'est plus proposé ; une entrée d'avant le dit encore,
-    // et le dire est justement ce qui explique qu'elle n'apparaisse nulle part.
-    const freq = r.frequence === 'mois' ? 'chaque mois (non placé au calendrier)' : 'chaque semaine';
-    const fenetre = [
-      r.date_debut ? 'du ' + new Date(r.date_debut).toLocaleDateString('fr-FR') : '',
-      r.date_fin ? 'au ' + new Date(r.date_fin).toLocaleDateString('fr-FR') : ''
-    ].filter(Boolean).join(' ');
-    return [r.jour, freq, r.heure, fenetre].filter(Boolean).join(' · ');
+/** « 45 min », « 1 h », « 1 h 30 » — la durée dite d'un trait, sans « heure ». */
+function dureeCompacte(min) {
+  const m = Number(min) || 0;
+  if (!m) return '';
+  if (m < 60) return m + ' min';
+  const h = Math.floor(m / 60), reste = m % 60;
+  return reste ? `${h} h ${String(reste).padStart(2, '0')}` : `${h} h`;
+}
+
+/** « 07 septembre 2026 » — la date en toutes lettres, pour une ligne qui respire. */
+function dateLongue(d) {
+  if (!d) return '';
+  return new Date(d).toLocaleDateString('fr-FR', { day:'2-digit', month:'long', year:'numeric' });
+}
+
+/**
+ * Une entrée de planning se lit en deux temps : ce que c'est et quand ça
+ * revient sur la première ligne, la fenêtre de validité sur la seconde.
+ * L'activité vient en tête — c'est elle qu'on cherche des yeux, pas le jour.
+ */
+function titreRecurrence(r) {
+  if (!r.recurrent) {
+    return [r.sport, r.date ? 'le ' + dateLongue(r.date) : '', r.heure, dureeCompacte(r.duree_min)]
+      .filter(Boolean).join(' · ');
   }
-  return [r.date ? new Date(r.date).toLocaleDateString('fr-FR') : '', r.heure].filter(Boolean).join(' · ');
+  // « chaque mois » n'est plus proposé ; une entrée d'avant le dit encore, et
+  // le dire est justement ce qui explique qu'elle n'apparaisse nulle part.
+  const rythme = r.frequence === 'mois'
+    ? 'chaque mois (non placé au calendrier)'
+    : r.jour ? 'Tous les ' + String(r.jour).toLowerCase() + 's' : '';
+  return [r.sport, rythme, r.heure, dureeCompacte(r.duree_min)].filter(Boolean).join(' · ');
+}
+
+/** « du 07 septembre 2026 au 28 juin 2027 », ou rien si aucune borne. */
+function fenetreRecurrence(r) {
+  if (!r.recurrent) return '';
+  return [
+    r.date_debut ? 'du ' + dateLongue(r.date_debut) : '',
+    r.date_fin ? 'au ' + dateLongue(r.date_fin) : ''
+  ].filter(Boolean).join(' ');
 }
 
 function modalPlanningRecurrent(liste) {
@@ -2146,8 +2282,8 @@ function modalPlanningRecurrent(liste) {
     w.querySelector('#prList').innerHTML = liste.length
       ? liste.map(r => `<div class="ligne" data-r="${r.id}">
           <div class="g">
-            <div class="nom">${texteRecurrence(r)}</div>
-            <div class="meta">${r.sport}${r.duree_min ? ' · ' + r.duree_min + ' min' : ''}${r.notes ? ' · ' + r.notes : ''}</div>
+            <div class="nom">${titreRecurrence(r)}</div>
+            <div class="meta">${[fenetreRecurrence(r), r.notes].filter(Boolean).join(' · ')}</div>
           </div>
         </div>`).join('')
       : `<div class="empty" style="padding:14px 0">Rien pour l'instant.</div>`;
@@ -3630,6 +3766,44 @@ function planifsDuJour(planifs, date) {
 }
 
 /**
+ * Les séances du programme qui tombent une date, exceptions appliquées. Deux
+ * apports distincts : celles **venues d'ailleurs** — déplacées sur cette date —
+ * et celle du rythme natif, si le rang du jour correspond et que la date est
+ * dans la fenêtre du programme.
+ *
+ * Une séance déplacée quitte son jour d'origine : elle n'y laisse rien, sinon
+ * elle compterait deux fois.
+ */
+function previsionsDuJour(prev, date) {
+  if (!prev || !prev.jours.length) return [];
+  const cle = cleJour(date);
+  const items = [];
+
+  Object.values(prev.planning).forEach(x => {
+    if (x.etat === 'deplacee' && x.date_cible === cle) {
+      items.push({ nom: nomCourt(x.jour), coach: true, fait: false, heure: '',
+                   prevu: { cle: x.cle, jour: x.jour, deplacee: true } });
+    }
+  });
+
+  const dansLaFenetre = (!prev.debut || cle >= prev.debut) && (!prev.fin || cle <= prev.fin);
+  if (dansLaFenetre) {
+    const rang = (date.getDay() + 6) % 7;
+    const jour = prev.jours.find(j => rangJour(j) === rang);
+    if (jour) {
+      const ex = prev.planning[cle];
+      const parti = ex && (ex.etat === 'deplacee' || ex.etat === 'supprimee');
+      if (!parti) {
+        items.push({ nom: nomCourt(jour), coach: true, fait: false, heure: '',
+                     annulee: !!(ex && ex.etat === 'annulee'),
+                     prevu: { cle, jour, deplacee: false } });
+      }
+    }
+  }
+  return items;
+}
+
+/**
  * Ce qui tombe un jour donné, dans l'ordre où ça se lit : la séance du coach
  * d'abord — c'est elle qui structure la journée — puis le reste à l'heure de
  * début. Ce qui n'a pas d'heure passe en dernier plutôt que d'être placé au
@@ -3649,7 +3823,8 @@ function etiquettes(items, max) {
   const tri = agendaDuJour(items);
   const n = max || 3;
   const vus = tri.slice(0, n).map(x => `<span class="eti${x.coach ? ' coach' : ''}${
-    x.fait ? '' : ' prevu'}" title="${x.nom}">${x.nom}</span>`).join('');
+    x.fait ? '' : ' prevu'}${x.annulee ? ' annulee' : ''}" title="${
+    x.nom}${x.annulee ? ' — annulée' : ''}">${x.nom}</span>`).join('');
   return vus + (tri.length > n ? `<span class="eti plus">+${tri.length - n}</span>` : '');
 }
 
@@ -3674,11 +3849,12 @@ async function peindreCalendrier() {
     try {
       // Le planning est une intention, l'historique un fait : deux collections,
       // deux lectures, réunies seulement à l'affichage.
-      const [faits, planifs] = await Promise.all([
+      const [faits, planifs, prev] = await Promise.all([
         dataCalendrier(c.email || S.email, p),
-        dataRecurrences(c.email || S.email)
+        dataRecurrences(c.email || S.email),
+        dataPrevisions(c.email || S.email)
       ]);
-      c.seances = faits; c.planifs = planifs;
+      c.seances = faits; c.planifs = planifs; c.prev = prev;
     }
     catch (err) { z.innerHTML = `<div class="empty">Impossible de charger.<br>${err.message}</div>`; return; }
   }
@@ -3741,8 +3917,25 @@ async function peindreCalendrier() {
 
   if (c.sel) {
     const ss = parJour[c.sel] || [];
+    const seances = previsionsDuJour(c.prev, dateDeCle(c.sel))
+      .filter(() => !(parJour[c.sel] || []).some(x => x.type !== 'activite'));
     const prevues = planifsDuJour(c.planifs, dateDeCle(c.sel));
-    $('#detail').innerHTML = (prevues.length ? prevues.map(r => `
+    $('#detail').innerHTML = seances.map(x => `
+      <div class="card" style="display:block;margin-top:14px">
+        <div class="entete" style="margin-bottom:4px">
+          <span class="chip">${x.annulee ? 'Annulée' : 'Séance prévue'}</span>
+          <span class="meta" style="flex:1;text-align:right">${
+            dateDeCle(c.sel).toLocaleDateString('fr-FR', { weekday:'long', day:'numeric', month:'long' })}</span>
+        </div>
+        <div class="nom">${x.prevu.jour}${x.prevu.deplacee ? ' · déplacée ici' : ''}</div>
+        <div class="barre" style="margin-top:10px">
+          <button class="btn" data-sdep="${x.prevu.cle}">Déplacer</button>
+          ${x.annulee
+            ? `<button class="btn" data-sret="${x.prevu.cle}">Rétablir</button>`
+            : `<button class="btn" data-sann="${x.prevu.cle}">Annuler</button>`}
+          ${S.moi.estCoach ? `<button class="btn danger" data-ssup="${x.prevu.cle}">Supprimer</button>` : ''}
+        </div>
+      </div>`).join('') + (prevues.length ? prevues.map(r => `
       <div class="card" style="display:block;margin-top:14px">
         <div class="entete" style="margin-bottom:4px">
           <span class="chip libre">Au planning</span>
@@ -3782,8 +3975,69 @@ async function peindreCalendrier() {
             </div>
             ${s.notes ? `<p class="consigne" style="margin-top:10px">${s.notes}</p>` : ''}
           </div>`).join('')
-      : prevues.length ? '' : `<div class="empty" style="padding:24px 0">Rien ce jour-là.</div>`);
+      : '') + (ss.length || prevues.length || seances.length
+        ? '' : `<div class="empty" style="padding:24px 0">Rien ce jour-là.</div>`);
+
+    cablerActionsSeance(c, seances);
   }
+}
+
+/**
+ * Déplacer, annuler, rétablir, supprimer une séance prévue. L'athlète annule
+ * — il ne fera pas celle-là, et le coach doit pouvoir le voir ; le coach seul
+ * supprime, ce qui la retire vraiment. Deux gestes proches, deux intentions
+ * différentes : l'une informe, l'autre efface.
+ *
+ * Un déplacement ne touche que cette occurrence. Décaler tout le reste
+ * reviendrait à réécrire le programme pour un imprévu d'un jour.
+ */
+function cablerActionsSeance(c, seances) {
+  if (!c.prev) return;
+  const trouve = cle => seances.find(x => x.prevu.cle === cle);
+
+  const ecrire = async (cle, champs) => {
+    try {
+      await poserExceptionSeance(c.prev.id, cle, champs);
+      c.prev = await dataPrevisions(c.email || S.email);
+      peindreCalendrier();
+    } catch (err) { toast(err.message); }
+  };
+
+  const z = $('#detail');
+  z.querySelectorAll('[data-sann]').forEach(b => b.onclick = () => {
+    const x = trouve(b.dataset.sann);
+    ecrire(b.dataset.sann, { etat:'annulee', jour: x.prevu.jour });
+  });
+  z.querySelectorAll('[data-sret]').forEach(b => b.onclick = () => ecrire(b.dataset.sret, null));
+  z.querySelectorAll('[data-ssup]').forEach(b => b.onclick = function () {
+    const x = trouve(b.dataset.ssup);
+    if (this.dataset.sur !== 'oui') { this.dataset.sur = 'oui'; this.textContent = 'Confirmer'; return; }
+    ecrire(b.dataset.ssup, { etat:'supprimee', jour: x.prevu.jour });
+  });
+  z.querySelectorAll('[data-sdep]').forEach(b => b.onclick = () => {
+    const x = trouve(b.dataset.sdep);
+    modalDeplacerSeance(x, cible => ecrire(x.prevu.cle, {
+      etat:'deplacee', jour: x.prevu.jour, date_cible: cible
+    }));
+  });
+}
+
+/** Choisir la nouvelle date d'une séance. Une seule question, une seule fois. */
+function modalDeplacerSeance(x, apres) {
+  const w = modal('Déplacer la séance', `
+    <p class="consigne">${x.prevu.jour} — seule cette séance bouge, le rythme du
+      programme ne change pas.</p>
+    <div class="champ"><label>Nouvelle date</label>
+      <input class="f" id="dpDate" type="date" value="${x.prevu.cle}"></div>
+    <div class="barre" style="margin-top:14px"><button class="btn" id="dpAnn">Annuler</button>
+      <button class="btn plein" id="dpOk" style="flex:1">Déplacer</button></div>`);
+  w.querySelector('#dpAnn').onclick = w.fermer;
+  w.querySelector('#dpOk').onclick = function () {
+    const d = w.querySelector('#dpDate').value;
+    if (!d) return toast('Choisissez une date');
+    w.fermer();
+    apres(d);
+  };
 }
 
 /** Clé « 2026-09-02 » → Date locale, sans passer par un fuseau. */
@@ -3801,6 +4055,11 @@ function itemsDuJour(c, date, faits) {
   const items = (faits || []).map(x => x.type === 'activite'
     ? { nom: x.sport, coach: false, fait: true, heure: '' }
     : { nom: nomCourt(x.jour) || 'Séance', coach: true, fait: true, heure: '' });
+
+  // Une séance faite ce jour-là tient lieu de prévision : afficher les deux
+  // dirait deux fois la même chose, une fois en fait et une fois en projet.
+  if (!items.some(x => x.coach)) previsionsDuJour(c.prev, date).forEach(x => items.push(x));
+
   planifsDuJour(c.planifs, date).forEach(r =>
     items.push({ nom: r.sport, coach: false, fait: false, heure: r.heure || '' }));
   return items;
@@ -4075,8 +4334,8 @@ async function vueFiche() {
       <p class="consigne" style="margin-bottom:10px">Engagements extérieurs, déclarés par le pratiquant.</p>
       ${f.recurrences.map(r => `<div class="ligne">
         <div class="g">
-          <div class="nom">${texteRecurrence(r)}${r.duree_min ? ' · ' + r.duree_min + ' min' : ''}</div>
-          <div class="meta">${r.sport}${r.notes ? ' · ' + r.notes : ''}</div>
+          <div class="nom">${titreRecurrence(r)}</div>
+          <div class="meta">${[fenetreRecurrence(r), r.notes].filter(Boolean).join(' · ')}</div>
         </div>
       </div>`).join('')}` : ''}
 
@@ -5258,7 +5517,6 @@ async function vueProgramme() {
     if (jours.length) chargerJour(jours[0]);
   }
 
-  const debut = att.date_debut ? new Date(att.date_debut).toLocaleDateString('fr-FR') : '';
   $('#zone').innerHTML = `
     <div class="champ">
       <label>Programme attribué</label>
@@ -5266,10 +5524,11 @@ async function vueProgramme() {
         ${a.nom} · ${a.statut}${a.date_debut ? ' · depuis le ' + new Date(a.date_debut).toLocaleDateString('fr-FR') : ''}</option>`).join('')}</select>
     </div>
     <div class="meta" style="color:var(--dust);font-size:12.5px;margin:-2px 0 12px">
-      ${att.nbJours} jour${att.nbJours > 1 ? 's' : ''} · ${att.nbExercices} exercices${debut ? ' · démarré le ' + debut : ''}${
-      att.modele_id ? ' · issu d\'un modèle' : ' · sur mesure'}</div>
+      ${att.nbJours} jour${att.nbJours > 1 ? 's' : ''} · ${att.nbExercices} exercices${
+      att.modele_id ? ' · issu d\'un modèle' : ' · sur mesure'}<br>${fenetreAttribution(att)}</div>
     <div class="barre" style="margin-top:0">
       <button class="btn plein" id="donner">Donner un programme</button>
+      <button class="btn" id="dates">Dates</button>
       <button class="btn" id="prevenir">Prévenir</button>
       ${att.statut === 'En cours' ? '<button class="btn" id="clore">Clore</button>' : ''}
       <button class="btn danger" id="supprAtt">Supprimer</button>
@@ -5282,6 +5541,7 @@ async function vueProgramme() {
 
   $('#selAtt').onchange = e => { S.attSel = e.target.value; S.ed = null; vueProgramme(); };
   $('#donner').onclick = modalAttribuer;
+  $('#dates').onclick = () => modalDatesAttribution(att);
   $('#prevenir').onclick = () => modalNotifier(S.attSel, S.coach.email);
   $('#addJour').onclick = modalNouveauJour;
   $('#zone').querySelectorAll('.day[data-j]').forEach(b =>
@@ -5306,6 +5566,65 @@ async function vueProgramme() {
   peindreEditeur();
 }
 
+/**
+ * La fenêtre d'un programme en une phrase. `date_fin` est la clôture réelle et
+ * prime : une fois le programme clos, dire encore ce qui « était prévu »
+ * n'apprendrait rien. Sans durée, on ne l'invente pas — un programme sans fin
+ * annoncée est un état légitime, pas une donnée manquante.
+ */
+function fenetreAttribution(att) {
+  const debut = att.date_debut ? dateLongue(att.date_debut) : '';
+  if (att.date_fin) return `du ${debut} au ${dateLongue(att.date_fin)} · clos`;
+  const fin = att.fin_prevue
+    || finPrevueDe(att.date_debut && new Date(att.date_debut), att.duree_semaines);
+  if (!fin) return debut ? `à partir du ${debut}` : '';
+  return `du ${debut} au ${dateLongue(dateDeCle(fin))}`
+    + (att.duree_semaines ? ` · ${att.duree_semaines} semaines` : '');
+}
+
+/**
+ * Piloter les dates d'un programme. Durée et date de fin disent la même chose
+ * de deux façons : saisir l'une recalcule l'autre, sous les yeux, plutôt que
+ * de demander au coach de compter les semaines lui-même.
+ */
+function modalDatesAttribution(att) {
+  const debut0 = att.date_debut ? cleJour(new Date(att.date_debut)) : cleJour(new Date());
+  const fin0 = att.fin_prevue || finPrevueDe(dateDeCle(debut0), att.duree_semaines);
+  const w = modal('Dates du programme', `
+    <div class="champ"><label>Début</label>
+      <input class="f" id="daDeb" type="date" value="${debut0}"></div>
+    <div class="duo">
+      <div class="champ"><label>Durée (semaines)</label>
+        <input class="f" id="daSem" type="number" min="0" step="1" value="${att.duree_semaines || ''}"></div>
+      <div class="champ"><label>Fin prévue</label>
+        <input class="f" id="daFin" type="date" value="${fin0}"></div>
+    </div>
+    <p class="consigne">Laisser la durée à zéro pour un programme sans fin annoncée.</p>
+    <div class="barre" style="margin-top:14px"><button class="btn" id="daAnn">Annuler</button>
+      <button class="btn plein" id="daOk" style="flex:1">Enregistrer</button></div>`);
+
+  const deb = w.querySelector('#daDeb'), sem = w.querySelector('#daSem'), fin = w.querySelector('#daFin');
+  const depuisDuree = () => { fin.value = finPrevueDe(dateDeCle(deb.value), sem.value); };
+  deb.onchange = depuisDuree;
+  sem.oninput = depuisDuree;
+  fin.onchange = () => { sem.value = semainesEntre(dateDeCle(deb.value), dateDeCle(fin.value)) || ''; };
+
+  w.querySelector('#daAnn').onclick = w.fermer;
+  w.querySelector('#daOk').onclick = async function () {
+    if (!deb.value) return toast('Il faut une date de début');
+    this.disabled = true;
+    try {
+      await majAttribution(att.id, {
+        date_debut: deb.value,
+        duree_semaines: Number(sem.value) || 0,
+        fin_prevue: Number(sem.value) > 0 ? fin.value : ''
+      });
+      w.fermer(); toast('Dates enregistrées');
+      S.atts = null; S.cal = null; vueProgramme();
+    } catch (err) { toast(err.message); this.disabled = false; }
+  };
+}
+
 /** Donner un programme : depuis un modèle, ou vierge pour du sur-mesure. */
 async function modalAttribuer() {
   const mods = await dataModeles();
@@ -5328,10 +5647,16 @@ async function modalAttribuer() {
       </select></div>
     <div class="champ"><label>Nom donné au pratiquant</label>
       <input class="f" id="aNom" placeholder="Laisser vide pour reprendre le nom du modèle"></div>
-    <div class="champ"><label>Date de début</label>
-      <input class="f" id="aDeb" type="date" value="${new Date().toISOString().slice(0, 10)}"></div>
+    <div class="duo">
+      <div class="champ"><label>Date de début</label>
+        <input class="f" id="aDeb" type="date" value="${cleJour(new Date())}"></div>
+      <div class="champ"><label>Durée (semaines)</label>
+        <input class="f" id="aSem" type="number" min="0" step="1" placeholder="du modèle"></div>
+    </div>
+    <div class="meta" id="aFin" style="margin:-4px 0 10px;color:var(--dust);font-size:12.5px"></div>
     <p class="consigne">Le contenu du modèle est <strong>copié</strong> : le personnaliser ensuite
-      ne touche pas le modèle, et le programme en cours est clos automatiquement.</p>
+      ne touche pas le modèle, et le programme en cours est clos automatiquement.
+      La durée du modèle est reprise si le champ reste vide.</p>
     <div class="barre"><button class="btn" id="aAnn">Annuler</button>
       <button class="btn plein" id="aOk" style="flex:1">Attribuer</button></div>`);
 
@@ -5350,6 +5675,20 @@ async function modalAttribuer() {
   w.querySelector('#fDif').onchange = filtrer;
   filtrer();
 
+  // La fin se calcule sous les yeux : le coach voit ce qu'il engage avant de
+  // valider. Champ vide = la durée du modèle, qu'on ne connaît qu'ici.
+  const mod = w.querySelector('#aMod'), deb = w.querySelector('#aDeb'), sem = w.querySelector('#aSem');
+  const majFin = () => {
+    const m = mods.find(x => x.id === mod.value);
+    const semaines = Number(sem.value) || (m ? Number(m.duree_semaines) || 0 : 0);
+    const f = finPrevueDe(dateDeCle(deb.value), semaines);
+    w.querySelector('#aFin').textContent = f
+      ? `Fin prévue le ${dateLongue(dateDeCle(f))} · ${semaines} semaines`
+      : 'Sans fin annoncée';
+  };
+  mod.onchange = majFin; deb.onchange = majFin; sem.oninput = majFin;
+  majFin();
+
   w.querySelector('#aAnn').onclick = w.fermer;
   w.querySelector('#aOk').onclick = async function () {
     this.disabled = true;
@@ -5357,7 +5696,8 @@ async function modalAttribuer() {
       const r = await creerAttribution(S.coach.email, {
         modele_id: w.querySelector('#aMod').value || undefined,
         nom: w.querySelector('#aNom').value,
-        date_debut: w.querySelector('#aDeb').value
+        date_debut: w.querySelector('#aDeb').value,
+        duree_semaines: w.querySelector('#aSem').value
       });
       w.fermer();
       toast(r.lignes ? `${r.nom} attribué, ${r.lignes} lignes copiées` : `${r.nom} attribué`);
