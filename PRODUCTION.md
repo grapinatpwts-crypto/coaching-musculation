@@ -184,6 +184,35 @@ n'a de sens à construire.
   les recalculer depuis la sous-collection `series` à chaque ouverture du calendrier
   — actuellement une lecture par séance affichée, borné mais pas gratuit.
 
+### Laissé ouvert le 2 septembre 2026, en connaissance de cause
+
+Quatre décisions prises par défaut ce jour-là, chacune réversible. Elles sont
+ici pour ne pas être redécouvertes comme des oublis.
+
+- **Le récurrent « chaque mois » a été retiré**, pas reporté : son seul champ de
+  jour est un jour de la *semaine*, il ne dit pas laquelle du mois, donc aucune
+  grille ne pouvait le placer. Le refaire demande de lui donner un rang
+  (« 1er mardi », « 3e jeudi »), pas de rouvrir le menu.
+- **Seules les attributions « En cours » sont projetées** au calendrier. Une
+  attribution close n'a plus de prévision utile — son passé est dans
+  l'historique, et projeter un programme terminé remplirait les cases de
+  séances qui n'auront jamais lieu.
+- **Les séances du programme ne sont pas projetées sur les jours passés** où
+  rien n'a été fait. Le calendrier dirait « tu devais, tu n'as pas » sur chaque
+  case vide — un jugement que l'app ne porte nulle part ailleurs (§ 3).
+- **Valider depuis la pastille n'arme aucun minuteur.** C'est le prix du
+  raccourci, compensé par la rangée de chronos en haut de la séance. Le faire
+  armer le repos tout seul reste possible : ça changerait le contrat du geste.
+
+### À vérifier à l'usage
+
+- La **répartition des séries écrites avant `ligne_id`** : elles n'en portent
+  pas, `dataSeance` les répartit sur les lignes de leur exercice dans l'ordre,
+  chacune jusqu'à son compte. Vu sur le papier, pas encore sur une vraie séance
+  ancienne.
+- Le **déplacement et l'annulation** d'une séance planifiée, du côté de
+  l'athlète comme du coach.
+
 ### Fonctionnalités en attente
 
 - **Le pratiquant ajuste plus que la charge** — les répétitions, par exemple.

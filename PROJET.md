@@ -74,7 +74,7 @@ volontairement reportée, voir `PRODUCTION.md` § 5.
 | Fichier | Emplacement | Rôle |
 |---|---|---|
 | `index.html` | dépôt GitHub | PWA complète (HTML + CSS + JS inline), lit/écrit Firestore directement |
-| `firestore.rules` | dépôt GitHub | toute la sécurité — lecture/écriture par collection, cloisonnement par email |
+| `firestore.rules` | dépôt GitHub | toute la sécurité — lecture/écriture par collection, cloisonnement par email. **Déployé à part**, voir ci-dessous |
 | `firestore.indexes.json` | dépôt GitHub | index composites nécessaires aux requêtes (attributions, séances, séries, commentaires) |
 | `scripts/seed.mjs` | dépôt GitHub | seed initial (catalogue, modèles-types, compte coach) — exécuté une fois en local avec `firebase-admin`, jamais depuis le client |
 | `manifest.json` | dépôt GitHub | manifeste d'installation |
@@ -89,6 +89,19 @@ volontairement reportée, voir `PRODUCTION.md` § 5.
 (W cerclé, `#C22026`, transparent, 135×134) fourni par le coach. Fond `#151515`,
 marque à 72 % pour les icônes classiques, 76 % pour la maskable (12 % de marge par
 côté, zone sûre respectée). Régénérables : voir § 9.
+
+**`firestore.rules` ne part pas avec le dépôt.** Un `git push` met le front-end
+en ligne (GitHub Pages) mais ne touche pas aux règles : elles demandent
+
+```
+firebase deploy --only firestore:rules
+```
+
+depuis un poste où la CLI Firebase est authentifiée. Un correctif de règles
+resté non déployé donne l'illusion que le bug est corrigé alors que le refus
+serveur persiste — c'est exactement ce qui est arrivé à l'annulation d'une
+séance, refusée pour « droits insuffisants » alors que le code était bon. À
+signaler explicitement dès que ce fichier change, et à ne jamais supposer fait.
 
 ## 5. Modèle de données Firestore
 
