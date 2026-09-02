@@ -1149,7 +1149,7 @@ async function dataPrevisions(email, attDeja) {
   // `fin_prevue` n'existe que sur les attributions créées depuis qu'on la
   // pose. Avant, seule `duree_semaines` était copiée du modèle : on en déduit
   // la fin plutôt que de laisser courir sans borne un programme qui en a une.
-  const debut = att.date_debut ? cleJour(versDate(att.date_debut)) : '';
+  const debut = att.date_debut ? cleJour(new Date(versDate(att.date_debut))) : '';
   return {
     id: att.id, email, debut,
     fin: att.fin_prevue || finPrevueDe(debut && dateDeCle(debut), att.duree_semaines),
