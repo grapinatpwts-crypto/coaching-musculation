@@ -418,8 +418,10 @@ header h2{font-size:30px;text-transform:uppercase;line-height:1}
 .opt-nom{font-size:16px;font-weight:600}
 .opt[aria-pressed="true"] .opt-nom::after{content:' ✓';color:var(--brand-ink)}
 .opt-quoi{font-size:12.5px;color:var(--dust);line-height:1.4}
-#btheme{padding:0;width:34px;height:34px;display:grid;place-items:center}
-#btheme svg{width:15px;height:15px;display:block}
+/* Les deux boutons d'icône de l'en-tête. Sans la taille posée ici, un SVG sans
+   width/height retombe sur 300×150 et le bouton paraît vide. */
+#btheme,#bson{padding:0;width:34px;height:34px;display:grid;place-items:center}
+#btheme svg,#bson svg{width:15px;height:15px;display:block}
 
 :focus-visible{outline:2px solid var(--brand-ink);outline-offset:2px}
 </style>
@@ -1959,10 +1961,13 @@ async function deconnexion() {
 
 // Les boutons d'en-tête, identiques partout : écrits une fois, insérés par les vues.
 const ENTETE_BOUTONS =
+  // Un haut-parleur, pas un grelot : le grelot dirait « notifications », que
+  // cette app ne fait jamais (voir § 1 de PROJET.md).
   '<button class="quitter" id="bson" aria-label="Sons du chrono" title="Sons du chrono">' +
     '<svg viewBox="0 0 16 16" aria-hidden="true" focusable="false">' +
-      '<path d="M8 1.6c-.5 0-.9.4-.9.9v.35C4.9 3.4 3.6 5.1 3.6 7.1v2.2L2.3 11.3a.55.55 0 0 0 .48.85h10.44a.55.55 0 0 0 .48-.85L12.4 9.3V7.1c0-2-1.3-3.7-3.5-4.25v-.35c0-.5-.4-.9-.9-.9z" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/>' +
-      '<path d="M6.3 13a1.7 1.7 0 0 0 3.4 0" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg></button>' +
+      '<path d="M8.6 2.4 4.9 5.6H2.6a.7.7 0 0 0-.7.7v3.4a.7.7 0 0 0 .7.7h2.3l3.7 3.2z" fill="currentColor"/>' +
+      '<path d="M11.1 6a2.7 2.7 0 0 1 0 4" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/>' +
+      '<path d="M13 4.1a5.4 5.4 0 0 1 0 7.8" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg></button>' +
   '<button class="quitter" id="btheme" aria-label="Apparence" title="Apparence">' +
     '<svg viewBox="0 0 16 16" aria-hidden="true" focusable="false">' +
       '<circle cx="8" cy="8" r="6.6" fill="none" stroke="currentColor" stroke-width="1.5"/>' +
