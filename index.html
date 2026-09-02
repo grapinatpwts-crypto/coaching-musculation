@@ -3678,19 +3678,23 @@ function lancerMinuteur(secondes, libelle, apres) {
     // bip par tic, jamais les deux superposés.
     if (t === bipPremierSecondes() && bipPremierActif()) bip(660);
     else if (t > 0 && t <= 3 && bipDecompteActif()) bip();
-    if (t <= 0) { bip(); fin(); }
+    // Le dernier bip ne dit pas « encore une seconde » mais « c'est parti » :
+    // plus aigu et deux fois plus long, il ne se confond pas avec le décompte.
+    if (t <= 0) { bip(1175, .8); fin(); }
   }, 1000);
 }
 
-function bip(frequence) {
+function bip(frequence, duree) {
   try {
+    const d = duree || .4;
     const c = new (window.AudioContext || window.webkitAudioContext)();
     const o = c.createOscillator(), g = c.createGain();
     o.frequency.value = frequence || 880; o.connect(g); g.connect(c.destination);
     g.gain.setValueAtTime(.25, c.currentTime);
-    g.gain.exponentialRampToValueAtTime(.001, c.currentTime + .4);
-    o.start(); o.stop(c.currentTime + .4);
-    if (navigator.vibrate) navigator.vibrate(200);
+    g.gain.exponentialRampToValueAtTime(.001, c.currentTime + d);
+    o.start(); o.stop(c.currentTime + d);
+    // La vibration suit le son : 200 ms pour un bip court, le double pour le départ.
+    if (navigator.vibrate) navigator.vibrate(Math.round(d * 500));
   } catch (e) {}
 }
 

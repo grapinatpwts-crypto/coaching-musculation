@@ -206,9 +206,17 @@ chrono`, icône cloche de l'en-tête).** Un bip d'alerte à N secondes de la fin
 (`bipPremierSecondes`, 5 à 30 s, défaut 10, désactivable) et un décompte
 sonore des trois dernières secondes (`bipDecompteActif`, désactivable) ; le
 bip de fin (`t <= 0`) reste inconditionnel, ce n'est pas un réglage mais le
-signal que le temps mort est fini. `bip()` prend une fréquence : 660 Hz pour
-l'alerte, 880 Hz (défaut) pour le décompte et la fin — deux sons distincts à
-l'oreille. Réglage `localStorage`, comme l'apparence : le même compte peut
+signal que le temps mort est fini. `bip()` prend une fréquence et une durée,
+et les trois sons se distinguent à l'oreille sans qu'on ait à les compter :
+
+| Moment | Son |
+|---|---|
+| alerte à N secondes | 660 Hz, 0,4 s — grave, un simple « prépare-toi » |
+| décompte 3-2-1 | 880 Hz, 0,4 s — le défaut historique |
+| fin du temps mort | 1175 Hz, 0,8 s — plus aigu et deux fois plus long : il ne dit pas « encore une seconde » mais « c'est parti » |
+
+La vibration suit la durée du son (`d * 500` ms), le départ se sent donc aussi
+dans la poche. Réglage `localStorage`, comme l'apparence : le même compte peut
 vouloir du silence sur son téléphone et du son sur la tablette de la salle.
 
 ### Une séance planifiée n'est pas un document
