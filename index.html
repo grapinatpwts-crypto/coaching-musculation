@@ -2648,7 +2648,7 @@ async function dataSeance(jour) {
       return {
         exercice_id: l.exercice_id, ligne_id: l.ligne_id,
         nom: ex.nom || l.exercice_id, groupe: ex.groupe || '',
-        consigne: ex.consigne || '', photo: ex.photo || '',
+        consigne: ex.consigne || '', photo: ex.photo || '', video: ex.video || '',
         bloc: b.bloc, series: b.series, repos_s: b.repos_s,
         reps_cible: repsTexte(l.reps_cible),
         duree_s: l.duree_s === '' || l.duree_s === undefined ? null : l.duree_s,
@@ -3257,7 +3257,7 @@ async function ouvrirLogger(i) {
     <h3>${e.nom}</h3>
     ${e.nom_en ? `<p class="vo">${e.nom_en}</p>` : ''}
     ${N > 1 ? `<span class="eyebrow">Bloc ${b.bloc} · exercice ${e._e + 1} sur ${N}</span>` : ''}
-    ${e.photo ? `<img class="illu" src="${e.photo}" alt="" loading="lazy">` : ''}
+    ${e.video ? lecteur(e.video) : e.photo ? `<img class="illu" src="${e.photo}" alt="" loading="lazy">` : ''}
     ${e.note ? `<div class="note-coach grande"><span class="eyebrow">Note de ${S.moi.coach || 'votre coach'}</span>${e.note}</div>` : ''}
     <p class="consigne">${e.consigne || ''}</p>
     <div class="barre" style="margin-top:10px"><button class="btn ${enAttente(e.exercice_id) ? 'plein' : ''}" id="commenter" style="flex:1">Commentaires${
@@ -4716,19 +4716,23 @@ function peindreBibliotheque(filtre) {
   $('#neuf').onclick = () => modalExercice(null);
   lignesCliquables($('#zone'), '[data-ex]',
     l => modalExercice(S.cat.find(x => String(x.id) === l.dataset.ex)));
+  $('#zone').querySelectorAll('[data-video]').forEach(b =>
+    b.onclick = () => modal('Vidéo', lecteur(b.dataset.video)));
 }
 
 /**
  * Symbole d'ouverture du lien associé : la vidéo si elle existe, sinon
  * l'illustration en grand. Rien si l'exercice ne porte aucun lien.
+ * La vidéo s'ouvre en modale, dans le même lecteur que celui des modèles
+ * (`lecteur()`) — pas de nouvel onglet, le coach garde sa place dans la liste.
  */
 function lienExercice(e) {
   const url = e.video || e.photo;
   if (!url) return '';
+  if (e.video) return `<button type="button" class="poignee lien" data-video="${e.video}"
+    title="Voir la vidéo" aria-label="Voir la vidéo de ${e.nom}">▶</button>`;
   return `<a class="poignee lien" href="${url}" target="_blank" rel="noopener"
-    title="${e.video ? 'Ouvrir la vidéo' : "Ouvrir l'illustration"}"
-    aria-label="${e.video ? 'Ouvrir la vidéo de' : "Ouvrir l'illustration de"} ${e.nom}"
-    >${e.video ? '▶' : '↗'}</a>`;
+    title="Ouvrir l'illustration" aria-label="Ouvrir l'illustration de ${e.nom}">↗</a>`;
 }
 
 function modalExercice(ex) {

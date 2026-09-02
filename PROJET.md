@@ -500,6 +500,18 @@ automatiquement à la suite du plus grand existant. **La suppression est refusé
 l'exercice figure encore dans un programme** — le message dit combien de lignes
 l'emploient, plutôt que de casser un programme en silence.
 
+Le bouton ▶ de chaque ligne ouvre la vidéo en **modale**, dans le même lecteur
+YouTube/Vimeo que celui des modèles (`lecteur()`, § 8 terdecies) — pas de nouvel
+onglet, le coach garde sa place dans la liste en la refermant. Sans vidéo mais avec
+une photo, le bouton ↗ ouvre l'image dans un nouvel onglet comme avant : une image
+statique n'a rien à gagner à un lecteur.
+
+Côté pratiquant, le panneau de saisie d'un exercice (`ouvrirLogger`) affiche ce
+même lecteur intégré à la place de la photo dès qu'une vidéo est renseignée — la
+photo reste le repli sans vidéo. Voir le geste pendant l'exécution sans quitter la
+séance en cours était le point : ouvrir un nouvel onglet en salle, réseau
+capricieux, aurait pu faire perdre la page.
+
 **Modèles.** Deux niveaux. L'écran ouvre sur les **catégories**, en boutons : c'est
 la première question que se pose le coach — force, hypertrophie, endurance. Une
 catégorie ouvre sa page, où les modèles sont rangés en **sections pliées par
