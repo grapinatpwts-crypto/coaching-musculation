@@ -192,6 +192,25 @@ d'où vient le temps mort ; lancé à la main, un chrono de 30 s est un chrono d
 30 s. La déduplication porte donc sur la seule durée : un repos et une pause
 de même longueur ne font qu'un bouton.
 
+**Le minuteur actif est une île, pas un bandeau.** `#repos` flotte au-dessus
+de la nav plutôt que de manger toute la largeur du bas de l'écran : carte
+courte avec un anneau de progression SVG (`lancerMinuteur`, `REPOS_C` pour la
+circonférence, dashoffset recalculé chaque seconde), le chiffre, et un bouton
+Passer en icône plutôt qu'un lien souligné — plus grande cible, moins de
+lecture. Choisi après un canvas de six pistes visuelles début septembre 2026 ;
+les autres (anneau plein écran, jauge horizontale, plein écran final, bandeau
+enrichi) restent en archive si le style d'aujourd'hui ne convient plus.
+
+**Trois bips, réglables par appareil comme le thème (`Réglages ▸ Sons du
+chrono`, icône cloche de l'en-tête).** Un bip d'alerte à N secondes de la fin
+(`bipPremierSecondes`, 5 à 30 s, défaut 10, désactivable) et un décompte
+sonore des trois dernières secondes (`bipDecompteActif`, désactivable) ; le
+bip de fin (`t <= 0`) reste inconditionnel, ce n'est pas un réglage mais le
+signal que le temps mort est fini. `bip()` prend une fréquence : 660 Hz pour
+l'alerte, 880 Hz (défaut) pour le décompte et la fin — deux sons distincts à
+l'oreille. Réglage `localStorage`, comme l'apparence : le même compte peut
+vouloir du silence sur son téléphone et du son sur la tablette de la salle.
+
 ### Une séance planifiée n'est pas un document
 
 Le programme dit « lundi, mercredi, vendredi, du 1er au 28 » : c'est une
