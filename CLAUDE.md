@@ -25,10 +25,19 @@ les deux sections à ouvrir en premier pour reprendre le travail.
 - **Direct sur `main`**, sans branche. Chaque changement livré porte, dans le
   même commit : la doc mise à jour quand le comportement décrit change, et
   `CACHE` incrémenté dans `sw.js` — sinon la PWA garde l'ancienne coquille.
-- `git push` **uniquement sur demande** : le dépôt est public et sert l'app,
-  pousser met en ligne.
-- `index.html` est un monolithe (HTML + CSS + JS inline, ~277 ko). Vérifier la
+- **`git push` après chaque commit**, sans attendre qu'on le demande : Guillaume
+  travaille à distance et ne voit que ce qui est en ligne. Pousser publie —
+  c'est justement ce qu'on veut à chaque changement.
+- `index.html` est un monolithe (HTML + CSS + JS inline, ~280 ko). Vérifier la
   syntaxe avant de committer : extraire chaque bloc `<script>` et `node --check`.
+- **Vérifier ce qui se voit avant de livrer.** Deux allers-retours perdus en une
+  nuit faute de l'avoir fait : une icône SVG invisible parce que la règle de
+  taille ne visait que l'autre bouton, un `getFullYear` sur une chaîne. Une page
+  de test servie en local (`python3 -m http.server`) suffit pour une icône ; pour
+  une fonction, extraire son vrai code d'`index.html` et l'exécuter sur quelques
+  cas vaut mieux que de le relire. La connexion Google est en mode Test, donc
+  l'app complète ne se pilote pas d'ici — le dire plutôt que de laisser croire
+  que c'est testé.
 
 ## Le piège qui coûte le plus cher
 
@@ -56,6 +65,11 @@ supposer fait.
 - Les transactions du SDK client ne lisent pas de requête : les invariants
   « une seule séance ouverte », « une seule attribution En cours » sont une
   lecture puis une écriture, bouton désactivé pendant l'appel. Risque accepté.
+- **Une date seule n'est pas un instant.** `new Date('2026-09-02')` donne minuit
+  UTC, soit 2 h du matin ici. Comparer des dates seules passe par `cleJour` /
+  `dateDeCle` — jamais par une soustraction d'instants, qui disait « aujourd'hui »
+  pour la veille à 00 h 28. `versDate()` rend une **chaîne** : l'envelopper dans
+  `new Date()` avant de la donner à `cleJour`.
 
 ## Le principe qu'on ne rediscute pas sans décision explicite
 
