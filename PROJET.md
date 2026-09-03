@@ -829,15 +829,33 @@ séance — les nouveaux d'abord, les silencieux ensuite. Chaque carte porte le 
 le programme en cours, une barre d'avancement et un rappel « à encaisser » si le
 programme n'est pas payé.
 
-**Recherche par nom, filtres statut/programme/impayé, tri par ville** — pensés
-pour la liste une fois passée la quarantaine de pratiquants annoncée, où faire
-défiler ne suffit plus. `dataCoachAthletes()` charge tout en un appel (comme
-avant) ; `S.athletes` reste en mémoire et `peindreAthletes()` refiltre côté
-client à chaque frappe ou pastille — jamais de retour réseau, jamais de
-re-rendu de la barre de recherche elle-même (elle perdrait le focus en pleine
-frappe, même piège que `choisirExercice()` § 8 vicies). Le tri par ville lit
-`profil.ville`, renseigné en entretien (§ 8 unvicies) : un pratiquant qui n'a
-pas encore de profil rempli atterrit en fin de liste, jamais en tête.
+**Filtrer et Regrouper : deux gestes, deux contrôles qui ne se ressemblent
+jamais.** Pensés pour la liste une fois passée la quarantaine de pratiquants
+annoncée, où faire défiler ne suffit plus — mais la première version mêlait
+tri et filtres dans la même rangée de pastilles, confusion signalée à l'usage.
+**Filtrer** (recherche par nom, statut, programme, paiement) réduit la liste :
+un bouton à côté de la recherche ouvre `modalFiltresAthletes()`, badge rouge
+au nombre de filtres actifs ; une fois la modale fermée, chaque filtre posé
+reste visible sous forme de puce retirable d'un tap (`peindrePuces()`), sans
+rouvrir la modale. **Regrouper** (Aucun / Ville / Ancienneté) réorganise
+l'affichage sans rien exclure : une ligne à part, toujours visible, en onglets
+soulignés plutôt qu'en pastilles pleines — pour qu'on ne la confonde jamais
+avec un filtre. « Ville » et « Ancienneté » ouvrent des sections repliables
+(`sectionsAthletes()`, même disclosure `.pli` que « Mes programmes » et la
+bibliothèque), dépliées par défaut ; « Aucun » garde la liste plate d'origine,
+triée statut puis récence.
+
+`dataCoachAthletes()` charge tout en un appel (comme avant) ; `S.athletes`
+reste en mémoire et `peindreAthletes()` refiltre/regroupe côté client à
+chaque frappe ou pastille — jamais de retour réseau, jamais de re-rendu de la
+barre de recherche elle-même (elle perdrait le focus en pleine frappe, même
+piège que `choisirExercice()` § 8 vicies). Le regroupement par ville lit
+`profil.ville`, renseigné en entretien (§ 8 unvicies) : un pratiquant sans
+profil rempli tombe dans une section « Sans ville », toujours en dernier.
+Celui par ancienneté lit `ancienneteJours`, calculé à la volée depuis
+`date_inscription` (quatre tranches : moins d'un an, 1 à 2 ans, 2 à 5 ans,
+5 ans et plus) — la même donnée alimente le « inscrit depuis X » désormais
+affiché sur chaque carte.
 
 **Deux mesures d'avancement**, qui ne disent pas la même chose. Le temps écoulé donne
 « semaine 4 sur 8 ». L'assiduité donne « 6 séances sur 16 attendues », et c'est elle

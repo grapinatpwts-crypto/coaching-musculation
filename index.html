@@ -301,6 +301,29 @@ header h2{font-size:30px;text-transform:uppercase;line-height:1}
 .impaye{color:var(--warn-ink);font-weight:600}
 .alerte{background:var(--warn-bg);color:var(--warn-ink);border-radius:10px;padding:11px 14px;
   font-size:13.5px;font-weight:600;margin-bottom:14px}
+
+/* Liste des athlètes : barre de recherche + bouton Filtrer, ses puces actives,
+   et le regroupement — trois blocs distincts, jamais la même rangée. */
+.fbar{display:flex;gap:8px;align-items:center;margin-top:16px}
+.fbar .recherche{flex:1;margin-top:0}
+.fbtn{position:relative;flex:0 0 auto}
+.badge{position:absolute;top:-6px;right:-6px;background:var(--brand);color:var(--on-brand);
+  font-size:10px;font-weight:700;min-width:16px;height:16px;border-radius:999px;
+  display:grid;place-items:center;padding:0 3px}
+.puces{display:flex;gap:7px;flex-wrap:wrap;margin-top:10px}
+.puce{display:flex;align-items:center;gap:6px;background:var(--sunk);border:1px solid var(--edge);
+  color:var(--chalk);border-radius:999px;padding:5px 6px 5px 11px;font-size:12.5px;font-weight:600}
+.puce button{color:var(--dust);font-size:13px;line-height:1;padding:2px}
+/* Onglets soulignés, pas des pastilles pleines : demandé explicitement pour ne
+   jamais confondre « regrouper » (réorganise l'affichage) avec un filtre
+   (réduit la liste) — les deux se ressemblaient trop dans la première version. */
+.regrouper{display:flex;align-items:center;gap:12px;margin:14px 0 4px;flex-wrap:wrap}
+.regrouper .rlabel{font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:var(--dust);
+  font-weight:600;flex:0 0 auto}
+.regrouper .ropts{display:flex;gap:16px}
+.regrouper button{padding:3px 0;font-size:13.5px;font-weight:600;color:var(--dust);
+  border-bottom:2px solid transparent}
+.regrouper button[aria-pressed="true"]{color:var(--chalk);border-bottom-color:var(--brand-ink)}
 .contacts{display:flex;gap:9px;flex-wrap:wrap;margin-top:14px}
 .contact{flex:1;min-width:96px;text-align:center;line-height:44px;padding:0;
   text-decoration:none;color:var(--chalk)}
@@ -823,6 +846,7 @@ async function dataCoachAthletes() {
       nbSeances: Number((p.resume || {}).nbSeances) || 0,
       derniere,
       joursDepuis: derniere ? Math.floor((Date.now() - new Date(derniere)) / 86400000) : null,
+      ancienneteJours: p.date_inscription ? Math.floor((Date.now() - dateDe(p.date_inscription)) / 86400000) : null,
       programme: att ? {
         id: att.id, nom: att.nom, paye: att.paye === true,
         date_debut: att.date_debut, modele_id: att.modele_id || ''
@@ -4289,6 +4313,26 @@ async function vueCoach() {
 
 // ── Accueil du coach : ses athlètes ──────────────────────────
 const ETATS = ['Nouveau', 'Actif', 'Inactif', 'Archivé'];
+const ORDRE_ANCIENNETE = ["Moins d'un an", '1 à 2 ans', '2 à 5 ans', '5 ans et plus'];
+
+/** Tranche d'ancienneté d'un pratiquant, pour le regroupement de la liste. */
+function ancienneteLabel(jours) {
+  if (jours === null) return 'Ancienneté inconnue';
+  const ans = jours / 365;
+  if (ans < 1) return "Moins d'un an";
+  if (ans < 2) return '1 à 2 ans';
+  if (ans < 5) return '2 à 5 ans';
+  return '5 ans et plus';
+}
+/** « inscrit depuis 3 mois » / « inscrit depuis 2 ans » — pour la carte, pas pour le regroupement. */
+function ancienneteCompacte(jours) {
+  if (jours === null) return '';
+  const mois = Math.round(jours / 30);
+  if (mois < 1) return 'cette semaine';
+  if (mois < 12) return `${mois} mois`;
+  const ans = Math.round(jours / 365);
+  return `${ans} an${ans > 1 ? 's' : ''}`;
+}
 
 /** Téléphone en format international, seuls les chiffres et le +. */
 function tel(n) {
@@ -4299,11 +4343,99 @@ function tel(n) {
   return '+' + t;
 }
 
+/** Un groupe de pastilles hors formulaire (recherche/filtre/regroupement) : bascule
+ * aria-pressed sur les `[data-v]` du bloc `[data-role]`, indépendant de segBrancher
+ * qui suppose un `<form>` de profil. */
+function pastilleGroupe(container, role, on) {
+  container.querySelectorAll(`[data-role="${role}"] [data-v]`).forEach(b => b.onclick = () => {
+    container.querySelectorAll(`[data-role="${role}"] [data-v]`).forEach(x => x.setAttribute('aria-pressed', String(x === b)));
+    on(b.dataset.v);
+  });
+}
+
+/** Nombre de filtres (pas le regroupement, qui n'en est pas un) réellement actifs. */
+function nbFiltresActifs(f) { return (f.statut ? 1 : 0) + (f.programme ? 1 : 0) + (f.impaye ? 1 : 0); }
+
+function filtrerAthletes(f) {
+  const q = (f.q || '').trim().toLowerCase();
+  return (S.athletes || []).filter(a =>
+    (!q || a.nom.toLowerCase().includes(q)) &&
+    (!f.statut || a.statut === f.statut) &&
+    (!f.programme || (f.programme === 'avec' ? !!a.programme : !a.programme)) &&
+    (!f.impaye || (a.programme && a.programme.paye === false)));
+}
+
+/** La modale de filtres — statut/programme/paiement, jamais le regroupement (§ ligne toujours visible). */
+function modalFiltresAthletes(f, appliquer) {
+  const w = modal('Filtrer', `
+    <div class="champ"><label>Statut</label><div class="sous" data-role="mst">
+      <button type="button" data-v="" aria-pressed="${!f.statut}">Tous</button>
+      ${ETATS.map(e => `<button type="button" data-v="${e}" aria-pressed="${f.statut === e}">${e}</button>`).join('')}
+    </div></div>
+    <div class="champ"><label>Programme</label><div class="sous" data-role="mpr">
+      <button type="button" data-v="" aria-pressed="${!f.programme}">Tous</button>
+      <button type="button" data-v="avec" aria-pressed="${f.programme === 'avec'}">Avec programme</button>
+      <button type="button" data-v="sans" aria-pressed="${f.programme === 'sans'}">Sans programme</button>
+    </div></div>
+    <div class="champ"><label>Paiement</label><div class="sous" data-role="mim">
+      <button type="button" data-v="0" aria-pressed="${!f.impaye}">Tous</button>
+      <button type="button" data-v="1" aria-pressed="${f.impaye}">Non payé</button>
+    </div></div>
+    <button class="btn plein" id="fAppliquer" style="width:100%;justify-content:center;margin-top:6px">Voir les résultats</button>`);
+  pastilleGroupe(w, 'mst', v => f.statut = v);
+  pastilleGroupe(w, 'mpr', v => f.programme = v);
+  pastilleGroupe(w, 'mim', v => f.impaye = v === '1');
+  w.querySelector('#fAppliquer').onclick = () => { w.fermer(); appliquer(); };
+}
+
+function libellesFiltresAthletes(f) {
+  const out = [];
+  if (f.statut) out.push({ k: 'statut', label: f.statut });
+  if (f.programme) out.push({ k: 'programme', label: f.programme === 'avec' ? 'Avec programme' : 'Sans programme' });
+  if (f.impaye) out.push({ k: 'impaye', label: 'Non payé' });
+  return out;
+}
+
+function regrouperRow(f) {
+  return `<div class="regrouper" data-role="rg">
+    <span class="rlabel">Regrouper</span>
+    <div class="ropts">
+      <button type="button" data-v="defaut" aria-pressed="${f.regrouper === 'defaut'}">Aucun</button>
+      <button type="button" data-v="ville" aria-pressed="${f.regrouper === 'ville'}">Ville</button>
+      <button type="button" data-v="anciennete" aria-pressed="${f.regrouper === 'anciennete'}">Ancienneté</button>
+    </div>
+  </div>`;
+}
+
+function ordreVilles(noms) {
+  return noms.sort((a, b) => a === 'Sans ville' ? 1 : b === 'Sans ville' ? -1 : a.localeCompare(b, 'fr'));
+}
+function ordreAnciennete(noms) {
+  return noms.sort((a, b) => ORDRE_ANCIENNETE.indexOf(a) - ORDRE_ANCIENNETE.indexOf(b));
+}
+
+/** Sections repliables (dépliées par défaut) pour le regroupement Ville/Ancienneté —
+ * même disclosure que « Mes programmes » et la bibliothèque (`.pli`). L'ordre des
+ * athlètes dans chaque section reprend celui, déjà trié, de `S.athletes`. */
+function sectionsAthletes(vus, cle, ordre, collapsed) {
+  const groupes = {};
+  vus.forEach(a => { const k = cle(a); (groupes[k] = groupes[k] || []).push(a); });
+  const noms = ordre(Object.keys(groupes));
+  return noms.map(nom => `<details class="pli" data-grp="${nom}" ${collapsed.has(nom) ? '' : 'open'}>
+    <summary><span class="eyebrow">${nom}</span><span class="compte">${groupes[nom].length}</span></summary>
+    <div style="padding-top:2px">${groupes[nom].map(carteAthlete).join('')}</div>
+  </details>`).join('');
+}
+
 /**
- * Recherche/filtres/tri de la liste des athlètes — vivent en mémoire (`S.athletes`
- * déjà chargé au complet) : à 40 pratiquants et plus, refiltrer côté client à
- * chaque frappe reste instantané, inutile de repasser par Firestore. Seul
- * `#athListe` est repeint à chaque changement, jamais la barre de recherche —
+ * Recherche/filtres/regroupement de la liste des athlètes — vivent en mémoire
+ * (`S.athletes` déjà chargé au complet) : à 40 pratiquants et plus, refiltrer côté
+ * client à chaque frappe reste instantané, inutile de repasser par Firestore.
+ * Filtrer (recherche, statut, programme, paiement) et Regrouper (ville, ancienneté)
+ * sont deux gestes différents — l'un réduit la liste, l'autre la réorganise en
+ * sections — d'où deux contrôles qui ne se ressemblent jamais : bouton + modale
+ * pour l'un, onglets soulignés toujours visibles pour l'autre. Seuls `#athPuces`
+ * et `#athListe` sont repeints en cours d'usage, jamais la barre de recherche —
  * un innerHTML sur le champ texte lui-même lui ferait perdre le focus en pleine
  * frappe, la même leçon que `choisirExercice()`.
  */
@@ -4312,7 +4444,8 @@ async function listeAthletes() {
   try { list = await dataCoachAthletes(); }
   catch (err) { $('#zone').innerHTML = `<div class="empty">${err.message}</div>`; return; }
   S.athletes = list;
-  S.coach.filtres = S.coach.filtres || { q: '', statut: '', programme: '', impaye: false, tri: 'defaut' };
+  S.coach.filtres = S.coach.filtres || { q: '', statut: '', programme: '', impaye: false, regrouper: 'defaut' };
+  S.coach.filtresRepliees = S.coach.filtresRepliees || new Set();
   const f = S.coach.filtres;
   const nouveaux = list.filter(a => a.statut === 'Nouveau').length;
 
@@ -4320,41 +4453,22 @@ async function listeAthletes() {
     ${nouveaux ? `<div class="alerte">${nouveaux} pratiquant${nouveaux > 1 ? 's' : ''} sans programme${nouveaux > 1 ? '' : ''}</div>` : ''}
     <div class="barre" style="margin-top:0">
       <button class="btn plein" id="inscrire" style="flex:1">＋ Inscrire un pratiquant</button></div>
-    <div class="recherche" style="margin-top:16px"><input class="f" id="athQ" placeholder="Rechercher un nom…" value="${f.q}"></div>
-    <div class="sous" data-role="fStatut" style="margin-top:10px">
-      <button type="button" data-v="" aria-pressed="${!f.statut}">Tous</button>
-      ${ETATS.map(e => `<button type="button" data-v="${e}" aria-pressed="${f.statut === e}">${e}</button>`).join('')}
+    <div class="fbar">
+      <div class="recherche"><input class="f" id="athQ" placeholder="Rechercher un nom…" value="${f.q}"></div>
+      <button class="btn fbtn" id="ouvrirFiltres">Filtrer${nbFiltresActifs(f) ? `<span class="badge">${nbFiltresActifs(f)}</span>` : ''}</button>
     </div>
-    <div class="sous" data-role="fProgramme">
-      <button type="button" data-v="" aria-pressed="${!f.programme}">Tous</button>
-      <button type="button" data-v="avec" aria-pressed="${f.programme === 'avec'}">Avec programme</button>
-      <button type="button" data-v="sans" aria-pressed="${f.programme === 'sans'}">Sans programme</button>
-    </div>
-    <div class="sous" data-role="fImpaye">
-      <button type="button" data-v="0" aria-pressed="${!f.impaye}">Tous</button>
-      <button type="button" data-v="1" aria-pressed="${f.impaye}">Programme non payé</button>
-    </div>
-    <div class="sous" data-role="fTri">
-      <button type="button" data-v="defaut" aria-pressed="${f.tri === 'defaut'}">Statut, puis récents</button>
-      <button type="button" data-v="ville" aria-pressed="${f.tri === 'ville'}">Par ville</button>
-    </div>
+    <div id="athPuces"></div>
+    ${regrouperRow(f)}
     <div id="athListe" style="margin-top:6px"></div>`;
 
   $('#inscrire').onclick = modalInscrire;
   const zone = $('#zone');
   const champ = $('#athQ');
   champ.oninput = () => { f.q = champ.value; peindreAthletes(); };
-  ['fStatut', 'fProgramme', 'fImpaye', 'fTri'].forEach(role => {
-    zone.querySelectorAll(`[data-role="${role}"] [data-v]`).forEach(b => b.onclick = () => {
-      zone.querySelectorAll(`[data-role="${role}"] [data-v]`).forEach(x => x.setAttribute('aria-pressed', String(x === b)));
-      if (role === 'fStatut') f.statut = b.dataset.v;
-      else if (role === 'fProgramme') f.programme = b.dataset.v;
-      else if (role === 'fImpaye') f.impaye = b.dataset.v === '1';
-      else f.tri = b.dataset.v;
-      peindreAthletes();
-    });
-  });
+  $('#ouvrirFiltres').onclick = () => modalFiltresAthletes(f, () => { peindrePuces(); peindreAthletes(); });
+  pastilleGroupe(zone, 'rg', v => { f.regrouper = v; peindreAthletes(); });
 
+  peindrePuces();
   peindreAthletes();
 
   // Les photos arrivent après : la liste s'affiche sans attendre quelques
@@ -4364,29 +4478,39 @@ async function listeAthletes() {
     .then(ph => { S.photos = ph; remplirPhotos(); }).catch(() => {});
 }
 
-/** Refiltre S.athletes selon S.coach.filtres et repeint #athListe — aucun retour réseau. */
+/** Puces des filtres actifs (jamais le regroupement), retirables sans rouvrir la modale. */
+function peindrePuces() {
+  const p = $('#athPuces');
+  if (!p) return;
+  const f = S.coach.filtres;
+  const puces = libellesFiltresAthletes(f);
+  p.innerHTML = puces.length
+    ? `<div class="puces">${puces.map(x => `<span class="puce">${x.label}<button type="button" data-rm="${x.k}">✕</button></span>`).join('')}</div>`
+    : '';
+  p.querySelectorAll('[data-rm]').forEach(b => b.onclick = () => {
+    if (b.dataset.rm === 'statut') f.statut = '';
+    if (b.dataset.rm === 'programme') f.programme = '';
+    if (b.dataset.rm === 'impaye') f.impaye = false;
+    peindrePuces();
+    const badge = $('#ouvrirFiltres');
+    if (badge) badge.innerHTML = `Filtrer${nbFiltresActifs(f) ? `<span class="badge">${nbFiltresActifs(f)}</span>` : ''}`;
+    peindreAthletes();
+  });
+}
+
+/** Refiltre/regroupe S.athletes selon S.coach.filtres et repeint #athListe — aucun retour réseau. */
 function peindreAthletes() {
   const z = $('#athListe');
   if (!z) return;
   const f = S.coach.filtres;
-  const q = (f.q || '').trim().toLowerCase();
-  let vus = (S.athletes || []).filter(a =>
-    (!q || a.nom.toLowerCase().includes(q)) &&
-    (!f.statut || a.statut === f.statut) &&
-    (!f.programme || (f.programme === 'avec' ? !!a.programme : !a.programme)) &&
-    (!f.impaye || (a.programme && a.programme.paye === false)));
+  const collapsed = S.coach.filtresRepliees;
+  const vus = filtrerAthletes(f);
 
-  if (f.tri === 'ville') {
-    // Vides en dernier : la comparaison lexicographique les mettrait en tête.
-    vus = [...vus].sort((a, b) => {
-      if (!a.ville && !b.ville) return a.nom.localeCompare(b.nom, 'fr');
-      if (!a.ville) return 1;
-      if (!b.ville) return -1;
-      return a.ville.localeCompare(b.ville, 'fr') || a.nom.localeCompare(b.nom, 'fr');
-    });
-  }
+  z.innerHTML = !vus.length ? `<div class="empty">Aucun pratiquant ne correspond.</div>`
+    : f.regrouper === 'ville' ? sectionsAthletes(vus, a => a.ville || 'Sans ville', ordreVilles, collapsed)
+    : f.regrouper === 'anciennete' ? sectionsAthletes(vus, a => ancienneteLabel(a.ancienneteJours), ordreAnciennete, collapsed)
+    : vus.map(carteAthlete).join('');
 
-  z.innerHTML = vus.map(carteAthlete).join('') || `<div class="empty">Aucun pratiquant ne correspond.</div>`;
   if (S.photos) remplirPhotos();
   z.querySelectorAll('[data-email]').forEach(b => b.onclick = () => {
     S.coach.email = b.dataset.email;
@@ -4395,6 +4519,9 @@ function peindreAthletes() {
     S.cal = null; S.attSel = null; S.ed = null;
     vueCoach();
   });
+  z.querySelectorAll('details.pli').forEach(d => d.addEventListener('toggle', () => {
+    if (d.open) collapsed.delete(d.dataset.grp); else collapsed.add(d.dataset.grp);
+  }));
 }
 
 /** Photo du pratiquant, ou ses initiales à défaut. */
@@ -4424,6 +4551,8 @@ function carteAthlete(a) {
   const part = p ? Math.round(p.part * 100) : 0;
   const vu = a.joursDepuis === null ? 'jamais venu'
     : a.joursDepuis === 0 ? "vu aujourd'hui" : `vu il y a ${a.joursDepuis} j`;
+  const depuis = a.ancienneteJours !== null ? `inscrit depuis ${ancienneteCompacte(a.ancienneteJours)} · ` : '';
+  const ville = a.ville ? a.ville + ' · ' : '';
 
   return `<button class="athlete" data-email="${a.email}" data-nom="${a.nom}">
     <div class="ath-tete">
@@ -4437,9 +4566,9 @@ function carteAthlete(a) {
             ? ` · semaine ${Math.min(p.semaine, p.duree_semaines)} sur ${p.duree_semaines}` : ''}</div>
          <div class="jauge" role="img" aria-label="${part} % du programme réalisé">
            <i style="width:${part}%"></i></div>
-         <div class="meta bas">${a.ville ? a.ville + ' · ' : ''}${p ? `${p.faites} séance${p.faites > 1 ? 's' : ''} sur ${p.attendues} attendue${p.attendues > 1 ? 's' : ''}` : ''} · ${vu}${
+         <div class="meta bas">${ville}${depuis}${p ? `${p.faites} séance${p.faites > 1 ? 's' : ''} sur ${p.attendues} attendue${p.attendues > 1 ? 's' : ''}` : ''} · ${vu}${
            a.programme.paye ? '' : ' · <span class="impaye">à encaisser</span>'}</div>`
-      : `<div class="meta">${a.ville ? a.ville + ' · ' : ''}Aucun programme attribué · ${vu}</div>`}
+      : `<div class="meta">${ville}${depuis}Aucun programme attribué · ${vu}</div>`}
   </button>`;
 }
 
