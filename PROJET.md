@@ -829,6 +829,29 @@ un `update` d'un seul champ, et seulement là où rien n'est renseigné. Surtout
 seed, qui écrit les exercices avec `set()` sans merge et écraserait les vidéos et
 les retouches faites depuis l'app.
 
+### Vidéos de démonstration
+
+24 exercices portent une vidéo Vimeo, posée par `scripts/appliquer-videos.mjs`
+depuis `scripts/videos-exercices.json` — même prudence que la difficulté : un
+`update` du seul champ `video`, seulement là où il est vide.
+
+**Provenance différente du reste du catalogue.** Ce ne sont pas des ressources
+sous licence libre comme free-exercise-db : ce sont des vidéos de la chaîne Vimeo
+de Rehab-U (plateforme de formation pour thérapeutes/coachs), que le coach
+partage déjà à ses pratiquants en tant que client de leurs formations. D'où un
+fichier à part plutôt qu'un ajout dans `Catalogue.js`, qui lui documente une
+provenance publiquement réutilisable.
+
+**Comment les 24 ont été choisies.** Recherche par mot-clé sur les 771 vidéos de
+la chaîne (`vimeo.com/user90609755/videos/search:<terme>/sort:date`, cherchable
+sans compte), en confrontant mouvement *et* équipement — Rehab-U distingue les
+variantes haltère/barre/poulie par des titres comme `DB Bench Press` — pour
+écarter les faux amis. La chaîne est à 80 % de la rééducation/prévention
+(protocoles post-blessure, tests cliniques), pas des démonstrations de
+musculation classique : sur 171 exercices cherchés, 130 n'ont rien donné de
+pertinent et 17 autres ont un candidat trop incertain pour être posé sans
+qu'un humain regarde la vidéo (variante ambiguë, équipement à confirmer).
+
 ## 8 decies. Statuts des pratiquants
 
 | Statut | Ce que ça veut dire | Accès à l'app |
