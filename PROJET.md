@@ -1273,9 +1273,20 @@ Les blessures ne se cochent plus sur une liste de 16 zones × 6 types. `carteCor
 dessine une silhouette SVG schématique — deux vues, avant et arrière, aucune
 dépendance externe, même esprit que `disques()` pour les plaques — où l'on tape une
 zone du corps pour ne révéler que ses 6 types de blessure possibles. Une zone déjà
-renseignée reste visible en rouge même vue fermée. Les 16 zones ne sont réparties
-qu'une fois entre les deux vues (12 à l'avant, 4 à l'arrière) : la liste d'origine
-ne distingue pas gauche/droite, il n'y avait pas de raison d'en inventer une.
+renseignée reste visible en rouge même vue fermée.
+
+**Chaque membre pair est distingué gauche/droite** (23 zones à l'avant, 4 à
+l'arrière — épaules, bras, coudes, avant-bras, poignets, mains, jambes, genoux,
+chevilles, pieds, mollets) ; seules les zones dessinées comme une forme unique
+(Pectoraux, Ventre, Hanches, Nuque, Dos) restent globales. Première version sans
+cette distinction, corrigée après un essai réel : marquer un genou allumait les
+deux, inutilisable pour un vrai suivi. Les côtés suivent la convention
+anatomique, pas l'écran — sur la vue de face le pratiquant nous fait face, son
+côté droit est donc dessiné à *gauche* de l'écran ; sur la vue de dos le miroir
+s'inverse. `silhouette()` porte le détail en commentaire, piège facile à
+retourner. Les épaules, elles, ont aussi dû devenir une zone à part : sans
+elles, taper l'épaule marquait le bras (le haut du bras, dessiné juste en
+dessous), pas l'épaule elle-même.
 
 ## 9. Parti pris visuel — charte Wellness Sport Club
 
