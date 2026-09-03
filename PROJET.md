@@ -1275,18 +1275,28 @@ dépendance externe, même esprit que `disques()` pour les plaques — où l'on 
 zone du corps pour ne révéler que ses 6 types de blessure possibles. Une zone déjà
 renseignée reste visible en rouge même vue fermée.
 
-**Chaque membre pair est distingué gauche/droite** (23 zones à l'avant, 4 à
-l'arrière — épaules, bras, coudes, avant-bras, poignets, mains, jambes, genoux,
-chevilles, pieds, mollets) ; seules les zones dessinées comme une forme unique
-(Pectoraux, Ventre, Hanches, Nuque, Dos) restent globales. Première version sans
-cette distinction, corrigée après un essai réel : marquer un genou allumait les
-deux, inutilisable pour un vrai suivi. Les côtés suivent la convention
-anatomique, pas l'écran — sur la vue de face le pratiquant nous fait face, son
-côté droit est donc dessiné à *gauche* de l'écran ; sur la vue de dos le miroir
-s'inverse. `silhouette()` porte le détail en commentaire, piège facile à
-retourner. Les épaules, elles, ont aussi dû devenir une zone à part : sans
-elles, taper l'épaule marquait le bras (le haut du bras, dessiné juste en
+**Chaque membre pair est distingué gauche/droite** (23 zones à l'avant, 11 à
+l'arrière — épaules, coudes, avant-bras, poignets, mains, genoux, chevilles,
+pieds, mollets, plus le duo face/dos des bras et cuisses ci-dessous) ; seules
+les zones dessinées comme une forme unique (Pectoraux, Ventre, Hanches, Nuque,
+Dos, Trapèzes, Lombaires, Fessier) restent globales. Première version sans la
+distinction gauche/droite, corrigée après un essai réel : marquer un genou
+allumait les deux, inutilisable pour un vrai suivi. Les côtés suivent la
+convention anatomique, pas l'écran — sur la vue de face le pratiquant nous fait
+face, son côté droit est donc dessiné à *gauche* de l'écran ; sur la vue de dos
+le miroir s'inverse. `silhouette()` porte le détail en commentaire, piège
+facile à retourner. Les épaules, elles, ont aussi dû devenir une zone à part :
+sans elles, taper l'épaule marquait le bras (le haut du bras, dessiné juste en
 dessous), pas l'épaule elle-même.
+
+Le bras et la cuisse n'ont pas de zone générique unique : Biceps/Quadriceps
+(face) et Triceps/Ischio-jambier (dos) se marquent séparément, plutôt qu'un
+« Bras » ou une « Jambe » qui aurait forcé à indiquer où précisément la douleur
+se loge. Sur la vue de dos, trois anciennes zones purement décoratives (le
+bandeau d'épaules, le bloc de bassin, les manchons de cuisse) sont devenues
+cliquables sous ces nouveaux noms — Trapèzes, Fessier, Ischio-jambier — sans
+bouger d'un pixel ; seul le rectangle Dos, avant d'un seul bloc du haut du dos
+aux lombaires, a été coupé en deux pour isoler ces dernières.
 
 ## 9. Parti pris visuel — charte Wellness Sport Club
 
