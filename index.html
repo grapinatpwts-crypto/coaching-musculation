@@ -310,6 +310,23 @@ header h2{font-size:30px;text-transform:uppercase;line-height:1}
 .paye input{width:20px;height:20px;accent-color:var(--brand)}
 .card .quoi{color:var(--dust);font-size:15px;line-height:1.5}
 
+/* Profil d'accueil : grille de disponibilité — agenda jours × heures */
+.grille-dispo{display:grid;grid-template-columns:22px repeat(7,1fr);gap:2px;margin-top:8px;
+  user-select:none;touch-action:none}
+.grille-dispo .gd-jour{font-size:10px;color:var(--dust);text-align:center;font-weight:600;padding-bottom:2px}
+.grille-dispo .gd-heure{font-size:9px;color:var(--dust);text-align:right;padding-right:3px;line-height:20px;
+  font-variant-numeric:tabular-nums}
+.gd-c{height:20px;border-radius:3px;background:var(--sunk);border:1px solid var(--edge);padding:0}
+.gd-c[aria-pressed="true"]{background:var(--brand);border-color:var(--brand)}
+
+/* Profil d'accueil : carte du corps cliquable, pour les blessures */
+.carte-corps{margin-top:4px}
+.corps{width:100%;max-width:200px;display:block;margin:0 auto}
+.corps .zone{fill:var(--sunk);stroke:var(--edge);stroke-width:1;cursor:pointer}
+.corps .zone.marque{fill:var(--bad-bg);stroke:var(--bad-ink)}
+.corps .deco{fill:var(--sunk);opacity:.4;pointer-events:none}
+.chips-zone{margin-top:4px}
+
 .origine{display:flex;flex-direction:column;gap:2px;margin-top:12px;min-height:24px}
 .origine .dit{font-size:12.5px;color:var(--dust)}
 
@@ -1750,6 +1767,20 @@ async function sauverPratiquant(email, patch) {
     data.statut = patch.statut;
   }
   await updateDoc(doc(db, 'pratiquants', email), data);
+}
+
+/** Le profil d'accueil (§ 8 unvicies), rempli par le coach en entretien. */
+async function dataProfil(email) {
+  const { db, doc, getDoc } = FB;
+  const snap = await getDoc(doc(db, 'pratiquants', email));
+  if (!snap.exists()) throw new Error('PRATIQUANT_INCONNU');
+  return snap.data().profil || {};
+}
+
+/** Écrit le profil d'accueil en bloc — jamais relu côté pratiquant, comme les notes. */
+async function sauverProfil(email, profil) {
+  const { db, doc, updateDoc, serverTimestamp } = FB;
+  await updateDoc(doc(db, 'pratiquants', email), { profil: { ...profil, maj_le: serverTimestamp() } });
 }
 
 /**
@@ -4233,6 +4264,7 @@ async function vueCoach() {
     <header><h2>${c.nom}</h2><button class="close" id="retour">← Athlètes</button></header>
     <div class="sous">
       <button data-s="fiche" aria-pressed="${c.sous === 'fiche'}">Fiche</button>
+      <button data-s="profil" aria-pressed="${c.sous === 'profil'}">Profil</button>
       <button data-s="programme" aria-pressed="${c.sous === 'programme'}">Programme</button>
       <button data-s="maxis" aria-pressed="${c.sous === 'maxis'}">Maxis</button>
       <button data-s="calendrier" aria-pressed="${c.sous === 'calendrier'}">Calendrier</button>
@@ -4246,6 +4278,7 @@ async function vueCoach() {
   });
 
   if (c.sous === 'fiche') return vueFiche();
+  if (c.sous === 'profil') return vueProfil();
   if (c.sous === 'programme') return vueProgramme();
   if (c.sous === 'maxis') return vueMaxis();
   if (c.sous === 'calendrier') {
@@ -4694,6 +4727,382 @@ function modalMessageCoach(f) {
   w.querySelector('#fMsgOk').onclick = function () { enregistrer(w.querySelector('#fMsg').value, this); };
   const eff = w.querySelector('#fMsgEff');
   if (eff) eff.onclick = function () { enregistrer('', this); };
+}
+
+// ── Profil d'accueil (§ 8 unvicies) ──────────────────────────
+// Rempli par le coach en entretien avec le pratiquant — jamais montré côté
+// pratiquant (comme `notes` aujourd'hui). Porte l'ancien questionnaire
+// AppSheet (§ 13), adapté : Nom/Prénom retirés (déjà couverts par `nom` à
+// l'inscription), zones de blessure non dédoublées gauche/droite.
+const PROFIL_OBJECTIFS = [
+  ['masse', 'Prise de masse musculaire'], ['perte', 'Perte de graisse'],
+  ['recomp', 'Recomposition corporelle'], ['force', 'Force'], ['endurance', 'Endurance'],
+  ['perfSport', 'Performance dans un autre sport'], ['sante', 'Santé / bien-être']
+];
+const PROFIL_XP = ['0', '< 1', '1 à 3', '3 à 10', '> 10'];
+const PROFIL_MATERIEL = ['Salle de sport', 'Domicile', 'Extérieur'];
+const PROFIL_PB_MEDICAUX = ['Cardiaques', 'Articulaires', 'Respiratoires', 'Hormonaux'];
+const PROFIL_SOMMEIL = ['< 6', '6-7', '7-8', '8', '> 8'];
+const PROFIL_STRESS = ['Faible', 'Modéré', 'Élevé'];
+const PROFIL_ALCOOL = ['Jamais', 'Occasionnelle', 'Régulière'];
+const PROFIL_REGIME = ['Végétarien', 'Végétalien', 'Sans gluten'];
+const PROFIL_REPAS = ['Même nombre, mêmes horaires', 'Même nombre, horaires irréguliers',
+  'Irréguliers, dépend de la faim', 'Irréguliers, dépend de contraintes extérieures'];
+const PROFIL_DIFFICULTES = ['Grignotages', 'Compulsions', "Manque d'appétit"];
+const PROFIL_COMPLEMENTS = ['Protéines', 'Créatine', 'Collagène', 'Vitamines', 'Probiotiques'];
+const PROFIL_DUREE = ['30 min', '1 h', '1 h 30', '2 h', '> 2 h'];
+const PROFIL_TYPES_BLESSURE = ['Fracture', 'Entorse', 'Tendinite', 'Lésions musculaires', 'Contractures', 'Autre'];
+// Une seule vue par zone — la liste d'origine ne distingue pas gauche/droite,
+// pas de raison de la dédoubler avant/arrière.
+const PROFIL_ZONES_AVANT = ['Pectoraux', 'Ventre', 'Bras', 'Coudes', 'Avant-bras', 'Poignets',
+  'Mains', 'Hanches', 'Jambes', 'Genoux', 'Chevilles', 'Pieds'];
+const PROFIL_ZONES_ARRIERE = ['Nuque', 'Epaules', 'Dos', 'Mollets'];
+const HEURES_DISPO = Array.from({ length: 18 }, (_, i) => i + 6);
+const JOURS_ABREGES = ['Lu', 'Ma', 'Me', 'Je', 'Ve', 'Sa', 'Di'];
+
+/** Groupe de boutons pilules — choix unique (`valeurs` = chaîne) ou multiple (`valeurs` = tableau). */
+function segPills(id, options, multi, valeurs) {
+  return `<div class="sous" data-seg="${id}" data-multi="${!!multi}">${options.map(o =>
+    `<button type="button" data-v="${o}" aria-pressed="${multi ? valeurs.indexOf(o) !== -1 : o === valeurs}">${o}</button>`
+  ).join('')}</div>`;
+}
+
+/** Choix multiple avec une option « Autre » à texte libre, révélé au clic. */
+function segAutre(id, options, sel) {
+  sel = sel || { options: [], autre: '' };
+  const pills = options.map(o =>
+    `<button type="button" data-v="${o}" aria-pressed="${sel.options.indexOf(o) !== -1}">${o}</button>`).join('');
+  return `<div class="sous" data-seg="${id}" data-multi="true">${pills}
+    <button type="button" data-v="Autre" aria-pressed="${sel.autre ? 'true' : 'false'}">Autre</button></div>
+    <input class="f" data-autre-de="${id}" placeholder="Précisez…" value="${sel.autre || ''}"
+      style="margin-top:8px" ${sel.autre ? '' : 'hidden'}>`;
+}
+
+/** Choix unique en liste verticale, pour des libellés trop longs pour des pilules. */
+function choixListe(id, options, valeur) {
+  return `<div class="choix" data-seg="${id}" data-multi="false">${options.map(o =>
+    `<button type="button" class="opt" data-v="${o}" aria-pressed="${o === valeur}"><span class="opt-nom">${o}</span></button>`
+  ).join('')}</div>`;
+}
+
+/** Curseur avec la valeur affichée en direct, et des libellés aux extrémités. */
+function curseur(id, label, min, max, valeur, gauche, droite) {
+  const v = valeur || Math.round((Number(min) + Number(max)) / 2);
+  return `<div class="champ"><label>${label} — <span id="${id}Val">${v}</span></label>
+    <input class="curseur" id="${id}" type="range" min="${min}" max="${max}" value="${v}">
+    ${gauche || droite ? `<div class="meta" style="display:flex;justify-content:space-between;margin-top:2px">
+      <span>${gauche || ''}</span><span>${droite || ''}</span></div>` : ''}</div>`;
+}
+
+/** Lit un groupe à choix unique (pilules ou liste). */
+function segLire(zone, id) {
+  const b = zone.querySelector(`[data-seg="${id}"] [data-v][aria-pressed="true"]`);
+  return b ? b.dataset.v : '';
+}
+
+/** Lit un groupe à choix multiple sans « Autre » — juste les pilules cochées. */
+function segLirePlein(zone, id) {
+  const grp = zone.querySelector(`[data-seg="${id}"]`);
+  return grp ? [...grp.querySelectorAll('[data-v][aria-pressed="true"]')].map(b => b.dataset.v) : [];
+}
+
+/** Lit un groupe à choix multiple avec son éventuel champ « Autre ». */
+function segLireMulti(zone, id) {
+  const grp = zone.querySelector(`[data-seg="${id}"]`);
+  if (!grp) return { options: [], autre: '' };
+  const options = segLirePlein(zone, id).filter(v => v !== 'Autre');
+  const champ = zone.querySelector(`[data-autre-de="${id}"]`);
+  const autre = grp.querySelector('[data-v="Autre"][aria-pressed="true"]') && champ ? champ.value.trim() : '';
+  return { options, autre };
+}
+
+/** Branche tous les groupes `[data-seg]` d'une zone : choix unique ou togglable indépendamment. */
+function segBrancher(zone) {
+  zone.querySelectorAll('[data-seg]').forEach(grp => {
+    const multi = grp.dataset.multi === 'true';
+    grp.querySelectorAll('[data-v]').forEach(b => b.onclick = () => {
+      if (multi) b.setAttribute('aria-pressed', b.getAttribute('aria-pressed') !== 'true');
+      else grp.querySelectorAll('[data-v]').forEach(x => x.setAttribute('aria-pressed', String(x === b)));
+      const champ = zone.querySelector(`[data-autre-de="${grp.dataset.seg}"]`);
+      if (champ) champ.hidden = !grp.querySelector('[data-v="Autre"][aria-pressed="true"]');
+      if (grp.dataset.seg.indexOf('blessure_') === 0) marquerCorps(zone);
+    });
+  });
+  zone.querySelectorAll('input[type=range]').forEach(r => r.oninput = () => {
+    const v = zone.querySelector('#' + r.id + 'Val'); if (v) v.textContent = r.value;
+  });
+}
+
+/** Une zone du corps en SVG schématique — aucune dépendance, même esprit que `disques()`. */
+function zoneSvg(x, y, w, h, zone, rx) {
+  return `<rect class="zone" data-zone="${zone}" x="${x}" y="${y}" width="${w}" height="${h}"
+    rx="${rx || 6}" tabindex="0" role="button" aria-label="${zone}"></rect>`;
+}
+function zoneEllipse(cx, cy, rx, ry, zone) {
+  return `<ellipse class="zone" data-zone="${zone}" cx="${cx}" cy="${cy}" rx="${rx}" ry="${ry}"
+    tabindex="0" role="button" aria-label="${zone}"></ellipse>`;
+}
+
+/** Silhouette schématique, avant ou arrière — seules les zones réellement lisibles de ce côté y figurent. */
+function silhouette(vue) {
+  const tete = `<circle cx="80" cy="18" r="14" class="deco"/><rect x="72" y="30" width="16" height="12" class="deco"/>`;
+  if (vue === 'avant') return `<svg viewBox="0 0 160 300" class="corps">${tete}
+    ${zoneSvg(54, 40, 52, 36, 'Pectoraux')}${zoneSvg(54, 76, 52, 40, 'Ventre')}${zoneSvg(54, 116, 52, 22, 'Hanches')}
+    ${zoneSvg(24, 42, 18, 42, 'Bras')}${zoneSvg(118, 42, 18, 42, 'Bras')}
+    ${zoneSvg(22, 84, 20, 14, 'Coudes')}${zoneSvg(118, 84, 20, 14, 'Coudes')}
+    ${zoneSvg(22, 98, 18, 38, 'Avant-bras')}${zoneSvg(120, 98, 18, 38, 'Avant-bras')}
+    ${zoneSvg(23, 136, 16, 10, 'Poignets', 4)}${zoneSvg(121, 136, 16, 10, 'Poignets', 4)}
+    ${zoneEllipse(31, 154, 11, 13, 'Mains')}${zoneEllipse(129, 154, 11, 13, 'Mains')}
+    ${zoneSvg(56, 140, 22, 56, 'Jambes')}${zoneSvg(82, 140, 22, 56, 'Jambes')}
+    ${zoneSvg(57, 198, 20, 16, 'Genoux')}${zoneSvg(83, 198, 20, 16, 'Genoux')}
+    <rect x="59" y="214" width="14" height="38" class="deco"/><rect x="87" y="214" width="14" height="38" class="deco"/>
+    ${zoneSvg(58, 254, 16, 12, 'Chevilles', 5)}${zoneSvg(86, 254, 16, 12, 'Chevilles', 5)}
+    ${zoneEllipse(64, 276, 13, 9, 'Pieds')}${zoneEllipse(94, 276, 13, 9, 'Pieds')}</svg>`;
+  return `<svg viewBox="0 0 160 300" class="corps">${tete}
+    ${zoneSvg(68, 30, 24, 14, 'Nuque', 5)}${zoneSvg(40, 46, 80, 18, 'Epaules', 8)}${zoneSvg(54, 66, 52, 64, 'Dos', 8)}
+    <rect x="24" y="46" width="18" height="88" class="deco"/><rect x="118" y="46" width="18" height="88" class="deco"/>
+    <rect x="54" y="132" width="52" height="20" class="deco"/>
+    <rect x="56" y="154" width="22" height="44" class="deco"/><rect x="82" y="154" width="22" height="44" class="deco"/>
+    ${zoneSvg(57, 200, 20, 40, 'Mollets', 8)}${zoneSvg(83, 200, 20, 40, 'Mollets', 8)}
+    <ellipse cx="64" cy="270" rx="13" ry="9" class="deco"/><ellipse cx="94" cy="270" rx="13" ry="9" class="deco"/></svg>`;
+}
+
+/** Reflète sur la silhouette les zones qui portent au moins un type de blessure coché. */
+function marquerCorps(zone) {
+  PROFIL_ZONES_AVANT.concat(PROFIL_ZONES_ARRIERE).forEach(z => {
+    const marquee = segLirePlein(zone, 'blessure_' + z).length > 0;
+    zone.querySelectorAll(`[data-zone="${z}"]`).forEach(s => s.classList.toggle('marque', marquee));
+  });
+}
+
+/** La carte du corps cliquable : deux vues, une liste de chips par zone révélée au tap. */
+function carteCorps(blessures) {
+  const parZone = {};
+  (blessures || []).forEach(b => { parZone[b.zone] = b.types || []; });
+  const zones = PROFIL_ZONES_AVANT.concat(PROFIL_ZONES_ARRIERE);
+  return `<div class="carte-corps">
+    <button type="button" class="btn" id="corpsBascule" style="margin-bottom:10px">Voir de dos</button>
+    <div id="corpsAvant">${silhouette('avant')}</div>
+    <div id="corpsArriere" hidden>${silhouette('arriere')}</div>
+    <p class="consigne" id="corpsConsigne">Touchez une zone pour préciser une blessure.</p>
+    ${zones.map(z => `<div class="chips-zone" data-zone-chips="${z}" hidden>
+      <div class="eyebrow" style="margin:10px 0 6px">${z}</div>
+      ${segPills('blessure_' + z, PROFIL_TYPES_BLESSURE, true, parZone[z] || [])}
+    </div>`).join('')}
+  </div>`;
+}
+
+/** Bascule avant/arrière et révèle les chips de la zone touchée. */
+function corpsBrancher(zone) {
+  zone.querySelectorAll('[data-zone]').forEach(s => s.onclick = () => {
+    const nom = s.dataset.zone;
+    zone.querySelectorAll('.chips-zone').forEach(c => c.hidden = c.dataset.zoneChips !== nom);
+    const consigne = zone.querySelector('#corpsConsigne'); if (consigne) consigne.hidden = true;
+  });
+  const bascule = zone.querySelector('#corpsBascule');
+  if (bascule) bascule.onclick = () => {
+    const avant = zone.querySelector('#corpsAvant'), arriere = zone.querySelector('#corpsArriere');
+    const versArriere = !avant.hidden;
+    avant.hidden = versArriere; arriere.hidden = !versArriere;
+    bascule.textContent = versArriere ? 'Voir de face' : 'Voir de dos';
+  };
+  marquerCorps(zone);
+}
+
+/** Lit toutes les zones marquées, pour l'enregistrement. */
+function corpsLire(zone) {
+  return PROFIL_ZONES_AVANT.concat(PROFIL_ZONES_ARRIERE)
+    .map(z => ({ zone: z, types: segLirePlein(zone, 'blessure_' + z) }))
+    .filter(b => b.types.length);
+}
+
+/** Grille de disponibilité — jours en colonnes, heures 6h-23h en lignes. */
+function grilleDispo(id, valeurs) {
+  const set = new Set(valeurs || []);
+  let cells = '<div class="gd-heure"></div>' + JOURS_ABREGES.map(j => `<div class="gd-jour">${j}</div>`).join('');
+  HEURES_DISPO.forEach(h => {
+    cells += `<div class="gd-heure">${h}</div>`;
+    cells += SEMAINE.map(j => `<button type="button" class="gd-c" data-jour="${j}" data-heure="${h}"
+      aria-pressed="${set.has(j + '|' + h)}" aria-label="${j} ${h} h"></button>`).join('');
+  });
+  return `<div class="grille-dispo" data-grille="${id}">${cells}</div>`;
+}
+
+function grilleLire(zone, id) {
+  const grp = zone.querySelector(`[data-grille="${id}"]`);
+  if (!grp) return [];
+  return [...grp.querySelectorAll('.gd-c[aria-pressed="true"]')].map(b => b.dataset.jour + '|' + b.dataset.heure);
+}
+
+/**
+ * Tap bascule une case, glisser en peint plusieurs d'affilée en reprenant
+ * l'état de la case de départ — même leçon que `triable()` : écouter le
+ * document le temps du geste plutôt que de capturer le pointeur.
+ */
+function grilleBrancher(zone, id) {
+  const grille = zone.querySelector(`[data-grille="${id}"]`);
+  if (!grille) return;
+  grille.querySelectorAll('.gd-c').forEach(c => {
+    c.onpointerdown = ev => {
+      ev.preventDefault();
+      const peindre = c.getAttribute('aria-pressed') !== 'true';
+      c.setAttribute('aria-pressed', String(peindre));
+      const bouger = e => {
+        const sous = document.elementFromPoint(e.clientX, e.clientY);
+        if (sous && sous.classList.contains('gd-c') && grille.contains(sous))
+          sous.setAttribute('aria-pressed', String(peindre));
+      };
+      const finir = () => {
+        document.removeEventListener('pointermove', bouger);
+        document.removeEventListener('pointerup', finir);
+        document.removeEventListener('pointercancel', finir);
+      };
+      document.addEventListener('pointermove', bouger);
+      document.addEventListener('pointerup', finir);
+      document.addEventListener('pointercancel', finir);
+    };
+  });
+}
+
+async function vueProfil() {
+  let p;
+  try { p = await dataProfil(S.coach.email); }
+  catch (err) { $('#zone').innerHTML = `<div class="empty">${err.message}</div>`; return; }
+  const o = p.objectifs || {};
+
+  $('#zone').innerHTML = `
+    <p class="consigne" style="margin-bottom:16px">Rempli en entretien avec le pratiquant — sert à composer son
+      programme, jamais montré de son côté.</p>
+
+    <div class="card" style="display:block">
+      <div class="eyebrow" style="margin-bottom:10px">Informations générales</div>
+      <div class="champ"><label>Ville</label><input class="f" id="pVille" value="${p.ville || ''}"></div>
+      <div class="duo">
+        <div class="champ"><label>Date de naissance</label><input class="f" id="pNaissance" type="date" value="${p.naissance || ''}"></div>
+        <div class="champ"><label>Taille (cm)</label><input class="f" id="pTaille" type="number" value="${p.taille || ''}"></div>
+      </div>
+      <div class="champ"><label>Sexe</label>${segPills('sexe', ['Homme', 'Femme', 'Je ne souhaite pas le préciser'], false, p.sexe || '')}</div>
+      <div class="champ"><label>Poids (kg)</label><input class="f" id="pPoids" type="number" value="${p.poids || ''}"></div>
+      <div class="champ"><label>Profession / rythme de travail</label>
+        <textarea class="f" id="pProfession" rows="2" placeholder="Sédentaire, actif, horaires décalés…">${p.profession || ''}</textarea></div>
+    </div>
+
+    <div class="card" style="display:block">
+      <div class="eyebrow" style="margin-bottom:10px">Objectifs</div>
+      ${PROFIL_OBJECTIFS.map(([k, label]) => curseur('pObj_' + k, label, 1, 5, o[k])).join('')}
+      <div class="champ"><label>Infos complémentaires</label>
+        <textarea class="f" id="pObjectifsInfos" rows="2">${p.objectifsInfos || ''}</textarea></div>
+      <div class="champ"><label>Délai (mois)</label><input class="f" id="pDelai" type="number" value="${p.delaiMois || ''}"></div>
+    </div>
+
+    <div class="card" style="display:block">
+      <div class="eyebrow" style="margin-bottom:10px">Expérience</div>
+      <div class="champ"><label>Années de pratique</label>${segPills('xp', PROFIL_XP, false, p.xp || '')}</div>
+      <div class="champ"><label>Commentaire</label><input class="f" id="pXpCommentaire" value="${p.xpCommentaire || ''}"></div>
+      <div class="champ"><label>Fréquence actuelle d'entraînement</label><input class="f" id="pFrequence" value="${p.frequenceActuelle || ''}"></div>
+      <div class="champ"><label>Accès au matériel</label>${segPills('materiel', PROFIL_MATERIEL, true, p.materiel || [])}</div>
+      <div class="champ"><label>Commentaire matériel</label><input class="f" id="pMaterielCommentaire" value="${p.materielCommentaire || ''}"></div>
+    </div>
+
+    <div class="card" style="display:block">
+      <div class="eyebrow" style="margin-bottom:10px">Santé & sécurité</div>
+      ${carteCorps(p.blessures)}
+      <div class="champ" style="margin-top:16px"><label>Problèmes médicaux</label>${segAutre('problemesMedicaux', PROFIL_PB_MEDICAUX, p.problemesMedicaux)}</div>
+      <div class="champ"><label>Précisions</label><textarea class="f" id="pPrecisions" rows="2">${p.problemesPrecisions || ''}</textarea></div>
+      <div class="champ"><label>Médicaments réguliers</label>${segPills('medicaments', ['Oui', 'Non'], false, p.medicaments || '')}</div>
+      <div class="champ"><label>Contre-indications médicales</label><textarea class="f" id="pContreIndications" rows="2">${p.contreIndications || ''}</textarea></div>
+    </div>
+
+    <div class="card" style="display:block">
+      <div class="eyebrow" style="margin-bottom:10px">Habitudes de vie</div>
+      <div class="champ"><label>Heures de sommeil</label>${segPills('sommeil', PROFIL_SOMMEIL, false, p.sommeil || '')}</div>
+      <div class="champ"><label>Niveau de stress</label>${segPills('stress', PROFIL_STRESS, false, p.stress || '')}</div>
+      <div class="champ"><label>Consommation d'alcool</label>${segPills('alcool', PROFIL_ALCOOL, false, p.alcool || '')}</div>
+      <div class="champ"><label>Tabac</label>${segPills('tabac', ['Oui', 'Non'], false, p.tabac || '')}</div>
+    </div>
+
+    <div class="card" style="display:block">
+      <div class="eyebrow" style="margin-bottom:10px">Nutrition</div>
+      <div class="champ"><label>Régime spécifique</label>${segAutre('regime', PROFIL_REGIME, p.regime)}</div>
+      <div class="champ"><label>Régularité des repas</label>${choixListe('repas', PROFIL_REPAS, p.regulariteRepas || '')}</div>
+      <div class="champ"><label>Difficultés alimentaires</label>${segAutre('difficultes', PROFIL_DIFFICULTES, p.difficultesAlimentaires)}</div>
+      <div class="champ"><label>Hydratation</label>${segPills('hydratation', ['Régulière', 'Selon la soif'], false, p.hydratation || '')}</div>
+      <div class="champ"><label>Compléments alimentaires</label>${segAutre('complements', PROFIL_COMPLEMENTS, p.complements)}</div>
+    </div>
+
+    <div class="card" style="display:block">
+      <div class="eyebrow" style="margin-bottom:10px">Organisation</div>
+      <div class="champ"><label>Séances par semaine souhaitées</label><input class="f" id="pSeances" type="number" value="${p.seancesSemaine || ''}"></div>
+      <div class="champ"><label>Durée maximale d'une séance</label>${segPills('duree', PROFIL_DUREE, false, p.dureeMax || '')}</div>
+      <div class="champ"><label>Disponibilités en salle</label>${grilleDispo('dispoSalle', p.dispoSalle)}
+        <input class="f" id="pDispoSalleTexte" placeholder="Précisions…" value="${p.dispoSalleTexte || ''}" style="margin-top:8px"></div>
+      <div class="champ" style="margin-top:16px"><label>Disponibilités hors salle</label>${grilleDispo('dispoHorsSalle', p.dispoHorsSalle)}
+        <input class="f" id="pDispoHorsSalleTexte" placeholder="Précisions…" value="${p.dispoHorsSalleTexte || ''}" style="margin-top:8px"></div>
+    </div>
+
+    <div class="card" style="display:block">
+      <div class="eyebrow" style="margin-bottom:10px">Motivation</div>
+      ${curseur('pMotivation', 'Niveau de motivation', 1, 10, p.motivation, "J'ai besoin de motivation", 'Trop motivé, freinez-moi !')}
+      <div class="champ"><label>Craintes ou difficultés</label><textarea class="f" id="pCraintes" rows="3">${p.craintes || ''}</textarea></div>
+    </div>
+
+    <div class="barre" style="margin-bottom:26px">
+      <button class="btn plein" id="pOk" style="flex:1">Enregistrer le profil</button>
+    </div>`;
+
+  const zone = $('#zone');
+  segBrancher(zone);
+  corpsBrancher(zone);
+  grilleBrancher(zone, 'dispoSalle');
+  grilleBrancher(zone, 'dispoHorsSalle');
+
+  $('#pOk').onclick = async function () {
+    this.disabled = true;
+    const objectifs = {};
+    PROFIL_OBJECTIFS.forEach(([k]) => { objectifs[k] = Number(zone.querySelector('#pObj_' + k).value); });
+    try {
+      await sauverProfil(S.coach.email, {
+        ville: zone.querySelector('#pVille').value.trim(),
+        naissance: zone.querySelector('#pNaissance').value,
+        sexe: segLire(zone, 'sexe'),
+        taille: zone.querySelector('#pTaille').value,
+        poids: zone.querySelector('#pPoids').value,
+        profession: zone.querySelector('#pProfession').value.trim(),
+        objectifs,
+        objectifsInfos: zone.querySelector('#pObjectifsInfos').value.trim(),
+        delaiMois: zone.querySelector('#pDelai').value,
+        xp: segLire(zone, 'xp'),
+        xpCommentaire: zone.querySelector('#pXpCommentaire').value.trim(),
+        frequenceActuelle: zone.querySelector('#pFrequence').value.trim(),
+        materiel: segLirePlein(zone, 'materiel'),
+        materielCommentaire: zone.querySelector('#pMaterielCommentaire').value.trim(),
+        blessures: corpsLire(zone),
+        problemesMedicaux: segLireMulti(zone, 'problemesMedicaux'),
+        problemesPrecisions: zone.querySelector('#pPrecisions').value.trim(),
+        medicaments: segLire(zone, 'medicaments'),
+        contreIndications: zone.querySelector('#pContreIndications').value.trim(),
+        sommeil: segLire(zone, 'sommeil'),
+        stress: segLire(zone, 'stress'),
+        alcool: segLire(zone, 'alcool'),
+        tabac: segLire(zone, 'tabac'),
+        regime: segLireMulti(zone, 'regime'),
+        regulariteRepas: segLire(zone, 'repas'),
+        difficultesAlimentaires: segLireMulti(zone, 'difficultes'),
+        hydratation: segLire(zone, 'hydratation'),
+        complements: segLireMulti(zone, 'complements'),
+        seancesSemaine: zone.querySelector('#pSeances').value,
+        dureeMax: segLire(zone, 'duree'),
+        dispoSalle: grilleLire(zone, 'dispoSalle'),
+        dispoSalleTexte: zone.querySelector('#pDispoSalleTexte').value.trim(),
+        dispoHorsSalle: grilleLire(zone, 'dispoHorsSalle'),
+        dispoHorsSalleTexte: zone.querySelector('#pDispoHorsSalleTexte').value.trim(),
+        motivation: Number(zone.querySelector('#pMotivation').value),
+        craintes: zone.querySelector('#pCraintes').value.trim()
+      });
+      toast('Profil enregistré');
+    } catch (err) { toast(err.message); }
+    this.disabled = false;
+  };
 }
 
 async function vueHistoriqueAthlete() {

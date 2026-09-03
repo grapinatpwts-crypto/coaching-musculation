@@ -62,7 +62,7 @@ service cloud.firestore {
       // le coach gère la fiche, jamais role/admin (réservé admin)
       allow update: if estCoach()
         && request.resource.data.diff(resource.data).affectedKeys()
-             .hasOnly(['nom', 'statut', 'telephone', 'objectif', 'notes', 'message_coach', 'date_inscription', 'resume']);
+             .hasOnly(['nom', 'statut', 'telephone', 'objectif', 'notes', 'message_coach', 'profil', 'date_inscription', 'resume']);
 
       allow update: if estAdmin();
       allow create: if estCoach() || estAdmin();

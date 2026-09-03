@@ -1238,6 +1238,45 @@ est identique, la progression ne le sera pas.
 dit que les repos sont trop courts sur le papier ou qu'on traîne entre les exercices ;
 une séance plus rapide que prévu dit des repos écourtés ou des séries sautées.
 
+## 8 unvicies. Profil d'accueil
+
+Avant cette section, le coach n'avait que deux champs libres (`objectif`, `notes`)
+pour composer un programme. Un onglet **Profil**, à côté de *Fiche* dans la fiche
+d'un pratiquant, porte désormais l'ancien questionnaire d'accueil AppSheet (§ 13) —
+adapté, pas recopié.
+
+**C'est le coach qui remplit, en entretien avec le pratiquant** — décidé
+explicitement plutôt que de reprendre le principe self-service de l'ancien Google
+Forms : le champ `profil` n'est écrit que par le coach (`firestore.rules`), et n'est
+affiché dans aucun écran pratiquant, comme `notes` aujourd'hui. `vueProfil()` est
+directement le formulaire, pré-rempli avec les réponses déjà données — pas d'écran
+de lecture séparé, sur le modèle de l'éditeur de programme (`peindreEditeur`)
+plutôt que du couple lecture/modale de la fiche.
+
+Sept sections : informations générales, objectifs (curseurs 1-5 par type
+d'objectif), expérience, santé & sécurité, habitudes de vie, nutrition,
+organisation, motivation (curseur 1-10). Nom et prénom ont été retirés du
+questionnaire d'origine : `nom` est déjà saisi à l'inscription, les redemander
+aurait dupliqué une donnée qui dérive.
+
+**Deux composants sur mesure, adaptés au tactile plutôt que copiés du formulaire
+papier.**
+
+La disponibilité ne se coche plus dans une grille de 126 cases (7 jours ×
+18 heures) à la Google Forms : `grilleDispo()` dessine un agenda compact, jours en
+colonnes et heures en lignes, où l'on peut aussi bien taper une case que glisser le
+doigt pour en peindre plusieurs d'affilée. Le geste écoute le document le temps du
+glissement plutôt que de capturer le pointeur sur la cellule — la même leçon que le
+glisser-déposer de l'éditeur (§ 8 vicies), retenue une seconde fois.
+
+Les blessures ne se cochent plus sur une liste de 16 zones × 6 types. `carteCorps()`
+dessine une silhouette SVG schématique — deux vues, avant et arrière, aucune
+dépendance externe, même esprit que `disques()` pour les plaques — où l'on tape une
+zone du corps pour ne révéler que ses 6 types de blessure possibles. Une zone déjà
+renseignée reste visible en rouge même vue fermée. Les 16 zones ne sont réparties
+qu'une fois entre les deux vues (12 à l'avant, 4 à l'arrière) : la liste d'origine
+ne distingue pas gauche/droite, il n'y avait pas de raison d'en inventer une.
+
 ## 9. Parti pris visuel — charte Wellness Sport Club
 
 L'app reprend l'identité de **Wellness Sport Club** (`wellness-sportclub.fr`),
@@ -1575,14 +1614,16 @@ réduisant à une colonne au lieu d'une table.
 | `Temps pause` (rest-pause intra-bloc) | colonne | **repris** → `pause_s` |
 | `Durée` (exercice au temps, « max ») | colonne | **repris** → `duree_s` |
 | Catalogue exercice | + équipement, description longue, GIF, vidéo YouTube | id, nom, groupe, consigne |
-| Profil pratiquant | ~20 champs + questionnaire de 104 colonnes | 5 champs |
-| Blessures | 17 zones typées | absent |
+| Profil pratiquant | ~20 champs + questionnaire de 104 colonnes | **repris, adapté** → § 8 unvicies |
+| Blessures | 17 zones typées | **repris** → carte du corps cliquable, § 8 unvicies |
 
-Le questionnaire d'entrée est la pièce la plus riche et la plus absente : objectifs
-notés, accès matériel, blessures par zone, sommeil, stress, alimentation,
-disponibilités **heure par heure de 6 h à 23 h**, motivation, craintes. Le coach
-compose à partir de contraintes, pas d'un objectif — les blessures et les créneaux
-pèsent plus lourd que « prise de masse ».
+Le questionnaire d'entrée — objectifs notés, accès matériel, blessures par zone,
+sommeil, stress, alimentation, disponibilités heure par heure, motivation,
+craintes — n'est plus la pièce absente : il a son propre onglet dans l'app
+(§ 8 unvicies), porté depuis un Google Forms équivalent que le coach avait
+construit à côté d'AppSheet plutôt que depuis les 104 colonnes elles-mêmes. Le
+coach compose à partir de contraintes, pas d'un objectif — les blessures et les
+créneaux pèsent plus lourd que « prise de masse ».
 
 ### Deux leçons de leurs données
 
