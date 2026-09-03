@@ -1040,6 +1040,25 @@ produire un programme troué.
 
 **Il ne contient aucun contenu acheté**, seulement la structure.
 
+### L'export, le même chemin à l'envers
+
+`Réglages ▸ Exporter un programme` liste les modèles ; un tap sur l'un d'eux
+redescend un `.xlsx` au **même format que le gabarit** — mêmes onglets, mêmes
+en-têtes (`EN_TETES_PROGRAMME` fige l'ordre des colonnes des deux côtés),
+exercices en clair. Un export retouché dans Excel se réimporte donc tel quel :
+c'est fait pour retoucher trente lignes au clavier plutôt qu'au doigt dans
+l'éditeur, et pour garder une copie hors Firestore d'un programme qu'on a mis
+du temps à composer.
+
+Deux choix qui se voient dans `classeurDuModele` : les lignes sortent triées
+jour/bloc/ordre (`triJours`, comme à l'affichage) plutôt que dans l'ordre
+arbitraire des documents Firestore ; et un exercice disparu du catalogue repart
+avec son **identifiant**, pas une case vide — l'identifiant fait échouer
+bruyamment la réimportation (`EXERCICES_INCONNUS`) là où le vide aurait fait
+sauter la ligne en silence, `programmeEnLignes` ignorant les lignes sans nom.
+Un modèle encore sans ligne sort quand même avec sa ligne d'en-têtes, d'où
+`aoa_to_sheet` plutôt que `json_to_sheet`.
+
 ## 8 quindecies. L'accueil du pratiquant
 
 Écran d'arrivée, calqué sur ce que HexFit fait bien et débarrassé de ce qu'il fait

@@ -97,6 +97,8 @@ Coach ▸ un athlète ▸ Programme ▸ **Donner un programme**, depuis un modè
 existant (les dix programmes-types du seed, ou les vôtres). Pour verser vos
 propres programmes sans passer par le dépôt public : remplissez
 `modele-import.xlsx` puis `Réglages ▸ Importer un programme`.
+`Réglages ▸ Exporter un programme` fait l'inverse — un modèle redescend dans le
+même gabarit, retouchable dans Excel puis réimportable tel quel.
 
 ## Étape 8 — Installer l'app sur téléphone
 

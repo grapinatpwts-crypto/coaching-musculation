@@ -1001,6 +1001,22 @@ async function dataModele(id) {
   };
 }
 
+/**
+ * Le même modèle, mais ses lignes à plat plutôt que regroupées en jours — c'est
+ * cette forme-là que l'export remet dans le gabarit, une ligne du classeur pour
+ * une ligne de la base.
+ */
+async function dataModeleLignes(id) {
+  const { db, doc, getDoc, collection, getDocs } = FB;
+  const [snap, lignes, noms] = await Promise.all([
+    getDoc(doc(db, 'modeles', id)),
+    getDocs(collection(db, 'modeles', id, 'lignes')),
+    nomsExercices()
+  ]);
+  if (!snap.exists()) throw new Error('MODELE_INTROUVABLE');
+  return { modele: { id: snap.id, ...snap.data() }, lignes: lignes.docs.map(d => d.data()), noms };
+}
+
 /** Historique des programmes d'un pratiquant, du plus récent au plus ancien. */
 /**
  * La fin **prévue** d'une attribution, distincte de `date_fin` qui note la
@@ -5870,6 +5886,14 @@ function vueReglages() {
       <div class="barre"><button class="btn" id="import" style="flex:1">Importer</button></div>
     </div>
 
+    <div class="card" style="display:block">
+      <div class="nom">Exporter un programme</div>
+      <div class="meta" style="margin-top:4px;line-height:1.45">Renvoie un modèle dans le
+        même gabarit, exercices en clair. De quoi retoucher trente lignes au clavier,
+        puis les réimporter.</div>
+      <div class="barre"><button class="btn" id="export" style="flex:1">Exporter</button></div>
+    </div>
+
     ${S.moi.admin ? `
     <div class="eyebrow" style="margin-top:26px">Administration</div>
     <div class="card" style="display:block">
@@ -5880,6 +5904,7 @@ function vueReglages() {
       <div class="barre"><button class="btn" id="roles" style="flex:1">Gérer les rôles</button></div>
     </div>` : ''}`;
   $('#import').onclick = modalImportFeuille;
+  $('#export').onclick = modalExportModele;
   const ro = $('#roles');
   if (ro) ro.onclick = modalRoles;
 }
@@ -6077,6 +6102,129 @@ function modalImportFeuille() {
       this.disabled = false; this.textContent = 'Importer';
     }
   };
+}
+
+// ── Export Excel (le chemin inverse de l'import) ─────────────
+// Un modèle redevient le gabarit `modele-import.xlsx` : mêmes onglets, mêmes
+// en-têtes, mêmes noms d'exercice en clair. Un export retouché dans Excel se
+// réimporte donc sans rien réécrire — c'est tout l'intérêt, retoucher trente
+// lignes au clavier plutôt qu'au doigt dans l'éditeur.
+
+/** Les colonnes de l'onglet « Programme », dans l'ordre que relit `programmeEnLignes`. */
+const EN_TETES_PROGRAMME = ['Jour', 'Bloc', 'Ordre', 'Exercice', 'Séries', 'Répétitions',
+  'Durée (s)', 'Charge (kg)', '% du max', 'Cadence', 'Pause (s)', 'Repos (s)'];
+
+/** Les champs de l'onglet « Fiche », dans l'ordre que relit `ficheEnObjet`. */
+function ficheDuModele(m) {
+  return [
+    ['Nom', m.nom || ''],
+    ['Catégorie', m.categorie || ''],
+    ['Difficulté', m.difficulte || ''],
+    ['Durée (semaines)', Number(m.duree_semaines) || 0],
+    ['Statut', m.statut || 'Brouillon'],
+    ['Description', m.description || ''],
+    ['Page source', m.source || ''],
+    ['Vidéo', m.video || '']
+  ];
+}
+
+function ligneDuModele(l, noms) {
+  return {
+    Jour: l.jour || '',
+    Bloc: numBloc(l),
+    Ordre: Number(l.ordre) || 1,
+    // Un exercice disparu du catalogue repart avec son identifiant, pas une case
+    // vide : à la réimportation, l'identifiant fait échouer bruyamment
+    // (EXERCICES_INCONNUS) là où le vide aurait fait sauter la ligne en silence.
+    Exercice: noms[l.exercice_id] || l.exercice_id || '',
+    'Séries': Number(l.series) || 3,
+    'Répétitions': repsTexte(l.reps_cible),
+    'Durée (s)': l.duree_s === undefined || l.duree_s === null ? '' : l.duree_s,
+    'Charge (kg)': Number(l.charge_cible) || 0,
+    '% du max': Number(String(l.pct_rm).replace('%', '')) || 0,
+    Cadence: l.cadence || '',
+    'Pause (s)': Number(l.pause_s) || 0,
+    'Repos (s)': Number(l.repos_s) || 90
+  };
+}
+
+/**
+ * Le classeur complet. `aoa_to_sheet` plutôt que `json_to_sheet` : un modèle
+ * encore sans ligne doit quand même sortir avec sa ligne d'en-têtes, sinon le
+ * fichier revient à l'import comme un onglet illisible.
+ */
+function classeurDuModele(modele, lignes, noms) {
+  const triees = lignes.slice().sort((a, b) => {
+    const j = triJours(a.jour, b.jour);
+    if (j !== 0) return j;
+    const d = numBloc(a) - numBloc(b);
+    return d !== 0 ? d : Number(a.ordre) - Number(b.ordre);
+  });
+
+  const fiche = XLSX.utils.aoa_to_sheet([['Champ', 'Valeur']].concat(ficheDuModele(modele)));
+  fiche['!cols'] = [{ wch: 18 }, { wch: 52 }];
+
+  const programme = XLSX.utils.aoa_to_sheet([EN_TETES_PROGRAMME].concat(
+    triees.map(l => { const r = ligneDuModele(l, noms); return EN_TETES_PROGRAMME.map(h => r[h]); })));
+  programme['!cols'] = EN_TETES_PROGRAMME.map(h => ({ wch: h === 'Exercice' ? 34 : Math.max(9, h.length + 2) }));
+
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, fiche, 'Fiche');
+  XLSX.utils.book_append_sheet(wb, programme, 'Programme');
+  return wb;
+}
+
+/** Nom de fichier tiré du modèle, débarrassé de ce qu'un système de fichiers refuse. */
+function nomFichierModele(nom) {
+  const propre = String(nom || '').replace(/[\\/:*?"<>|]/g, '-').trim();
+  return (propre || 'modele') + '.xlsx';
+}
+
+async function exporterModele(id) {
+  await chargerXLSX();
+  const { modele, lignes, noms } = await dataModeleLignes(id);
+  XLSX.writeFile(classeurDuModele(modele, lignes, noms), nomFichierModele(modele.nom));
+  return { nom: modele.nom, lignes: lignes.length };
+}
+
+function modalExportModele() {
+  const w = modal('Exporter un programme', `
+    <p class="consigne">Le modèle repart dans le gabarit <code>modele-import.xlsx</code> —
+      mêmes onglets, exercices en clair. Retouché dans Excel, il se réimporte tel quel.</p>
+    <div id="exList"><div class="empty" style="padding:18px 0">Chargement…</div></div>
+    <div class="barre"><button class="btn" id="exFerme" style="flex:1">Fermer</button></div>`);
+  w.querySelector('#exFerme').onclick = w.fermer;
+
+  dataModeles().then(modeles => {
+    const z = w.querySelector('#exList');
+    if (!z) return;
+    z.innerHTML = modeles.map(m => `<div class="ligne" data-ex-modele="${m.id}">
+      <div class="g">
+        <div class="nom">${m.nom}</div>
+        <div class="meta">${[m.categorie, m.difficulte,
+          `${m.nbJours} jour${m.nbJours > 1 ? 's' : ''}`,
+          `${m.nbExercices} exercice${m.nbExercices > 1 ? 's' : ''}`].filter(Boolean).join(' · ')}</div>
+      </div>
+      <span class="poignee">↓</span>
+    </div>`).join('') || `<div class="empty" style="padding:18px 0">Aucun modèle à exporter.</div>`;
+
+    lignesCliquables(w, '[data-ex-modele]', async l => {
+      const nom = l.querySelector('.nom').textContent;
+      l.querySelector('.meta').textContent = 'Export…';
+      try {
+        const r = await exporterModele(l.dataset.exModele);
+        w.fermer();
+        toast(`${r.nom} exporté : ${r.lignes} ligne${r.lignes > 1 ? 's' : ''}`);
+      } catch (err) {
+        toast(err.message === 'XLSX_INDISPONIBLE'
+          ? 'Impossible de charger le lecteur Excel — vérifiez la connexion'
+          : `${nom} : ${err.message}`);
+      }
+    });
+  }).catch(err => {
+    const z = w.querySelector('#exList');
+    if (z) z.innerHTML = `<div class="empty" style="padding:18px 0">${err.message}</div>`;
+  });
 }
 
 // ── Modèles génériques ───────────────────────────────────────

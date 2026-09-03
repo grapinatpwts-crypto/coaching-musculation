@@ -85,6 +85,10 @@ navigateur, écrit dans Firestore. Rien ne transite par le dépôt, et l'ancien
 aller-retour par un onglet du classeur Google a disparu avec Sheets : c'est
 maintenant un import de fichier, pas un copier-coller.
 
+`Réglages ▸ Exporter un programme` fait le chemin inverse, au même format : un
+modèle redescend en `.xlsx` réimportable tel quel. De quoi retoucher un
+programme au clavier, et garder une copie de son travail hors Firestore.
+
 ---
 
 ## 4. Ce qui est construit
