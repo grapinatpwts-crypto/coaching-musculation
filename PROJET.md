@@ -112,6 +112,7 @@ sur l'email à travers tous les parents (`attributions`, `seances`).
 ```
 pratiquants/{email}                         # doc ID = email en minuscules
   nom, role, admin, statut, telephone, date_inscription, objectif, notes
+  message_coach                              # mot d'accueil, écrit par le coach seul (§ 8 undecies)
   resume: { nbSeances, derniereSeanceLe }    # dénormalisé, écrit par le pratiquant en fin de séance
   pratiquants/{email}/prive/photo            # doc unique, coach-only
   pratiquants/{email}/maxis/{exerciceId}     # doc ID = exercice_id, coach-only en écriture
@@ -848,8 +849,18 @@ Aucun service externe, aucune portée Drive supplémentaire.
 
 **La fiche du pratiquant** ouvre sur l'identité, l'objectif et trois boutons de
 contact — WhatsApp, appel, e-mail — construits depuis le téléphone normalisé au
-format international. Puis le statut, modifiable d'un appui, et l'historique des
-programmes donnés avec pour chacun une case **payé / non payé**.
+format international. Puis un encadré **Message du coach**, le statut modifiable
+d'un appui, et l'historique des programmes donnés avec pour chacun une case
+**payé / non payé**.
+
+**Le message du coach** est un mot libre, affiché en haut de l'accueil du
+pratiquant tant qu'il n'est pas changé — pas une consigne d'exercice (§ 8
+septendecies), pas une note de suivi (`notes`), juste ce qu'il a besoin de lire
+en ouvrant l'app : un rappel de motivation, une félicitation, une consigne du
+moment. Touchez l'encadré pour l'écrire ou le modifier ; un message vide
+n'affiche rien côté pratiquant. Écriture réservée au coach par les règles
+(`message_coach` dans la liste des champs qu'il peut modifier) — le pratiquant
+le lit, il ne l'écrit jamais.
 
 C'est le début du volet administratif : le suivi de paiement est volontairement
 minimal — une case, pas une facturation.
@@ -988,10 +999,12 @@ produire un programme troué.
 Écran d'arrivée, calqué sur ce que HexFit fait bien et débarrassé de ce qu'il fait
 en trop.
 
-**Ce qu'on affiche.** Une salutation selon l'heure, la **prochaine séance
-programmée** avec son échéance — aujourd'hui, demain, dans trois jours — et le
-**programme en cours** : nom, semaine sur durée, barre d'assiduité. Puis deux liens,
-« Voir le détail » et « Tous mes programmes ».
+**Ce qu'on affiche.** En premier, si le coach en a laissé un, le **message du
+coach** (§ 8 undecies) — le seul endroit de l'app où sa voix s'adresse
+directement au pratiquant. Puis une salutation selon l'heure, la **prochaine
+séance programmée** avec son échéance — aujourd'hui, demain, dans trois jours —
+et le **programme en cours** : nom, semaine sur durée, barre d'assiduité. Puis
+deux liens, « Voir le détail » et « Tous mes programmes ».
 
 **Sans le détail des exercices.** L'accueil dit quoi et quand, pas comment. Le
 contenu de la séance est à un appui.

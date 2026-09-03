@@ -167,6 +167,10 @@ header h2{font-size:30px;text-transform:uppercase;line-height:1}
 .reprendre{font-size:17px;line-height:1;flex:0 0 auto}
 .cal .c[aria-pressed="true"]{outline:2px solid var(--brand-ink);outline-offset:1px}
 .card.libre{border-left:3px solid var(--brand-ink)}
+/* Message du coach : même accent que le libre, mais en citation — c'est une
+   voix qui parle au pratiquant, pas un fait à consigner. */
+.card.mot{border-left:3px solid var(--brand-ink)}
+.card.mot .quoi{font-style:italic}
 .chip.libre{background:rgba(224,82,83,.15);color:var(--brand-ink)}
 .legende{font-size:12px;color:var(--dust);margin:12px 0 4px;display:flex;gap:14px;flex-wrap:wrap}
 .stat{display:flex;gap:18px;flex-wrap:wrap;margin-top:6px}
@@ -585,6 +589,7 @@ async function chargerProfil(email) {
     email,
     nom: p.nom || '',
     objectif: p.objectif || '',
+    messageCoach: p.message_coach || '',
     estCoach: p.role === 'coach',
     admin: p.admin === true,
     coach: COACH_NOM,
@@ -1242,6 +1247,7 @@ async function dataPratiquant(email) {
     photo: photo[email] || '',
     statut: String(p.statut || 'Actif'),
     telephone: p.telephone || '', objectif: p.objectif || '', notes: p.notes || '',
+    messageCoach: p.message_coach || '',
     date_inscription: versDate(p.date_inscription) || '',
     nbSeances: Number(resume.nbSeances) || 0,
     nbSeries: Number(resume.nbSeries) || 0,
@@ -1729,11 +1735,11 @@ async function supprimerPhoto(email) {
   await deleteDoc(doc(db, 'pratiquants', email, 'prive', 'photo'));
 }
 
-/** Le coach met à jour la fiche : nom, téléphone, objectif, notes, statut. */
+/** Le coach met à jour la fiche : nom, téléphone, objectif, notes, message, statut. */
 async function sauverPratiquant(email, patch) {
   const { db, doc, updateDoc } = FB;
   const data = {};
-  ['nom', 'telephone', 'objectif', 'notes'].forEach(k => { if (patch[k] !== undefined) data[k] = String(patch[k]); });
+  ['nom', 'telephone', 'objectif', 'notes', 'message_coach'].forEach(k => { if (patch[k] !== undefined) data[k] = String(patch[k]); });
   if (patch.statut !== undefined) {
     if (['Nouveau', 'Actif', 'Inactif', 'Archivé'].indexOf(patch.statut) === -1) throw new Error('STATUT_INCONNU');
     data.statut = patch.statut;
@@ -2159,6 +2165,12 @@ async function vueAccueil() {
     .concat((j.activites || []).map(x => ({ nom: x.sport, coach: false, fait: true, heure: '' })))
     .concat((j.recurrences || []).map(r => ({ nom: r.sport, coach: false, fait: false, heure: r.heure || '' })));
   $('#zone').innerHTML = `
+    ${S.moi.messageCoach ? `
+    <div class="card mot" style="display:block">
+      <div class="eyebrow">Message de ${S.moi.coach || 'votre coach'}</div>
+      <p class="quoi" style="margin-top:6px">« ${S.moi.messageCoach} »</p>
+    </div>` : ''}
+
     <div class="eyebrow">Cette semaine</div>
     <div class="cal" style="margin-top:6px">
       ${JOURSC.map(j => `<div class="jc">${j}</div>`).join('')}
@@ -4416,6 +4428,14 @@ async function vueFiche() {
       <input type="file" id="photoFichier" accept="image/*" hidden>
     </div>
 
+    <button class="card mot" id="editMessage" style="display:block;width:100%;text-align:left;margin:22px 0 0">
+      <div class="eyebrow">Message du coach</div>
+      ${f.messageCoach
+        ? `<p class="quoi" style="margin-top:6px">« ${f.messageCoach} »</p>`
+        : `<p class="quoi" style="margin-top:6px">Aucun message pour l'instant. Touchez pour en écrire un —
+             c'est ce qui l'accueille sur sa page d'accueil.</p>`}
+    </button>
+
     <div class="eyebrow" style="margin:22px 0 10px">Statut</div>
     <div class="sous">${ETATS.map(e =>
       `<button data-etat="${e}" aria-pressed="${e === f.statut}">${e}</button>`).join('')}</div>
@@ -4476,6 +4496,7 @@ async function vueFiche() {
     .catch(() => { const z = $('#statsAthlete'); if (z) z.innerHTML = ''; });
 
   $('#editFiche').onclick = () => modalFiche(f);
+  $('#editMessage').onclick = () => modalMessageCoach(f);
   $('#photo').onclick = () => modalPhoto(f.email);
   $('#photoAppareil').onchange = ev => envoyerPhoto(ev.target.files[0], f.email);
   $('#photoFichier').onchange = ev => envoyerPhoto(ev.target.files[0], f.email);
@@ -4641,6 +4662,33 @@ function modalFiche(f) {
       vueCoach();
     } catch (err) { toast(err.message); this.disabled = false; }
   };
+}
+
+/**
+ * Un mot pour l'accueil du pratiquant — pas une consigne d'exercice, pas une
+ * note de suivi, juste ce qu'il a besoin de lire en ouvrant l'app. Un
+ * encadré dédié plutôt qu'un champ de plus dans « Modifier la fiche » : c'est
+ * lui, pas les coordonnées, qu'on retouche d'une séance à l'autre.
+ */
+function modalMessageCoach(f) {
+  const w = modal('Message du coach', `
+    <p class="consigne" style="margin-bottom:10px">Affiché en haut de son accueil, jusqu'à ce que vous le changiez.</p>
+    <div class="champ"><textarea class="f" id="fMsg" rows="4" placeholder="Ex. : Bien joué pour la régularité ce mois-ci, on continue comme ça !">${f.messageCoach}</textarea></div>
+    <div class="barre">${f.messageCoach ? '<button class="btn danger" id="fMsgEff">Effacer</button>' : ''}
+      <button class="btn" id="fMsgAnn">Annuler</button>
+      <button class="btn plein" id="fMsgOk" style="flex:1">Enregistrer</button></div>`);
+  w.querySelector('#fMsgAnn').onclick = w.fermer;
+  const enregistrer = async (texte, btn) => {
+    btn.disabled = true;
+    try {
+      await sauverPratiquant(f.email, { message_coach: texte });
+      w.fermer(); toast(texte ? 'Message enregistré' : 'Message effacé');
+      vueFiche();
+    } catch (err) { toast(err.message); btn.disabled = false; }
+  };
+  w.querySelector('#fMsgOk').onclick = function () { enregistrer(w.querySelector('#fMsg').value, this); };
+  const eff = w.querySelector('#fMsgEff');
+  if (eff) eff.onclick = function () { enregistrer('', this); };
 }
 
 async function vueHistoriqueAthlete() {
