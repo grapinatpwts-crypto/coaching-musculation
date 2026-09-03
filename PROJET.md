@@ -857,6 +857,18 @@ Celui par ancienneté lit `ancienneteJours`, calculé à la volée depuis
 5 ans et plus) — la même donnée alimente le « inscrit depuis X » désormais
 affiché sur chaque carte.
 
+**« Avec/sans programme » ne regarde pas `statut === 'En cours'`, mais
+`a.planifie`.** Une attribution reste `'En cours'` côté Firestore tant que le
+coach n'a pas cliqué Clore, même des semaines après sa fin réelle (§ 8 ter) —
+la première version du filtre comptait donc comme « avec programme » un
+pratiquant dont le plan est terminé depuis longtemps, juste pas formellement
+clos. `dataCoachAthletes()` calcule `planifie` en comparant `fin_prevue`
+(chaîne `AAAA-MM-JJ`, jamais une soustraction d'instants) à la clé du jour :
+planifié si `fin_prevue` est encore à venir, ou absente (programme sans durée
+fixe, toujours considéré planifié). La carte, elle, continue d'afficher
+l'attribution `'En cours'` telle quelle même dépassée — c'est justement
+l'information qui pousse le coach à la clore.
+
 **Deux mesures d'avancement**, qui ne disent pas la même chose. Le temps écoulé donne
 « semaine 4 sur 8 ». L'assiduité donne « 6 séances sur 16 attendues », et c'est elle
 qui alimente la barre : un programme peut être à sa moitié dans le calendrier sans

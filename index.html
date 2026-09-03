@@ -829,6 +829,14 @@ async function dataCoachAthletes() {
     }
   });
 
+  // « Avec/sans programme » ne regarde pas le statut Firestore ('En cours' le
+  // reste tant que le coach n'a pas cliqué Clore, même longtemps après la fin) :
+  // ça regarde si quelque chose est encore planifié à partir d'aujourd'hui.
+  // `fin_prevue` est une chaîne AAAA-MM-JJ (§ « une date seule n'est pas un
+  // instant » de CLAUDE.md) — comparaison lexicographique avec la clé du jour,
+  // jamais de soustraction d'instants.
+  const aujourdhui = cleJour(new Date());
+
   const list = [];
   prats.forEach(doc => {
     const p = doc.data();
@@ -851,6 +859,9 @@ async function dataCoachAthletes() {
         id: att.id, nom: att.nom, paye: att.paye === true,
         date_debut: att.date_debut, modele_id: att.modele_id || ''
       } : null,
+      // Sans fin prévue (programme sans durée fixe) : toujours planifié. Avec
+      // une fin prévue : planifié tant qu'elle n'est pas déjà passée.
+      planifie: !!att && (!att.fin_prevue || att.fin_prevue >= aujourdhui),
       progression: progression(att, p.resume)
     });
   });
@@ -4361,7 +4372,11 @@ function filtrerAthletes(f) {
   return (S.athletes || []).filter(a =>
     (!q || a.nom.toLowerCase().includes(q)) &&
     (!f.statut || a.statut === f.statut) &&
-    (!f.programme || (f.programme === 'avec' ? !!a.programme : !a.programme)) &&
+    // « Avec/sans programme » = un programme encore planifié à partir d'aujourd'hui
+    // (a.planifie), pas seulement « une attribution existe » — une attribution
+    // 'En cours' dont la fin prévue est passée mais jamais close ne compte plus
+    // comme planifiée.
+    (!f.programme || (f.programme === 'avec' ? a.planifie : !a.planifie)) &&
     (!f.impaye || (a.programme && a.programme.paye === false)));
 }
 
