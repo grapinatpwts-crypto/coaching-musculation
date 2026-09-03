@@ -167,10 +167,15 @@ header h2{font-size:30px;text-transform:uppercase;line-height:1}
 .reprendre{font-size:17px;line-height:1;flex:0 0 auto}
 .cal .c[aria-pressed="true"]{outline:2px solid var(--brand-ink);outline-offset:1px}
 .card.libre{border-left:3px solid var(--brand-ink)}
-/* Message du coach : même accent que le libre, mais en citation — c'est une
-   voix qui parle au pratiquant, pas un fait à consigner. */
+/* Message du coach côté fiche : un encadré, cliquable comme le reste des
+   champs que le coach modifie. */
 .card.mot{border-left:3px solid var(--brand-ink)}
 .card.mot .quoi{font-style:italic}
+/* Message du coach côté accueil : pas un encadré — juste un liseré sur le
+   fond de la page, pour ne pas faire d'ombre au reste de l'écran. Une carte
+   blanche au-dessus de tout le reste écrasait la hiérarchie. */
+.mot-accueil{border-left:3px solid var(--brand-ink);padding-left:14px;margin-bottom:26px}
+.mot-accueil .quoi{font-style:italic;font-size:15px;line-height:1.5;color:var(--chalk)}
 .chip.libre{background:rgba(224,82,83,.15);color:var(--brand-ink)}
 .legende{font-size:12px;color:var(--dust);margin:12px 0 4px;display:flex;gap:14px;flex-wrap:wrap}
 .stat{display:flex;gap:18px;flex-wrap:wrap;margin-top:6px}
@@ -2166,9 +2171,9 @@ async function vueAccueil() {
     .concat((j.recurrences || []).map(r => ({ nom: r.sport, coach: false, fait: false, heure: r.heure || '' })));
   $('#zone').innerHTML = `
     ${S.moi.messageCoach ? `
-    <div class="card mot" style="display:block">
+    <div class="mot-accueil">
       <div class="eyebrow">Message de ${S.moi.coach || 'votre coach'}</div>
-      <p class="quoi" style="margin-top:6px">« ${S.moi.messageCoach} »</p>
+      <p class="quoi" style="margin-top:4px">« ${S.moi.messageCoach} »</p>
     </div>` : ''}
 
     <div class="eyebrow">Cette semaine</div>
