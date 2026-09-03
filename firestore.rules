@@ -49,7 +49,7 @@ service cloud.firestore {
     match /pratiquants/{email} {
       allow read: if estMoi(email) || estCoach();
 
-      // le pratiquant modifie ses champs de contact/objectif, jamais son statut/rôle.
+      // le pratiquant modifie ses champs de contact, jamais son statut/rôle.
       // `resume` en fait partie : ce sont ses compteurs de séances, qu'il écrit
       // lui-même en fin de séance faute de trigger serveur (pas de Cloud Function).
       // Il peut donc les fausser — c'est un agrégat de confort, pas une source de
@@ -57,12 +57,12 @@ service cloud.firestore {
       // grossier sauterait aux yeux du coach.
       allow update: if estMoi(email)
         && request.resource.data.diff(resource.data).affectedKeys()
-             .hasOnly(['telephone', 'objectif', 'notes', 'resume']);
+             .hasOnly(['telephone', 'notes', 'resume']);
 
       // le coach gère la fiche, jamais role/admin (réservé admin)
       allow update: if estCoach()
         && request.resource.data.diff(resource.data).affectedKeys()
-             .hasOnly(['nom', 'statut', 'telephone', 'objectif', 'notes', 'message_coach', 'profil', 'date_inscription', 'resume']);
+             .hasOnly(['nom', 'statut', 'telephone', 'notes', 'message_coach', 'profil', 'date_inscription', 'resume']);
 
       allow update: if estAdmin();
       allow create: if estCoach() || estAdmin();

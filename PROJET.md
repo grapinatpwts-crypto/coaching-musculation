@@ -829,6 +829,16 @@ séance — les nouveaux d'abord, les silencieux ensuite. Chaque carte porte le 
 le programme en cours, une barre d'avancement et un rappel « à encaisser » si le
 programme n'est pas payé.
 
+**Recherche par nom, filtres statut/programme/impayé, tri par ville** — pensés
+pour la liste une fois passée la quarantaine de pratiquants annoncée, où faire
+défiler ne suffit plus. `dataCoachAthletes()` charge tout en un appel (comme
+avant) ; `S.athletes` reste en mémoire et `peindreAthletes()` refiltre côté
+client à chaque frappe ou pastille — jamais de retour réseau, jamais de
+re-rendu de la barre de recherche elle-même (elle perdrait le focus en pleine
+frappe, même piège que `choisirExercice()` § 8 vicies). Le tri par ville lit
+`profil.ville`, renseigné en entretien (§ 8 unvicies) : un pratiquant qui n'a
+pas encore de profil rempli atterrit en fin de liste, jamais en tête.
+
 **Deux mesures d'avancement**, qui ne disent pas la même chose. Le temps écoulé donne
 « semaine 4 sur 8 ». L'assiduité donne « 6 séances sur 16 attendues », et c'est elle
 qui alimente la barre : un programme peut être à sa moitié dans le calendrier sans
@@ -847,11 +857,17 @@ Les images vivent dans un onglet `Photos` séparé, joint à la demande : sans �
 chaque lecture d'une fiche traînerait quelques kilo-octets d'image pour rien.
 Aucun service externe, aucune portée Drive supplémentaire.
 
-**La fiche du pratiquant** ouvre sur l'identité, l'objectif et trois boutons de
-contact — WhatsApp, appel, e-mail — construits depuis le téléphone normalisé au
-format international. Puis un encadré **Message du coach**, le statut modifiable
-d'un appui, et l'historique des programmes donnés avec pour chacun une case
-**payé / non payé**.
+**La fiche du pratiquant** ouvre sur l'identité et trois boutons de
+**coordonnées** — WhatsApp, appel, e-mail — construits depuis le téléphone
+normalisé au format international. L'ancien champ « Objectif » à texte libre a
+disparu (retiré aussi de l'inscription, de `sauverPratiquant` et des règles) :
+depuis que le profil d'accueil (§ 8 unvicies) existe, il faisait doublon en
+moins précis. À sa place, un paragraphe **Profil** — `resumeProfil()` —
+condense objectif(s) principal(aux), âge, rythme de séances souhaité, résumé
+des disponibilités et niveau de motivation en une ou deux phrases de français
+courant ; absent tant que le profil n'a rien de rempli. Puis un encadré
+**Message du coach**, le statut modifiable d'un appui, et l'historique des
+programmes donnés avec pour chacun une case **payé / non payé**.
 
 **Le message du coach** est un mot libre, affiché en haut de l'accueil du
 pratiquant tant qu'il n'est pas changé — pas une consigne d'exercice (§ 8

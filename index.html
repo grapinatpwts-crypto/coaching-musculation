@@ -605,7 +605,6 @@ async function chargerProfil(email) {
   return {
     email,
     nom: p.nom || '',
-    objectif: p.objectif || '',
     messageCoach: p.message_coach || '',
     estCoach: p.role === 'coach',
     admin: p.admin === true,
@@ -820,7 +819,7 @@ async function dataCoachAthletes() {
       commentaires: (attente.parEmail || {})[email] || 0,
       // Sans statut explicite : Nouveau tant qu'il n'a pas de programme, Actif dès qu'il en a un.
       statut: String(p.statut || (att ? 'Actif' : 'Nouveau')),
-      telephone: p.telephone || '', objectif: p.objectif || '',
+      telephone: p.telephone || '', ville: (p.profil || {}).ville || '',
       nbSeances: Number((p.resume || {}).nbSeances) || 0,
       derniere,
       joursDepuis: derniere ? Math.floor((Date.now() - new Date(derniere)) / 86400000) : null,
@@ -1263,8 +1262,9 @@ async function dataPratiquant(email) {
     email, nom: p.nom || email.split('@')[0],
     photo: photo[email] || '',
     statut: String(p.statut || 'Actif'),
-    telephone: p.telephone || '', objectif: p.objectif || '', notes: p.notes || '',
+    telephone: p.telephone || '', notes: p.notes || '',
     messageCoach: p.message_coach || '',
+    profil: p.profil || {},
     date_inscription: versDate(p.date_inscription) || '',
     nbSeances: Number(resume.nbSeances) || 0,
     nbSeries: Number(resume.nbSeries) || 0,
@@ -1752,11 +1752,11 @@ async function supprimerPhoto(email) {
   await deleteDoc(doc(db, 'pratiquants', email, 'prive', 'photo'));
 }
 
-/** Le coach met à jour la fiche : nom, téléphone, objectif, notes, message, statut. */
+/** Le coach met à jour la fiche : nom, téléphone, notes, message, statut. */
 async function sauverPratiquant(email, patch) {
   const { db, doc, updateDoc } = FB;
   const data = {};
-  ['nom', 'telephone', 'objectif', 'notes', 'message_coach'].forEach(k => { if (patch[k] !== undefined) data[k] = String(patch[k]); });
+  ['nom', 'telephone', 'notes', 'message_coach'].forEach(k => { if (patch[k] !== undefined) data[k] = String(patch[k]); });
   if (patch.statut !== undefined) {
     if (['Nouveau', 'Actif', 'Inactif', 'Archivé'].indexOf(patch.statut) === -1) throw new Error('STATUT_INCONNU');
     data.statut = patch.statut;
@@ -4299,29 +4299,96 @@ function tel(n) {
   return '+' + t;
 }
 
+/**
+ * Recherche/filtres/tri de la liste des athlètes — vivent en mémoire (`S.athletes`
+ * déjà chargé au complet) : à 40 pratiquants et plus, refiltrer côté client à
+ * chaque frappe reste instantané, inutile de repasser par Firestore. Seul
+ * `#athListe` est repeint à chaque changement, jamais la barre de recherche —
+ * un innerHTML sur le champ texte lui-même lui ferait perdre le focus en pleine
+ * frappe, la même leçon que `choisirExercice()`.
+ */
 async function listeAthletes() {
   let list;
   try { list = await dataCoachAthletes(); }
   catch (err) { $('#zone').innerHTML = `<div class="empty">${err.message}</div>`; return; }
   S.athletes = list;
-
+  S.coach.filtres = S.coach.filtres || { q: '', statut: '', programme: '', impaye: false, tri: 'defaut' };
+  const f = S.coach.filtres;
   const nouveaux = list.filter(a => a.statut === 'Nouveau').length;
 
   $('#zone').innerHTML = `
     ${nouveaux ? `<div class="alerte">${nouveaux} pratiquant${nouveaux > 1 ? 's' : ''} sans programme${nouveaux > 1 ? '' : ''}</div>` : ''}
     <div class="barre" style="margin-top:0">
       <button class="btn plein" id="inscrire" style="flex:1">＋ Inscrire un pratiquant</button></div>
-    <div style="margin-top:16px">${list.map(carteAthlete).join('') ||
-      `<div class="empty">Aucun pratiquant inscrit.</div>`}</div>`;
+    <div class="recherche" style="margin-top:16px"><input class="f" id="athQ" placeholder="Rechercher un nom…" value="${f.q}"></div>
+    <div class="sous" data-role="fStatut" style="margin-top:10px">
+      <button type="button" data-v="" aria-pressed="${!f.statut}">Tous</button>
+      ${ETATS.map(e => `<button type="button" data-v="${e}" aria-pressed="${f.statut === e}">${e}</button>`).join('')}
+    </div>
+    <div class="sous" data-role="fProgramme">
+      <button type="button" data-v="" aria-pressed="${!f.programme}">Tous</button>
+      <button type="button" data-v="avec" aria-pressed="${f.programme === 'avec'}">Avec programme</button>
+      <button type="button" data-v="sans" aria-pressed="${f.programme === 'sans'}">Sans programme</button>
+    </div>
+    <div class="sous" data-role="fImpaye">
+      <button type="button" data-v="0" aria-pressed="${!f.impaye}">Tous</button>
+      <button type="button" data-v="1" aria-pressed="${f.impaye}">Programme non payé</button>
+    </div>
+    <div class="sous" data-role="fTri">
+      <button type="button" data-v="defaut" aria-pressed="${f.tri === 'defaut'}">Statut, puis récents</button>
+      <button type="button" data-v="ville" aria-pressed="${f.tri === 'ville'}">Par ville</button>
+    </div>
+    <div id="athListe" style="margin-top:6px"></div>`;
 
   $('#inscrire').onclick = modalInscrire;
+  const zone = $('#zone');
+  const champ = $('#athQ');
+  champ.oninput = () => { f.q = champ.value; peindreAthletes(); };
+  ['fStatut', 'fProgramme', 'fImpaye', 'fTri'].forEach(role => {
+    zone.querySelectorAll(`[data-role="${role}"] [data-v]`).forEach(b => b.onclick = () => {
+      zone.querySelectorAll(`[data-role="${role}"] [data-v]`).forEach(x => x.setAttribute('aria-pressed', String(x === b)));
+      if (role === 'fStatut') f.statut = b.dataset.v;
+      else if (role === 'fProgramme') f.programme = b.dataset.v;
+      else if (role === 'fImpaye') f.impaye = b.dataset.v === '1';
+      else f.tri = b.dataset.v;
+      peindreAthletes();
+    });
+  });
+
+  peindreAthletes();
 
   // Les photos arrivent après : la liste s'affiche sans attendre quelques
   // centaines de kilo-octets d'images.
   if (S.photos) remplirPhotos();
   else dataPhotos((S.athletes || []).map(a => a.email))
     .then(ph => { S.photos = ph; remplirPhotos(); }).catch(() => {});
-  $('#zone').querySelectorAll('[data-email]').forEach(b => b.onclick = () => {
+}
+
+/** Refiltre S.athletes selon S.coach.filtres et repeint #athListe — aucun retour réseau. */
+function peindreAthletes() {
+  const z = $('#athListe');
+  if (!z) return;
+  const f = S.coach.filtres;
+  const q = (f.q || '').trim().toLowerCase();
+  let vus = (S.athletes || []).filter(a =>
+    (!q || a.nom.toLowerCase().includes(q)) &&
+    (!f.statut || a.statut === f.statut) &&
+    (!f.programme || (f.programme === 'avec' ? !!a.programme : !a.programme)) &&
+    (!f.impaye || (a.programme && a.programme.paye === false)));
+
+  if (f.tri === 'ville') {
+    // Vides en dernier : la comparaison lexicographique les mettrait en tête.
+    vus = [...vus].sort((a, b) => {
+      if (!a.ville && !b.ville) return a.nom.localeCompare(b.nom, 'fr');
+      if (!a.ville) return 1;
+      if (!b.ville) return -1;
+      return a.ville.localeCompare(b.ville, 'fr') || a.nom.localeCompare(b.nom, 'fr');
+    });
+  }
+
+  z.innerHTML = vus.map(carteAthlete).join('') || `<div class="empty">Aucun pratiquant ne correspond.</div>`;
+  if (S.photos) remplirPhotos();
+  z.querySelectorAll('[data-email]').forEach(b => b.onclick = () => {
     S.coach.email = b.dataset.email;
     S.coach.nom = b.dataset.nom;
     S.coach.sous = 'fiche';
@@ -4370,9 +4437,9 @@ function carteAthlete(a) {
             ? ` · semaine ${Math.min(p.semaine, p.duree_semaines)} sur ${p.duree_semaines}` : ''}</div>
          <div class="jauge" role="img" aria-label="${part} % du programme réalisé">
            <i style="width:${part}%"></i></div>
-         <div class="meta bas">${p ? `${p.faites} séance${p.faites > 1 ? 's' : ''} sur ${p.attendues} attendue${p.attendues > 1 ? 's' : ''}` : ''} · ${vu}${
+         <div class="meta bas">${a.ville ? a.ville + ' · ' : ''}${p ? `${p.faites} séance${p.faites > 1 ? 's' : ''} sur ${p.attendues} attendue${p.attendues > 1 ? 's' : ''}` : ''} · ${vu}${
            a.programme.paye ? '' : ' · <span class="impaye">à encaisser</span>'}</div>`
-      : `<div class="meta">Aucun programme attribué · ${vu}</div>`}
+      : `<div class="meta">${a.ville ? a.ville + ' · ' : ''}Aucun programme attribué · ${vu}</div>`}
   </button>`;
 }
 
@@ -4392,7 +4459,7 @@ async function creerPratiquant(p) {
     nom: String(p.nom || '').trim() || email.split('@')[0],
     role: 'pratiquant', admin: false, statut: 'Nouveau',
     telephone: String(p.telephone || ''), date_inscription: serverTimestamp(),
-    objectif: String(p.objectif || ''), notes: ''
+    notes: ''
   });
   return { email };
 }
@@ -4403,7 +4470,6 @@ function modalInscrire() {
       <input class="f" id="iMail" type="email" placeholder="prenom.nom@gmail.com"></div>
     <div class="champ"><label>Nom</label><input class="f" id="iNom" placeholder="Prénom Nom"></div>
     <div class="champ"><label>Téléphone</label><input class="f" id="iTel" type="tel" placeholder="06 12 34 56 78"></div>
-    <div class="champ"><label>Objectif</label><input class="f" id="iObj" placeholder="Prise de masse, remise en forme…"></div>
     <p class="consigne">Il doit se connecter avec cette adresse Google. Il démarre au statut
       <strong>Nouveau</strong> : inscrit, mais sans programme.</p>
     <div class="barre"><button class="btn" id="iAnn">Annuler</button>
@@ -4415,8 +4481,7 @@ function modalInscrire() {
       await creerPratiquant({
         email: w.querySelector('#iMail').value,
         nom: w.querySelector('#iNom').value,
-        telephone: w.querySelector('#iTel').value,
-        objectif: w.querySelector('#iObj').value
+        telephone: w.querySelector('#iTel').value
       });
       w.fermer(); toast('Pratiquant inscrit'); listeAthletes();
     } catch (err) {
@@ -4427,6 +4492,78 @@ function modalInscrire() {
   };
 }
 
+// ── Résumé du profil d'accueil, pour la fiche ───────────────────
+// Le profil complet (§ 8 unvicies) a des dizaines de champs, tous utiles pour
+// composer un programme mais illisibles d'un coup d'œil avant une séance. Ce
+// résumé n'en reprend que quatre — objectif, âge, rythme souhaité, motivation —
+// en une ou deux phrases de français courant, jamais une liste de champs.
+
+/** « lundi, mercredi et vendredi » — jamais de virgule seule avant le dernier terme. */
+function listeFr(items) {
+  if (items.length <= 1) return items[0] || '';
+  return items.slice(0, -1).join(', ') + ' et ' + items[items.length - 1];
+}
+
+/** Âge en années révolues à partir d'une date « AAAA-MM-JJ », ou null si absente. */
+function age(naissance) {
+  if (!naissance) return null;
+  const n = dateDeCle(naissance);
+  if (isNaN(n)) return null;
+  const auj = new Date();
+  let a = auj.getFullYear() - n.getFullYear();
+  if (auj.getMonth() < n.getMonth() || (auj.getMonth() === n.getMonth() && auj.getDate() < n.getDate())) a--;
+  return a;
+}
+
+/** Les objectifs notés au plus haut (curseurs 1-5) — ceux à 4-5, ou à défaut le seul maximum. */
+function objectifsPrincipaux(objectifs) {
+  const notes = PROFIL_OBJECTIFS.map(([k, label]) => [label, Number((objectifs || {})[k]) || 0])
+    .filter(([, v]) => v > 0);
+  if (!notes.length) return [];
+  const seuil = Math.min(4, Math.max(...notes.map(([, v]) => v)));
+  return notes.filter(([, v]) => v >= seuil).sort((a, b) => b[1] - a[1])
+    .map(([label]) => label.charAt(0).toLowerCase() + label.slice(1));
+}
+
+/** Jours cochés (union salle + hors salle) et moment de la journée le plus fréquent. */
+function resumeDispos(dispoSalle, dispoHorsSalle) {
+  const creneaux = (dispoSalle || []).concat(dispoHorsSalle || []);
+  if (!creneaux.length) return '';
+  const jours = new Set();
+  const moments = { matin: 0, 'après-midi': 0, soir: 0 };
+  creneaux.forEach(c => {
+    const [jour, heure] = c.split('|');
+    jours.add(jour);
+    const h = Number(heure);
+    moments[h < 12 ? 'matin' : h < 18 ? 'après-midi' : 'soir']++;
+  });
+  const joursTries = SEMAINE.filter(j => jours.has(j)).map(j => j.toLowerCase());
+  const quandJours = joursTries.length === 7 ? 'tous les jours' : listeFr(joursTries);
+  const [moment] = Object.entries(moments).sort((a, b) => b[1] - a[1])[0];
+  const quandMoment = moment === 'matin' ? 'plutôt le matin'
+    : moment === 'soir' ? 'plutôt en soirée' : "plutôt l'après-midi";
+  return `disponible ${quandJours}, ${quandMoment}`;
+}
+
+/** Le paragraphe affiché sur la fiche — chaîne vide si le profil n'a encore rien de rempli. */
+function resumeProfil(profil) {
+  const p = profil || {};
+  const buts = objectifsPrincipaux(p.objectifs);
+  const a = age(p.naissance);
+  const dispos = resumeDispos(p.dispoSalle, p.dispoHorsSalle);
+  const phrases = [];
+  if (buts.length) phrases.push(`Vise ${listeFr(buts)}.`);
+  if (a !== null) phrases.push(`${a} ans.`);
+  if (p.seancesSemaine) {
+    const n = Number(p.seancesSemaine);
+    phrases.push(`Souhaite ${n} séance${n > 1 ? 's' : ''} par semaine${dispos ? ', ' + dispos : ''}.`);
+  } else if (dispos) {
+    phrases.push(`${dispos.charAt(0).toUpperCase()}${dispos.slice(1)}.`);
+  }
+  if (p.motivation) phrases.push(`Motivation ${p.motivation}/10.`);
+  return phrases.join(' ');
+}
+
 // ── Fiche d'un pratiquant ────────────────────────────────────
 async function vueFiche() {
   let f;
@@ -4434,6 +4571,7 @@ async function vueFiche() {
   catch (err) { $('#zone').innerHTML = `<div class="empty">${err.message}</div>`; return; }
   S.fiche = f;
   const t = tel(f.telephone);
+  const resume = resumeProfil(f.profil);
   const enCours = f.attributions.filter(a => a.statut === 'En cours');
 
   $('#zone').innerHTML = `
@@ -4445,7 +4583,7 @@ async function vueFiche() {
           <div class="meta" style="margin-top:5px">${f.nbSeances} séance${f.nbSeances > 1 ? 's' : ''} · ${f.nbSeries} séries</div>
         </div>
       </div>
-      ${f.objectif ? `<p class="quoi"><span class="eyebrow">Objectif</span><br>${f.objectif}</p>` : ''}
+      <div class="eyebrow" style="margin-bottom:6px">Coordonnées</div>
       <div class="contacts">
         ${t ? `<a class="btn contact" href="https://wa.me/${t.replace('+','')}" target="_blank" rel="noopener">WhatsApp</a>` : ''}
         ${t ? `<a class="btn contact" href="tel:${t}">Appeler</a>` : ''}
@@ -4460,6 +4598,11 @@ async function vueFiche() {
       <input type="file" id="photoAppareil" accept="image/*" capture="environment" hidden>
       <input type="file" id="photoFichier" accept="image/*" hidden>
     </div>
+
+    ${resume ? `<div class="card" style="display:block;margin-top:22px">
+      <div class="eyebrow">Profil</div>
+      <p class="quoi" style="margin-top:6px">${resume}</p>
+    </div>` : ''}
 
     <button class="card mot" id="editMessage" style="display:block;width:100%;text-align:left;margin:22px 0 0">
       <div class="eyebrow">Message du coach</div>
@@ -4676,7 +4819,6 @@ function modalFiche(f) {
   const w = modal('Modifier la fiche', `
     <div class="champ"><label>Nom</label><input class="f" id="fNom" value="${f.nom}"></div>
     <div class="champ"><label>Téléphone</label><input class="f" id="fTel" type="tel" value="${f.telephone}" placeholder="06 12 34 56 78"></div>
-    <div class="champ"><label>Objectif</label><input class="f" id="fObj" value="${f.objectif}"></div>
     <div class="champ"><label>Notes</label><textarea class="f" id="fNot" rows="4" placeholder="Blessures, contraintes, remarques…">${f.notes}</textarea></div>
     <div class="barre"><button class="btn" id="fAnn2">Annuler</button>
       <button class="btn plein" id="fOk2" style="flex:1">Enregistrer</button></div>`);
@@ -4687,7 +4829,6 @@ function modalFiche(f) {
       await sauverPratiquant(f.email, {
         nom: w.querySelector('#fNom').value,
         telephone: w.querySelector('#fTel').value,
-        objectif: w.querySelector('#fObj').value,
         notes: w.querySelector('#fNot').value
       });
       w.fermer(); toast('Fiche enregistrée');
