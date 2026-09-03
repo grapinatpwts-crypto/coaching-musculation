@@ -22,5 +22,15 @@
   "Marche du fermier": { "video": "https://vimeo.com/457556229", "titre_source": "Farmer's walk" },
   "Négatives de traction": { "video": "https://vimeo.com/457563802", "titre_source": "Negative pull ups" },
   "Grimpeur": { "video": "https://vimeo.com/495875662", "titre_source": "Mountain climber" },
-  "Zercher squat": { "video": "https://vimeo.com/608821997", "titre_source": "Zercher squats" }
+  "Zercher squat": { "video": "https://vimeo.com/608821997", "titre_source": "Zercher squats" },
+  "Écarté incliné aux haltères": { "video": "https://vimeo.com/448543997", "titre_source": "DB flyes" },
+  "Pompes": { "video": "https://vimeo.com/457563835", "titre_source": "Hand Release Push up" },
+  "Dips pectoraux": { "video": "https://vimeo.com/457555558", "titre_source": "Dips" },
+  "Dips aux barres parallèles": { "video": "https://vimeo.com/457555558", "titre_source": "Dips" },
+  "Soulevé de terre": { "video": "https://vimeo.com/430044292", "titre_source": "Deadlift 1" },
+  "Rowing haltère un bras": { "video": "https://vimeo.com/568086804", "titre_source": "Bent-over DB row" },
+  "Rowing haltères deux bras": { "video": "https://vimeo.com/568086804", "titre_source": "Bent-over DB row" },
+  "Curl marteau à la poulie": { "video": "https://vimeo.com/457564006", "titre_source": "Low pulley bicep curl" },
+  "Hip thrust": { "video": "https://vimeo.com/608823935", "titre_source": "Hip thrust" },
+  "Pull through à la poulie": { "video": "https://vimeo.com/315009630", "titre_source": "Band pull-throughs" }
 }
