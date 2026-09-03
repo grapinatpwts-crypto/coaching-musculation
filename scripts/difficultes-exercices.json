@@ -1,0 +1,686 @@
+{
+  "Développé couché": {
+    "difficulte": "Débutant",
+    "source": "free-exercise-db"
+  },
+  "Développé incliné à la barre": {
+    "difficulte": "Débutant",
+    "source": "free-exercise-db"
+  },
+  "Développé décliné à la barre": {
+    "difficulte": "Débutant",
+    "source": "free-exercise-db"
+  },
+  "Développé couché aux haltères": {
+    "difficulte": "Débutant",
+    "source": "free-exercise-db"
+  },
+  "Développé incliné aux haltères": {
+    "difficulte": "Débutant",
+    "source": "free-exercise-db"
+  },
+  "Écarté couché aux haltères": {
+    "difficulte": "Débutant",
+    "source": "free-exercise-db"
+  },
+  "Écarté incliné aux haltères": {
+    "difficulte": "Débutant",
+    "source": "free-exercise-db"
+  },
+  "Écarté à la poulie haute": {
+    "difficulte": "Débutant",
+    "source": "free-exercise-db"
+  },
+  "Pec-deck": {
+    "difficulte": "Débutant",
+    "source": "free-exercise-db"
+  },
+  "Pompes": {
+    "difficulte": "Débutant",
+    "source": "free-exercise-db"
+  },
+  "Pull-over à l'haltère": {
+    "difficulte": "Intermédiaire",
+    "source": "free-exercise-db"
+  },
+  "Dips pectoraux": {
+    "difficulte": "Intermédiaire",
+    "source": "free-exercise-db"
+  },
+  "Soulevé de terre": {
+    "difficulte": "Intermédiaire",
+    "source": "free-exercise-db"
+  },
+  "Soulevé de terre sumo": {
+    "difficulte": "Intermédiaire",
+    "source": "free-exercise-db"
+  },
+  "Soulevé de terre roumain": {
+    "difficulte": "Intermédiaire",
+    "source": "free-exercise-db"
+  },
+  "Rack pull": {
+    "difficulte": "Intermédiaire",
+    "source": "free-exercise-db"
+  },
+  "Rowing barre buste penché": {
+    "difficulte": "Débutant",
+    "source": "free-exercise-db"
+  },
+  "Rowing barre en supination": {
+    "difficulte": "Intermédiaire",
+    "source": "free-exercise-db"
+  },
+  "Rowing haltère un bras": {
+    "difficulte": "Débutant",
+    "source": "free-exercise-db"
+  },
+  "Rowing haltères deux bras": {
+    "difficulte": "Débutant",
+    "source": "free-exercise-db"
+  },
+  "Rowing assis à la poulie": {
+    "difficulte": "Débutant",
+    "source": "free-exercise-db"
+  },
+  "Rowing T-bar": {
+    "difficulte": "Débutant",
+    "source": "free-exercise-db"
+  },
+  "Tirage vertical prise large": {
+    "difficulte": "Débutant",
+    "source": "free-exercise-db"
+  },
+  "Tirage vertical prise serrée": {
+    "difficulte": "Débutant",
+    "source": "free-exercise-db"
+  },
+  "Tractions pronation": {
+    "difficulte": "Débutant",
+    "source": "free-exercise-db"
+  },
+  "Tractions supination": {
+    "difficulte": "Débutant",
+    "source": "free-exercise-db"
+  },
+  "Pull-over à la poulie haute": {
+    "difficulte": "Débutant",
+    "source": "free-exercise-db"
+  },
+  "Extension lombaire au banc": {
+    "difficulte": "Débutant",
+    "source": "free-exercise-db"
+  },
+  "Good morning": {
+    "difficulte": "Intermédiaire",
+    "source": "free-exercise-db"
+  },
+  "Développé militaire debout": {
+    "difficulte": "Intermédiaire",
+    "source": "free-exercise-db"
+  },
+  "Développé militaire assis": {
+    "difficulte": "Intermédiaire",
+    "source": "free-exercise-db"
+  },
+  "Développé épaules aux haltères": {
+    "difficulte": "Intermédiaire",
+    "source": "free-exercise-db"
+  },
+  "Développé Arnold": {
+    "difficulte": "Intermédiaire",
+    "source": "free-exercise-db"
+  },
+  "Élévations latérales": {
+    "difficulte": "Débutant",
+    "source": "free-exercise-db"
+  },
+  "Élévations latérales à la poulie": {
+    "difficulte": "Débutant",
+    "source": "free-exercise-db"
+  },
+  "Élévations frontales": {
+    "difficulte": "Débutant",
+    "source": "free-exercise-db"
+  },
+  "Oiseau buste penché": {
+    "difficulte": "Débutant",
+    "source": "free-exercise-db"
+  },
+  "Face pull": {
+    "difficulte": "Intermédiaire",
+    "source": "free-exercise-db"
+  },
+  "Rowing menton aux haltères": {
+    "difficulte": "Débutant",
+    "source": "free-exercise-db"
+  },
+  "Haussements d'épaules à la barre": {
+    "difficulte": "Débutant",
+    "source": "free-exercise-db"
+  },
+  "Haussements d'épaules aux haltères": {
+    "difficulte": "Débutant",
+    "source": "free-exercise-db"
+  },
+  "Curl barre": {
+    "difficulte": "Débutant",
+    "source": "free-exercise-db"
+  },
+  "Curl à la barre EZ": {
+    "difficulte": "Débutant",
+    "source": "free-exercise-db"
+  },
+  "Curl haltères": {
+    "difficulte": "Débutant",
+    "source": "free-exercise-db"
+  },
+  "Curl marteau": {
+    "difficulte": "Débutant",
+    "source": "free-exercise-db"
+  },
+  "Curl incliné": {
+    "difficulte": "Débutant",
+    "source": "free-exercise-db"
+  },
+  "Curl au pupitre": {
+    "difficulte": "Débutant",
+    "source": "free-exercise-db"
+  },
+  "Curl concentré": {
+    "difficulte": "Débutant",
+    "source": "free-exercise-db"
+  },
+  "Curl marteau à la poulie": {
+    "difficulte": "Débutant",
+    "source": "free-exercise-db"
+  },
+  "Développé couché prise serrée": {
+    "difficulte": "Débutant",
+    "source": "free-exercise-db"
+  },
+  "Barre au front": {
+    "difficulte": "Débutant",
+    "source": "free-exercise-db"
+  },
+  "Extension à la poulie haute": {
+    "difficulte": "Débutant",
+    "source": "free-exercise-db"
+  },
+  "Extension nuque à la corde": {
+    "difficulte": "Débutant",
+    "source": "free-exercise-db"
+  },
+  "Extension nuque un bras": {
+    "difficulte": "Intermédiaire",
+    "source": "free-exercise-db"
+  },
+  "Dips sur banc": {
+    "difficulte": "Débutant",
+    "source": "free-exercise-db"
+  },
+  "Dips triceps": {
+    "difficulte": "Débutant",
+    "source": "free-exercise-db"
+  },
+  "Extension couché à la barre": {
+    "difficulte": "Intermédiaire",
+    "source": "free-exercise-db"
+  },
+  "Pompes prise serrée": {
+    "difficulte": "Intermédiaire",
+    "source": "free-exercise-db"
+  },
+  "Squat barre": {
+    "difficulte": "Débutant",
+    "source": "free-exercise-db"
+  },
+  "Squat complet": {
+    "difficulte": "Intermédiaire",
+    "source": "free-exercise-db"
+  },
+  "Squat avant": {
+    "difficulte": "Expert",
+    "source": "free-exercise-db"
+  },
+  "Box squat": {
+    "difficulte": "Intermédiaire",
+    "source": "free-exercise-db"
+  },
+  "Fente avant à la barre": {
+    "difficulte": "Intermédiaire",
+    "source": "free-exercise-db"
+  },
+  "Fente aux haltères": {
+    "difficulte": "Débutant",
+    "source": "free-exercise-db"
+  },
+  "Fente arrière": {
+    "difficulte": "Intermédiaire",
+    "source": "free-exercise-db"
+  },
+  "Fente marchée": {
+    "difficulte": "Débutant",
+    "source": "free-exercise-db"
+  },
+  "Goblet squat": {
+    "difficulte": "Débutant",
+    "source": "free-exercise-db"
+  },
+  "Squat bulgare": {
+    "difficulte": "Débutant",
+    "source": "free-exercise-db"
+  },
+  "Presse à cuisses": {
+    "difficulte": "Débutant",
+    "source": "free-exercise-db"
+  },
+  "Leg extension": {
+    "difficulte": "Débutant",
+    "source": "free-exercise-db"
+  },
+  "Leg curl allongé": {
+    "difficulte": "Débutant",
+    "source": "free-exercise-db"
+  },
+  "Leg curl assis": {
+    "difficulte": "Débutant",
+    "source": "free-exercise-db"
+  },
+  "Hack squat à la barre": {
+    "difficulte": "Intermédiaire",
+    "source": "free-exercise-db"
+  },
+  "Montée sur banc": {
+    "difficulte": "Intermédiaire",
+    "source": "free-exercise-db"
+  },
+  "Mollets debout": {
+    "difficulte": "Débutant",
+    "source": "free-exercise-db"
+  },
+  "Mollets assis": {
+    "difficulte": "Débutant",
+    "source": "free-exercise-db"
+  },
+  "Mollets à la presse": {
+    "difficulte": "Débutant",
+    "source": "free-exercise-db"
+  },
+  "Hip thrust": {
+    "difficulte": "Intermédiaire",
+    "source": "free-exercise-db"
+  },
+  "Pont fessier à la barre": {
+    "difficulte": "Intermédiaire",
+    "source": "free-exercise-db"
+  },
+  "Pont fessier unilatéral": {
+    "difficulte": "Débutant",
+    "source": "free-exercise-db"
+  },
+  "Kickback à la poulie": {
+    "difficulte": "Intermédiaire",
+    "source": "free-exercise-db"
+  },
+  "Pull through à la poulie": {
+    "difficulte": "Débutant",
+    "source": "free-exercise-db"
+  },
+  "Montée sur banc avec relevé de genou": {
+    "difficulte": "Débutant",
+    "source": "free-exercise-db"
+  },
+  "Swing kettlebell": {
+    "difficulte": "Intermédiaire",
+    "source": "free-exercise-db"
+  },
+  "Gainage face": {
+    "difficulte": "Débutant",
+    "source": "free-exercise-db"
+  },
+  "Gainage latéral": {
+    "difficulte": "Débutant",
+    "source": "free-exercise-db"
+  },
+  "Crunch": {
+    "difficulte": "Débutant",
+    "source": "free-exercise-db"
+  },
+  "Crunch à la poulie": {
+    "difficulte": "Débutant",
+    "source": "free-exercise-db"
+  },
+  "Relevé de jambes suspendu": {
+    "difficulte": "Expert",
+    "source": "free-exercise-db"
+  },
+  "Crunch bicyclette": {
+    "difficulte": "Débutant",
+    "source": "free-exercise-db"
+  },
+  "Russian twist": {
+    "difficulte": "Intermédiaire",
+    "source": "free-exercise-db"
+  },
+  "Roulette abdominale à genoux": {
+    "difficulte": "Expert",
+    "source": "free-exercise-db"
+  },
+  "Crunch décliné": {
+    "difficulte": "Intermédiaire",
+    "source": "free-exercise-db"
+  },
+  "Dead bug": {
+    "difficulte": "Débutant",
+    "source": "free-exercise-db"
+  },
+  "Curl poignets": {
+    "difficulte": "Débutant",
+    "source": "free-exercise-db"
+  },
+  "Extension poignets": {
+    "difficulte": "Débutant",
+    "source": "free-exercise-db"
+  },
+  "Marche du fermier": {
+    "difficulte": "Intermédiaire",
+    "source": "free-exercise-db"
+  },
+  "Muscle-up": {
+    "difficulte": "Intermédiaire",
+    "source": "free-exercise-db"
+  },
+  "Traction australienne": {
+    "difficulte": "Débutant",
+    "source": "free-exercise-db"
+  },
+  "Traction prise neutre": {
+    "difficulte": "Intermédiaire",
+    "source": "projet"
+  },
+  "Traction lestée": {
+    "difficulte": "Expert",
+    "source": "projet"
+  },
+  "Traction tempo": {
+    "difficulte": "Intermédiaire",
+    "source": "projet"
+  },
+  "Négatives de traction": {
+    "difficulte": "Intermédiaire",
+    "source": "projet"
+  },
+  "Pompes en équilibre": {
+    "difficulte": "Expert",
+    "source": "free-exercise-db"
+  },
+  "Pompes piquées": {
+    "difficulte": "Intermédiaire",
+    "source": "projet"
+  },
+  "Pompes déclinées": {
+    "difficulte": "Débutant",
+    "source": "free-exercise-db"
+  },
+  "Pompes inclinées": {
+    "difficulte": "Débutant",
+    "source": "free-exercise-db"
+  },
+  "Pompes archer": {
+    "difficulte": "Intermédiaire",
+    "source": "projet"
+  },
+  "Pompes à un bras": {
+    "difficulte": "Expert",
+    "source": "projet"
+  },
+  "Pompes sautées": {
+    "difficulte": "Intermédiaire",
+    "source": "projet"
+  },
+  "Dips aux barres parallèles": {
+    "difficulte": "Débutant",
+    "source": "free-exercise-db"
+  },
+  "L-sit": {
+    "difficulte": "Expert",
+    "source": "projet"
+  },
+  "Front lever": {
+    "difficulte": "Expert",
+    "source": "projet"
+  },
+  "Back lever": {
+    "difficulte": "Expert",
+    "source": "projet"
+  },
+  "Planche gymnique": {
+    "difficulte": "Expert",
+    "source": "projet"
+  },
+  "Hollow body": {
+    "difficulte": "Intermédiaire",
+    "source": "projet"
+  },
+  "Superman au sol": {
+    "difficulte": "Débutant",
+    "source": "free-exercise-db"
+  },
+  "Dragon flag": {
+    "difficulte": "Expert",
+    "source": "projet"
+  },
+  "Relevé de jambes à la barre": {
+    "difficulte": "Expert",
+    "source": "free-exercise-db"
+  },
+  "Essuie-glace": {
+    "difficulte": "Intermédiaire",
+    "source": "projet"
+  },
+  "Squat pistolet": {
+    "difficulte": "Expert",
+    "source": "projet"
+  },
+  "Squat sauté": {
+    "difficulte": "Intermédiaire",
+    "source": "free-exercise-db"
+  },
+  "Fentes sautées": {
+    "difficulte": "Intermédiaire",
+    "source": "projet"
+  },
+  "Leg curl nordique": {
+    "difficulte": "Intermédiaire",
+    "source": "projet"
+  },
+  "Chaise au mur": {
+    "difficulte": "Débutant",
+    "source": "projet"
+  },
+  "Montées de genoux": {
+    "difficulte": "Débutant",
+    "source": "projet"
+  },
+  "Grimpeur": {
+    "difficulte": "Débutant",
+    "source": "free-exercise-db"
+  },
+  "Burpee": {
+    "difficulte": "Débutant",
+    "source": "projet"
+  },
+  "Saut groupé": {
+    "difficulte": "Débutant",
+    "source": "free-exercise-db"
+  },
+  "Saut sur boîte": {
+    "difficulte": "Débutant",
+    "source": "free-exercise-db"
+  },
+  "Gainage bras tendus": {
+    "difficulte": "Débutant",
+    "source": "projet"
+  },
+  "Gainage dynamique": {
+    "difficulte": "Intermédiaire",
+    "source": "projet"
+  },
+  "Pont fessier au sol": {
+    "difficulte": "Débutant",
+    "source": "projet"
+  },
+  "Suspension passive": {
+    "difficulte": "Débutant",
+    "source": "projet"
+  },
+  "Suspension active": {
+    "difficulte": "Débutant",
+    "source": "projet"
+  },
+  "Suspension horizontale active": {
+    "difficulte": "Débutant",
+    "source": "projet"
+  },
+  "Support actif aux dips": {
+    "difficulte": "Débutant",
+    "source": "projet"
+  },
+  "Support actif en pompes": {
+    "difficulte": "Débutant",
+    "source": "projet"
+  },
+  "Support actif en pompes piquées": {
+    "difficulte": "Intermédiaire",
+    "source": "projet"
+  },
+  "Tractions d'omoplates": {
+    "difficulte": "Débutant",
+    "source": "projet"
+  },
+  "Dips d'omoplates": {
+    "difficulte": "Débutant",
+    "source": "projet"
+  },
+  "Rows d'omoplates": {
+    "difficulte": "Débutant",
+    "source": "projet"
+  },
+  "Pompes d'omoplates": {
+    "difficulte": "Débutant",
+    "source": "projet"
+  },
+  "Négatives de dips": {
+    "difficulte": "Intermédiaire",
+    "source": "projet"
+  },
+  "Négatives de pompes": {
+    "difficulte": "Intermédiaire",
+    "source": "projet"
+  },
+  "Tractions explosives": {
+    "difficulte": "Expert",
+    "source": "projet"
+  },
+  "Dips explosifs": {
+    "difficulte": "Intermédiaire",
+    "source": "projet"
+  },
+  "Tractions avec élastique": {
+    "difficulte": "Intermédiaire",
+    "source": "projet"
+  },
+  "Dips avec élastique": {
+    "difficulte": "Intermédiaire",
+    "source": "projet"
+  },
+  "Rowing horizontal pronation": {
+    "difficulte": "Débutant",
+    "source": "projet"
+  },
+  "Rowing horizontal supination": {
+    "difficulte": "Débutant",
+    "source": "projet"
+  },
+  "Rowing horizontal à un bras": {
+    "difficulte": "Intermédiaire",
+    "source": "projet"
+  },
+  "Pompes sur les genoux": {
+    "difficulte": "Débutant",
+    "source": "projet"
+  },
+  "Pompes surélevées": {
+    "difficulte": "Débutant",
+    "source": "projet"
+  },
+  "Dips sur barre droite": {
+    "difficulte": "Intermédiaire",
+    "source": "projet"
+  },
+  "Squat profond": {
+    "difficulte": "Débutant",
+    "source": "projet"
+  },
+  "Squats serrés": {
+    "difficulte": "Débutant",
+    "source": "projet"
+  },
+  "Squats archer": {
+    "difficulte": "Intermédiaire",
+    "source": "projet"
+  },
+  "Squat pistolet assisté": {
+    "difficulte": "Intermédiaire",
+    "source": "projet"
+  },
+  "Squat pistolet surélevé": {
+    "difficulte": "Intermédiaire",
+    "source": "projet"
+  },
+  "Tuck L-sit": {
+    "difficulte": "Intermédiaire",
+    "source": "projet"
+  },
+  "Relevé de genoux suspendu": {
+    "difficulte": "Intermédiaire",
+    "source": "projet"
+  },
+  "Relevé de jambes au sol": {
+    "difficulte": "Débutant",
+    "source": "projet"
+  },
+  "Crunch croisé debout": {
+    "difficulte": "Débutant",
+    "source": "projet"
+  },
+  "Pont en table": {
+    "difficulte": "Débutant",
+    "source": "projet"
+  },
+  "Équilibre au mur": {
+    "difficulte": "Intermédiaire",
+    "source": "projet"
+  },
+  "Skin the cat": {
+    "difficulte": "Intermédiaire",
+    "source": "projet"
+  },
+  "Fente sur Smith machine": {
+    "difficulte": "Débutant",
+    "source": "projet"
+  },
+  "Soulevé de terre roumain aux haltères": {
+    "difficulte": "Intermédiaire",
+    "source": "projet"
+  },
+  "Zercher squat": {
+    "difficulte": "Intermédiaire",
+    "source": "projet"
+  },
+  "Hip thrust à la machine": {
+    "difficulte": "Débutant",
+    "source": "projet"
+  }
+}

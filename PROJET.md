@@ -128,6 +128,7 @@ attributions/{attributionId}                 # auto-id, TOP-LEVEL (requêtes par
   fin_prevue                                 # 'AAAA-MM-JJ' — le plan ; date_fin est la clôture réelle
   attributions/{id}/planning/{AAAA-MM-JJ}    # exceptions : séance déplacée, annulée, supprimée
   nb_jours, nb_exercices                     # dénormalisés, lus par les listes
+  duree_max_min                              # la séance la plus longue, en minutes — filtre « temps max »
   attributions/{id}/programme/{ligneId}      # copie des lignes du modèle au moment de l'attribution
   attributions/{id}/ajustements/{exerciceId} # doc ID = exercice_id, écrit par le pratiquant lui-même
 
@@ -559,12 +560,13 @@ photo reste le repli sans vidéo. Voir le geste pendant l'exécution sans quitte
 séance en cours était le point : ouvrir un nouvel onglet en salle, réseau
 capricieux, aurait pu faire perdre la page.
 
-**Modèles.** Deux niveaux. L'écran ouvre sur les **catégories**, en boutons : c'est
-la première question que se pose le coach — force, hypertrophie, endurance. Une
-catégorie ouvre sa page, où les modèles sont rangés en **sections pliées par
-difficulté** et triés par nom.
+**Modèles.** Un seul écran, la même barre que les deux autres listes (§ 8 undecies) :
+création, recherche, filtres, regroupement. Les catégories étaient un premier niveau
+à part — un écran de gros boutons, puis la page d'une catégorie ; elles sont devenues
+un **regroupement parmi deux** (Type, Difficulté), pour que le tri de la liste se
+change d'un tap au lieu d'un aller-retour de navigation.
 
-Catégorie et difficulté sont des **listes ouvertes** : le coach tape ce qu'il veut,
+Catégorie et difficulté restent des **listes ouvertes** : le coach tape ce qu'il veut,
 les valeurs déjà utilisées lui sont proposées. Rien n'est figé dans le code, sinon
 l'ordre d'affichage des quatre difficultés usuelles — les autres viennent ensuite,
 « Sans difficulté » en dernier.
@@ -801,6 +803,32 @@ L'import est **relançable** : un exercice dont le nom existe déjà est ignoré
 fiches saisies par le coach ne sont jamais touchées, et les identifiants continuent
 la numérotation existante.
 
+### Difficulté d'exécution
+
+Chaque exercice porte une **difficulté** — Débutant, Intermédiaire, Expert — que la
+bibliothèque filtre et regroupe. Trois niveaux, pas les quatre d'un modèle : la
+difficulté d'un modèle est un ressenti de coach, celle d'un exercice dit ce qu'il
+faut savoir faire pour l'exécuter proprement.
+
+Elle n'existait pas au départ : `Catalogue.js` n'avait pas repris le champ `level`
+de free-exercise-db. `scripts/generer-difficultes.mjs` la reconstitue dans
+`scripts/difficultes-exercices.json`, et **le fichier dit d'où vient chaque valeur** :
+
+- `free-exercise-db` (**109 exercices**) — le `level` de la base d'origine. La
+  correspondance est exacte et non approximative : l'URL de photo déjà stockée
+  contient l'identifiant source, on lit le niveau dessus. Aucun rapprochement de noms.
+- `projet` (**62 exercices**) — les mouvements au poids du corps rédigés ici, absents
+  de la base d'origine (ni photo ni nom anglais). Classés à la main, selon une règle
+  simple : une variante vaut un cran de plus que le mouvement de base — négatives et
+  élastiques en dessous du mouvement complet, lesté et explosif au-dessus. C'est un
+  jugement, pas une donnée sourcée ; le `source: 'projet'` sert précisément à savoir
+  lesquels relire.
+
+Sur une base déjà peuplée, c'est `scripts/appliquer-difficultes.mjs` qui la pose —
+un `update` d'un seul champ, et seulement là où rien n'est renseigné. Surtout pas le
+seed, qui écrit les exercices avec `set()` sans merge et écraserait les vidéos et
+les retouches faites depuis l'app.
+
 ## 8 decies. Statuts des pratiquants
 
 | Statut | Ce que ça veut dire | Accès à l'app |
@@ -833,20 +861,33 @@ programme n'est pas payé.
 jamais.** Pensés pour la liste une fois passée la quarantaine de pratiquants
 annoncée, où faire défiler ne suffit plus — mais la première version mêlait
 tri et filtres dans la même rangée de pastilles, confusion signalée à l'usage.
-**Filtrer** (recherche par nom, statut, programme, paiement) réduit la liste :
-un bouton à côté de la recherche ouvre `modalFiltresAthletes()`, badge rouge
-au nombre de filtres actifs ; une fois la modale fermée, chaque filtre posé
-reste visible sous forme de puce retirable d'un tap (`peindrePuces()`), sans
-rouvrir la modale. **Regrouper** (Aucun / Ville / Ancienneté) réorganise
-l'affichage sans rien exclure : une ligne à part, toujours visible, en onglets
-soulignés plutôt qu'en pastilles pleines — pour qu'on ne la confonde jamais
-avec un filtre. « Ville » et « Ancienneté » ouvrent des sections repliables
-(`sectionsAthletes()`, même disclosure `.pli` que « Mes programmes » et la
-bibliothèque), dépliées par défaut ; « Aucun » garde la liste plate d'origine,
-triée statut puis récence.
+**Filtrer** réduit la liste : un bouton à côté de la recherche ouvre la modale,
+badge rouge au nombre de filtres actifs ; une fois la modale fermée, chaque
+filtre posé reste visible sous forme de puce retirable d'un tap, sans rouvrir
+la modale. **Regrouper** réorganise l'affichage sans rien exclure : une ligne à
+part, toujours visible, en onglets soulignés plutôt qu'en pastilles pleines —
+pour qu'on ne la confonde jamais avec un filtre. Un regroupement autre que
+« Aucun » ouvre des **sections repliables** (même disclosure `.pli` que « Mes
+programmes »), dépliées par défaut ; « Aucun » garde la liste plate d'origine.
+
+**Les trois listes du coach partagent cette barre** — athlètes, modèles,
+bibliothèque — dans cet ordre : bouton de création, recherche, bouton Filtrer,
+puces, regroupement, contenu. `monterListe(vue)` la monte ; ce qui change d'une
+liste à l'autre tient dans trois déclarations que chaque écran fournit : ses
+**filtres** (`{champ, label, options, test}` — la valeur vide vaut toujours
+« tous »), ses **regroupements** (`{cle, libelle, cle_de, ordre}`) et sa
+**carte**. Ajouter un filtre, c'est ajouter une ligne à un tableau, pas écrire
+un écran ; et les trois listes ne peuvent pas diverger d'aspect puisqu'elles ne
+partagent pas seulement le CSS mais le code qui les monte.
+
+| Liste | Filtres | Regroupements |
+|---|---|---|
+| Athlètes | statut, programme, paiement | ville, ancienneté |
+| Modèles | type, difficulté, séances/semaine, temps max d'une séance, page source | type, difficulté |
+| Bibliothèque | groupe musculaire, équipement, illustration, vidéo | groupe, équipement, difficulté |
 
 `dataCoachAthletes()` charge tout en un appel (comme avant) ; `S.athletes`
-reste en mémoire et `peindreAthletes()` refiltre/regroupe côté client à
+reste en mémoire et `peindreListe()` refiltre/regroupe côté client à
 chaque frappe ou pastille — jamais de retour réseau, jamais de re-rendu de la
 barre de recherche elle-même (elle perdrait le focus en pleine frappe, même
 piège que `choisirExercice()` § 8 vicies). Le regroupement par ville lit
@@ -1155,8 +1196,13 @@ serveur entre les deux, et `persistentLocalCache` sert le hors-ligne nativement.
 
 - **Dénormaliser plutôt que recalculer à volée** — `resume.nbSeances` sur le profil
   évite de lire l'historique de tous les athlètes à l'ouverture de la liste
-  (`dataCoachAthletes`) ; `nb_jours`/`nb_exercices` sur les attributions et modèles
-  évitent de lire leurs sous-collections juste pour les compter.
+  (`dataCoachAthletes`) ; `nb_jours`/`nb_exercices`/`duree_max_min` sur les
+  attributions et modèles évitent de lire leurs sous-collections juste pour les
+  compter — ou, pour la durée, pour rejouer `estimerDuree` sur chaque modèle à
+  l'ouverture de la liste. Les trois sont réécrits ensemble à chaque
+  enregistrement ou suppression de jour ; un modèle qui n'a pas encore de durée
+  (composé avant, ou versé par le seed) la reçoit au premier affichage de la
+  liste, `rattraperDureesModeles` ne lisant les lignes que de ceux-là.
 - **Photos différées** : toujours vrai, `dataPhotos` part après la liste des
   athlètes, pas avec.
 - **Historique borné** : la formule d'Epley et « dernier/record » ne lisent plus

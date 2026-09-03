@@ -49,6 +49,12 @@ const db = admin.firestore();
 
 const CHAMPS_EXERCICE = ['nom', 'groupe', 'equipement', 'nom_en', 'consigne', 'photo'];
 
+// La difficulté d'exécution ne vient pas de Catalogue.js (qui ne l'a jamais portée)
+// mais de `difficultes-exercices.json` — voir generer-difficultes.mjs pour sa
+// provenance. Sur une base déjà peuplée, c'est appliquer-difficultes.mjs qu'il faut :
+// le seed, lui, écrase (`set` sans merge).
+const DIFFICULTES = JSON.parse(readFileSync(path.join(__dirname, 'difficultes-exercices.json'), 'utf8'));
+
 async function ecrireParLots(operations, taille = 450) {
   for (let i = 0; i < operations.length; i += taille) {
     const batch = db.batch();
@@ -64,6 +70,7 @@ async function seedExercices() {
     parNom[c[0].trim().toLowerCase()] = id;
     const doc = { id, video: '' };
     CHAMPS_EXERCICE.forEach((champ, j) => { doc[champ] = c[j] ?? ''; });
+    doc.difficulte = (DIFFICULTES[c[0].trim()] || {}).difficulte || '';
     return (batch) => batch.set(db.collection('exercices').doc(id), doc);
   });
   await ecrireParLots(operations);

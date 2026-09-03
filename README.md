@@ -69,6 +69,18 @@ Verse le catalogue d'exercices (`apps-script/Catalogue.js`, 171 fiches sous
 licence libre), dix programmes-types réutilisables, et crée le compte coach/admin
 (`CONFIG.COACH_EMAIL` dans `apps-script/Code.js`).
 
+**Sur une base déjà peuplée, ne relancez pas le seed** — il réécrit les exercices
+sans merge et perdrait les vidéos et retouches faites depuis l'app. Pour poser la
+difficulté d'exécution sur des exercices déjà en place :
+
+```bash
+GOOGLE_APPLICATION_CREDENTIALS=./service-account.json node appliquer-difficultes.mjs
+```
+
+Un seul champ écrit, et seulement là où rien n'est renseigné (`--forcer` pour
+réécrire aussi les difficultés déjà posées). La table vient de
+`scripts/difficultes-exercices.json`, régénérable par `node generer-difficultes.mjs`.
+
 ## Étape 4 — Renseigner la configuration côté client
 
 Dans `index.html`, le module `<script type="module">` en tête de fichier :

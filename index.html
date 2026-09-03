@@ -95,12 +95,6 @@ button{font-family:inherit;font-size:16px;border:0;cursor:pointer;color:inherit;
 /* En-tête */
 header{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:22px;flex-wrap:wrap}
 header h2{flex:1}
-/* Catégories de modèles : de grandes cibles, une par ligne */
-.cats{display:flex;flex-direction:column;gap:9px;margin-top:18px}
-.cat{display:flex;align-items:center;gap:12px;width:100%;text-align:left;padding:16px;
-  background:var(--plate);border:1px solid var(--edge);border-radius:var(--r)}
-.cat .nom{flex:1;font-size:17px;font-weight:600}
-.cat .compte{font-family:'Bebas Neue',Impact,sans-serif;font-size:22px;color:var(--brand-ink)}
 
 /* Sections pliées par difficulté */
 .pli{border-bottom:1px solid var(--edge);margin-bottom:2px}
@@ -892,6 +886,17 @@ function estimerDuree(blocs) {
   return Math.round(secondes / 60);
 }
 
+/**
+ * La séance la plus longue d'un programme, en minutes. Dénormalisée sur le document
+ * (`duree_max_min`) à chaque écriture de jour : la liste des modèles la filtre, et
+ * elle ne se recalcule pas sans lire toutes les lignes de tous les modèles.
+ * Les noms d'exercice ne servent qu'à l'affichage, d'où le `{}`.
+ */
+function dureeMaxSeance(lignes) {
+  const jours = grouperEnJours(lignes, {});
+  return jours.length ? Math.max(...jours.map(j => j.duree_estimee || 0)) : 0;
+}
+
 /** Lignes plates → jours, chacun découpé en blocs (supersets et circuits). */
 function grouperEnJours(lignes, noms) {
   const jours = [];
@@ -939,6 +944,7 @@ async function dataCatalogue() {
     list.push({
       id: d.id, nom: e.nom, nom_en: e.nom_en || '', groupe: e.groupe || '',
       equipement: e.equipement || '', consigne: e.consigne || '',
+      difficulte: e.difficulte || '',
       photo: e.photo || '', video: e.video || ''
     });
   });
@@ -977,10 +983,35 @@ async function dataModeles() {
       id: d.id, nom: m.nom, categorie: m.categorie || '', difficulte: m.difficulte || '',
       description: m.description || '', duree_semaines: Number(m.duree_semaines) || 0,
       statut: m.statut || 'Brouillon', source: m.source || '', video: m.video || '',
-      nbJours: Number(m.nb_jours) || 0, nbExercices: Number(m.nb_exercices) || 0
+      nbJours: Number(m.nb_jours) || 0, nbExercices: Number(m.nb_exercices) || 0,
+      // `null` et non 0 : un modèle d'avant la dénormalisation n'a pas « zéro minute »,
+      // il a une durée encore inconnue. `rattraperDureesModeles` s'en charge.
+      dureeMax: m.duree_max_min === undefined ? null : Number(m.duree_max_min) || 0
     });
   });
   return list.sort((a, b) => String(a.nom).localeCompare(String(b.nom), 'fr'));
+}
+
+/**
+ * Pose `duree_max_min` sur les modèles qui n'en ont pas : ceux composés avant que la
+ * liste ne sache filtrer sur la durée d'une séance, et ceux du seed — qui ne le calcule
+ * pas, pour ne pas dupliquer `estimerDuree` en Node et le laisser diverger. Une lecture
+ * de lignes par modèle concerné, une seule fois : au prochain affichage ils l'ont tous,
+ * et les écritures de jour l'entretiennent ensuite. Un échec ne bloque rien, la durée
+ * reste « inconnue » et le filtre « temps max » laisse simplement ce modèle de côté.
+ */
+async function rattraperDureesModeles(modeles) {
+  const { db, doc, collection, getDocs, updateDoc } = FB;
+  const aFaire = modeles.filter(m => m.dureeMax === null);
+  if (!aFaire.length) return false;
+  await Promise.all(aFaire.map(async m => {
+    try {
+      const lignes = (await getDocs(collection(db, 'modeles', m.id, 'lignes'))).docs.map(d => d.data());
+      m.dureeMax = dureeMaxSeance(lignes);
+      await updateDoc(doc(db, 'modeles', m.id), { duree_max_min: m.dureeMax });
+    } catch (err) { m.dureeMax = 0; }
+  }));
+  return true;
 }
 
 /** Un modèle et son contenu, regroupé en jours puis en blocs. */
@@ -1878,6 +1909,7 @@ async function sauverExercice(p) {
   const champs = {
     nom, nom_en: String(p.nom_en || '').trim(), groupe: String(p.groupe || '').trim(),
     equipement: String(p.equipement || '').trim(), consigne: String(p.consigne || '').trim(),
+    difficulte: String(p.difficulte || '').trim(),
     photo: String(p.photo || '').trim(), video: String(p.video || '').trim()
   };
   if (p.id) {
@@ -2201,7 +2233,7 @@ async function rendre() {
     S.coach = S.coach || { onglet:'athletes', email:null, nom:'', sous:'fiche', modele:null, categorie:null };
     // Changer d'onglet principal quitte la fiche ou le modèle en cours.
     if (S.coach.onglet !== S.vue) {
-      S.coach.onglet = S.vue; S.coach.email = null; S.coach.modele = null; S.coach.categorie = null;
+      S.coach.onglet = S.vue; S.coach.email = null; S.coach.modele = null;
       S.attSel = null; S.ed = null; S.cal = null;
     }
     return vueCoach();
@@ -4284,7 +4316,7 @@ async function vueCoach() {
 
   if (c.modele) {
     app.innerHTML = `
-      <header><h2>Modèle</h2><button class="close" id="retour">← ${c.categorie || 'Modèles'}</button></header>
+      <header><h2>Modèle</h2><button class="close" id="retour">← Modèles</button></header>
       <div id="zone"><div class="empty">Chargement…</div></div>`;
     $('#retour').onclick = () => { c.modele = null; S.ed = null; vueCoach(); };
     return vueModele();
@@ -4380,179 +4412,236 @@ function pastilleGroupe(container, role, on) {
   });
 }
 
-/** Nombre de filtres (pas le regroupement, qui n'en est pas un) réellement actifs. */
-function nbFiltresActifs(f) { return (f.statut ? 1 : 0) + (f.programme ? 1 : 0) + (f.impaye ? 1 : 0); }
+// ── Barre de liste : recherche, filtres, regroupement ────────
+// Les trois listes du coach — athlètes, modèles, bibliothèque — partagent la même
+// barre : bouton de création, recherche, bouton Filtrer avec son badge, puces des
+// filtres posés, puis la ligne Regrouper. Ce qui change d'une liste à l'autre tient
+// dans trois déclarations : les filtres (`specs`), les regroupements, et la carte.
+// Filtrer réduit la liste, regrouper la réorganise : deux gestes, deux formes —
+// pastilles pleines d'un côté, onglets soulignés de l'autre.
+//
+// Un filtre se déclare en une ligne : le champ qu'il occupe dans l'état, son titre,
+// ses pastilles, et le test qui va avec. La valeur vide vaut toujours « tous ».
 
-function filtrerAthletes(f) {
-  const q = (f.q || '').trim().toLowerCase();
-  return (S.athletes || []).filter(a =>
-    (!q || a.nom.toLowerCase().includes(q)) &&
-    (!f.statut || a.statut === f.statut) &&
-    // « Avec/sans programme » = un programme encore planifié à partir d'aujourd'hui
-    // (a.planifie), pas seulement « une attribution existe » — une attribution
-    // 'En cours' dont la fin prévue est passée mais jamais close ne compte plus
-    // comme planifiée.
-    (!f.programme || (f.programme === 'avec' ? a.planifie : !a.planifie)) &&
-    (!f.impaye || (a.programme && a.programme.paye === false)));
+/** Les pastilles d'un filtre, dans la modale. */
+function filtreHTML(spec, valeur) {
+  return `<div class="champ"><label>${spec.label}</label>
+    <div class="sous" data-role="f_${spec.champ}">${spec.options.map(([v, l]) =>
+      `<button type="button" data-v="${v}" aria-pressed="${String(valeur || '') === String(v)}">${l}</button>`).join('')}
+    </div></div>`;
 }
 
-/** La modale de filtres — statut/programme/paiement, jamais le regroupement (§ ligne toujours visible). */
-function modalFiltresAthletes(f, appliquer) {
+/** La modale de filtres d'une liste, montée depuis ses `specs`. */
+function modalFiltres(specs, f, appliquer) {
   const w = modal('Filtrer', `
-    <div class="champ"><label>Statut</label><div class="sous" data-role="mst">
-      <button type="button" data-v="" aria-pressed="${!f.statut}">Tous</button>
-      ${ETATS.map(e => `<button type="button" data-v="${e}" aria-pressed="${f.statut === e}">${e}</button>`).join('')}
-    </div></div>
-    <div class="champ"><label>Programme</label><div class="sous" data-role="mpr">
-      <button type="button" data-v="" aria-pressed="${!f.programme}">Tous</button>
-      <button type="button" data-v="avec" aria-pressed="${f.programme === 'avec'}">Avec programme</button>
-      <button type="button" data-v="sans" aria-pressed="${f.programme === 'sans'}">Sans programme</button>
-    </div></div>
-    <div class="champ"><label>Paiement</label><div class="sous" data-role="mim">
-      <button type="button" data-v="0" aria-pressed="${!f.impaye}">Tous</button>
-      <button type="button" data-v="1" aria-pressed="${f.impaye}">Non payé</button>
-    </div></div>
+    ${specs.map(s => filtreHTML(s, f[s.champ])).join('')}
     <button class="btn plein" id="fAppliquer" style="width:100%;justify-content:center;margin-top:6px">Voir les résultats</button>`);
-  pastilleGroupe(w, 'mst', v => f.statut = v);
-  pastilleGroupe(w, 'mpr', v => f.programme = v);
-  pastilleGroupe(w, 'mim', v => f.impaye = v === '1');
+  specs.forEach(s => pastilleGroupe(w, 'f_' + s.champ, v => { f[s.champ] = v; }));
   w.querySelector('#fAppliquer').onclick = () => { w.fermer(); appliquer(); };
 }
 
-function libellesFiltresAthletes(f) {
-  const out = [];
-  if (f.statut) out.push({ k: 'statut', label: f.statut });
-  if (f.programme) out.push({ k: 'programme', label: f.programme === 'avec' ? 'Avec programme' : 'Sans programme' });
-  if (f.impaye) out.push({ k: 'impaye', label: 'Non payé' });
-  return out;
+/** Applique la recherche puis chaque filtre posé. */
+function filtrerListe(items, f, specs, recherche) {
+  const q = (f.q || '').trim().toLowerCase();
+  return items.filter(x =>
+    (!q || recherche(x).toLowerCase().includes(q)) &&
+    specs.every(s => !f[s.champ] || s.test(x, f[s.champ])));
 }
 
-function regrouperRow(f) {
+function nbFiltresActifs(f, specs) { return specs.filter(s => f[s.champ]).length; }
+
+/** Les filtres posés, avec le libellé de leur pastille — pour les puces retirables. */
+function libellesFiltres(f, specs) {
+  return specs.filter(s => f[s.champ]).map(s => {
+    const trouve = s.options.find(o => String(o[0]) === String(f[s.champ]));
+    return { champ: s.champ, label: trouve ? trouve[1] : f[s.champ] };
+  });
+}
+
+/** La ligne Regrouper : `options` = [[clé, libellé], …], la première étant « Aucun ». */
+function regrouperRow(options, valeur) {
   return `<div class="regrouper" data-role="rg">
     <span class="rlabel">Regrouper</span>
-    <div class="ropts">
-      <button type="button" data-v="defaut" aria-pressed="${f.regrouper === 'defaut'}">Aucun</button>
-      <button type="button" data-v="ville" aria-pressed="${f.regrouper === 'ville'}">Ville</button>
-      <button type="button" data-v="anciennete" aria-pressed="${f.regrouper === 'anciennete'}">Ancienneté</button>
+    <div class="ropts">${options.map(([v, l]) =>
+      `<button type="button" data-v="${v}" aria-pressed="${valeur === v}">${l}</button>`).join('')}
     </div>
   </div>`;
 }
 
-function ordreVilles(noms) {
-  return noms.sort((a, b) => a === 'Sans ville' ? 1 : b === 'Sans ville' ? -1 : a.localeCompare(b, 'fr'));
-}
-function ordreAnciennete(noms) {
-  return noms.sort((a, b) => ORDRE_ANCIENNETE.indexOf(a) - ORDRE_ANCIENNETE.indexOf(b));
-}
-
-/** Sections repliables (dépliées par défaut) pour le regroupement Ville/Ancienneté —
- * même disclosure que « Mes programmes » et la bibliothèque (`.pli`). L'ordre des
- * athlètes dans chaque section reprend celui, déjà trié, de `S.athletes`. */
-function sectionsAthletes(vus, cle, ordre, collapsed) {
+/**
+ * Sections repliables (dépliées par défaut) d'un regroupement — même disclosure
+ * `.pli` que « Mes programmes » et les modèles. L'ordre à l'intérieur d'une section
+ * est celui de la liste reçue, déjà triée.
+ */
+function sections(items, cle, ordre, collapsed, carte) {
   const groupes = {};
-  vus.forEach(a => { const k = cle(a); (groupes[k] = groupes[k] || []).push(a); });
-  const noms = ordre(Object.keys(groupes));
-  return noms.map(nom => `<details class="pli" data-grp="${nom}" ${collapsed.has(nom) ? '' : 'open'}>
+  items.forEach(x => { const k = cle(x); (groupes[k] = groupes[k] || []).push(x); });
+  return ordre(Object.keys(groupes)).map(nom => `<details class="pli" data-grp="${nom}" ${collapsed.has(nom) ? '' : 'open'}>
     <summary><span class="eyebrow">${nom}</span><span class="compte">${groupes[nom].length}</span></summary>
-    <div style="padding-top:2px">${groupes[nom].map(carteAthlete).join('')}</div>
+    <div style="padding-top:2px">${groupes[nom].map(carte).join('')}</div>
   </details>`).join('');
 }
 
+/** Ordre alphabétique français, la case « sans rien » toujours en dernier. */
+function ordreAlpha(sansValeur) {
+  return noms => noms.sort((a, b) =>
+    a === sansValeur ? 1 : b === sansValeur ? -1 : a.localeCompare(b, 'fr'));
+}
+/** Ordre imposé par une liste de référence, les intrus à la fin. */
+function ordreSelon(reference, sansValeur) {
+  const rang = n => {
+    const i = reference.indexOf(n);
+    return i === -1 ? (n === sansValeur ? 999 : 998) : i;
+  };
+  return noms => noms.sort((a, b) => rang(a) - rang(b) || a.localeCompare(b, 'fr'));
+}
+
 /**
- * Recherche/filtres/regroupement de la liste des athlètes — vivent en mémoire
- * (`S.athletes` déjà chargé au complet) : à 40 pratiquants et plus, refiltrer côté
- * client à chaque frappe reste instantané, inutile de repasser par Firestore.
- * Filtrer (recherche, statut, programme, paiement) et Regrouper (ville, ancienneté)
- * sont deux gestes différents — l'un réduit la liste, l'autre la réorganise en
- * sections — d'où deux contrôles qui ne se ressemblent jamais : bouton + modale
- * pour l'un, onglets soulignés toujours visibles pour l'autre. Seuls `#athPuces`
- * et `#athListe` sont repeints en cours d'usage, jamais la barre de recherche —
- * un innerHTML sur le champ texte lui-même lui ferait perdre le focus en pleine
- * frappe, la même leçon que `choisirExercice()`.
+ * Monte une liste complète : barre, puces, regroupement, contenu. `vue` déclare tout
+ * ce qui lui est propre ; le reste est commun aux trois listes du coach.
+ */
+function monterListe(vue) {
+  const f = vue.etat;
+  const zone = $('#zone');
+  zone.innerHTML = `
+    ${vue.entete || ''}
+    <div class="barre" style="margin-top:0">
+      <button class="btn plein" id="lstCreer" style="flex:1">${vue.creer.libelle}</button></div>
+    <div class="fbar">
+      <div class="recherche"><input class="f" id="lstQ" placeholder="${vue.placeholder}" value="${f.q || ''}"></div>
+      <button class="btn fbtn" id="lstFiltrer">Filtrer${nbFiltresActifs(f, vue.filtres)
+        ? `<span class="badge">${nbFiltresActifs(f, vue.filtres)}</span>` : ''}</button>
+    </div>
+    <div id="lstPuces"></div>
+    ${regrouperRow(vue.regroupements.map(r => [r.cle, r.libelle]), f.regrouper)}
+    <div id="lstListe" style="margin-top:6px"></div>`;
+
+  $('#lstCreer').onclick = vue.creer.action;
+  const champ = $('#lstQ');
+  champ.oninput = () => { f.q = champ.value; peindreListe(vue); };
+  $('#lstFiltrer').onclick = () => modalFiltres(vue.filtres, f, () => {
+    majBarreListe(vue); peindreListe(vue);
+  });
+  pastilleGroupe(zone, 'rg', v => { f.regrouper = v; peindreListe(vue); });
+
+  majBarreListe(vue);
+  peindreListe(vue);
+  if (vue.apres) vue.apres();
+}
+
+/** Le badge du bouton Filtrer et les puces des filtres posés. */
+function majBarreListe(vue) {
+  const f = vue.etat;
+  const bouton = $('#lstFiltrer');
+  if (bouton) {
+    const n = nbFiltresActifs(f, vue.filtres);
+    bouton.innerHTML = `Filtrer${n ? `<span class="badge">${n}</span>` : ''}`;
+  }
+  const p = $('#lstPuces');
+  if (!p) return;
+  const puces = libellesFiltres(f, vue.filtres);
+  p.innerHTML = puces.length
+    ? `<div class="puces">${puces.map(x =>
+        `<span class="puce">${x.label}<button type="button" data-rm="${x.champ}">✕</button></span>`).join('')}</div>`
+    : '';
+  p.querySelectorAll('[data-rm]').forEach(b => b.onclick = () => {
+    f[b.dataset.rm] = '';
+    majBarreListe(vue);
+    peindreListe(vue);
+  });
+}
+
+/** Refiltre, regroupe et repeint le seul contenu — jamais la barre, qui perdrait le focus. */
+function peindreListe(vue) {
+  const z = $('#lstListe');
+  if (!z) return;
+  const f = vue.etat;
+  const vus = filtrerListe(vue.items(), f, vue.filtres, vue.recherche);
+  const regroupement = vue.regroupements.find(r => r.cle === f.regrouper);
+
+  z.innerHTML = !vus.length ? `<div class="empty">${vue.vide}</div>`
+    : regroupement && regroupement.cle !== 'defaut'
+      ? sections(vus, regroupement.cle_de, regroupement.ordre, f.repliees, vue.carte)
+      : vus.map(vue.carte).join('');
+
+  z.querySelectorAll('details.pli').forEach(d => d.addEventListener('toggle', () => {
+    if (d.open) f.repliees.delete(d.dataset.grp); else f.repliees.add(d.dataset.grp);
+  }));
+  if (vue.branche) vue.branche(z);
+}
+
+/** L'état d'une barre de liste, créé une fois puis conservé le temps de la session. */
+function etatListe(defauts) {
+  return Object.assign({ q: '', regrouper: 'defaut', repliees: new Set() }, defauts);
+}
+
+/** Les filtres de la liste des athlètes. */
+function filtresAthletes() {
+  return [
+    { champ: 'statut', label: 'Statut',
+      options: [['', 'Tous']].concat(ETATS.map(e => [e, e])),
+      test: (a, v) => a.statut === v },
+    // « Avec/sans programme » = un programme encore planifié à partir d'aujourd'hui
+    // (`planifie`), pas seulement « une attribution existe » — une attribution
+    // 'En cours' dont la fin prévue est passée mais jamais close ne compte plus.
+    { champ: 'programme', label: 'Programme',
+      options: [['', 'Tous'], ['avec', 'Avec programme'], ['sans', 'Sans programme']],
+      test: (a, v) => v === 'avec' ? a.planifie : !a.planifie },
+    { champ: 'impaye', label: 'Paiement',
+      options: [['', 'Tous'], ['1', 'Non payé']],
+      test: a => a.programme && a.programme.paye === false }
+  ];
+}
+
+/**
+ * La liste des athlètes. Tout vit en mémoire (`S.athletes` chargé au complet) : à
+ * 40 pratiquants et plus, refiltrer côté client à chaque frappe reste instantané,
+ * inutile de repasser par Firestore.
  */
 async function listeAthletes() {
   let list;
   try { list = await dataCoachAthletes(); }
   catch (err) { $('#zone').innerHTML = `<div class="empty">${err.message}</div>`; return; }
   S.athletes = list;
-  S.coach.filtres = S.coach.filtres || { q: '', statut: '', programme: '', impaye: false, regrouper: 'defaut' };
-  S.coach.filtresRepliees = S.coach.filtresRepliees || new Set();
-  const f = S.coach.filtres;
+  S.coach.fAthletes = S.coach.fAthletes || etatListe({ statut: '', programme: '', impaye: '' });
   const nouveaux = list.filter(a => a.statut === 'Nouveau').length;
 
-  $('#zone').innerHTML = `
-    ${nouveaux ? `<div class="alerte">${nouveaux} pratiquant${nouveaux > 1 ? 's' : ''} sans programme${nouveaux > 1 ? '' : ''}</div>` : ''}
-    <div class="barre" style="margin-top:0">
-      <button class="btn plein" id="inscrire" style="flex:1">＋ Inscrire un pratiquant</button></div>
-    <div class="fbar">
-      <div class="recherche"><input class="f" id="athQ" placeholder="Rechercher un nom…" value="${f.q}"></div>
-      <button class="btn fbtn" id="ouvrirFiltres">Filtrer${nbFiltresActifs(f) ? `<span class="badge">${nbFiltresActifs(f)}</span>` : ''}</button>
-    </div>
-    <div id="athPuces"></div>
-    ${regrouperRow(f)}
-    <div id="athListe" style="margin-top:6px"></div>`;
-
-  $('#inscrire').onclick = modalInscrire;
-  const zone = $('#zone');
-  const champ = $('#athQ');
-  champ.oninput = () => { f.q = champ.value; peindreAthletes(); };
-  $('#ouvrirFiltres').onclick = () => modalFiltresAthletes(f, () => { peindrePuces(); peindreAthletes(); });
-  pastilleGroupe(zone, 'rg', v => { f.regrouper = v; peindreAthletes(); });
-
-  peindrePuces();
-  peindreAthletes();
-
-  // Les photos arrivent après : la liste s'affiche sans attendre quelques
-  // centaines de kilo-octets d'images.
-  if (S.photos) remplirPhotos();
-  else dataPhotos((S.athletes || []).map(a => a.email))
-    .then(ph => { S.photos = ph; remplirPhotos(); }).catch(() => {});
-}
-
-/** Puces des filtres actifs (jamais le regroupement), retirables sans rouvrir la modale. */
-function peindrePuces() {
-  const p = $('#athPuces');
-  if (!p) return;
-  const f = S.coach.filtres;
-  const puces = libellesFiltresAthletes(f);
-  p.innerHTML = puces.length
-    ? `<div class="puces">${puces.map(x => `<span class="puce">${x.label}<button type="button" data-rm="${x.k}">✕</button></span>`).join('')}</div>`
-    : '';
-  p.querySelectorAll('[data-rm]').forEach(b => b.onclick = () => {
-    if (b.dataset.rm === 'statut') f.statut = '';
-    if (b.dataset.rm === 'programme') f.programme = '';
-    if (b.dataset.rm === 'impaye') f.impaye = false;
-    peindrePuces();
-    const badge = $('#ouvrirFiltres');
-    if (badge) badge.innerHTML = `Filtrer${nbFiltresActifs(f) ? `<span class="badge">${nbFiltresActifs(f)}</span>` : ''}`;
-    peindreAthletes();
+  monterListe({
+    etat: S.coach.fAthletes,
+    entete: nouveaux ? `<div class="alerte">${nouveaux} pratiquant${nouveaux > 1 ? 's' : ''} sans programme</div>` : '',
+    creer: { libelle: '＋ Inscrire un pratiquant', action: modalInscrire },
+    placeholder: 'Rechercher un nom…',
+    vide: 'Aucun pratiquant ne correspond.',
+    items: () => S.athletes || [],
+    recherche: a => a.nom,
+    filtres: filtresAthletes(),
+    regroupements: [
+      { cle: 'defaut', libelle: 'Aucun' },
+      { cle: 'ville', libelle: 'Ville',
+        cle_de: a => a.ville || 'Sans ville', ordre: ordreAlpha('Sans ville') },
+      { cle: 'anciennete', libelle: 'Ancienneté',
+        cle_de: a => ancienneteLabel(a.ancienneteJours),
+        ordre: ordreSelon(ORDRE_ANCIENNETE, 'Ancienneté inconnue') }
+    ],
+    carte: carteAthlete,
+    branche: z => {
+      if (S.photos) remplirPhotos();
+      z.querySelectorAll('[data-email]').forEach(b => b.onclick = () => {
+        S.coach.email = b.dataset.email;
+        S.coach.nom = b.dataset.nom;
+        S.coach.sous = 'fiche';
+        S.cal = null; S.attSel = null; S.ed = null;
+        vueCoach();
+      });
+    },
+    // Les photos arrivent après : la liste s'affiche sans attendre quelques
+    // centaines de kilo-octets d'images.
+    apres: () => {
+      if (S.photos) remplirPhotos();
+      else dataPhotos((S.athletes || []).map(a => a.email))
+        .then(ph => { S.photos = ph; remplirPhotos(); }).catch(() => {});
+    }
   });
-}
-
-/** Refiltre/regroupe S.athletes selon S.coach.filtres et repeint #athListe — aucun retour réseau. */
-function peindreAthletes() {
-  const z = $('#athListe');
-  if (!z) return;
-  const f = S.coach.filtres;
-  const collapsed = S.coach.filtresRepliees;
-  const vus = filtrerAthletes(f);
-
-  z.innerHTML = !vus.length ? `<div class="empty">Aucun pratiquant ne correspond.</div>`
-    : f.regrouper === 'ville' ? sectionsAthletes(vus, a => a.ville || 'Sans ville', ordreVilles, collapsed)
-    : f.regrouper === 'anciennete' ? sectionsAthletes(vus, a => ancienneteLabel(a.ancienneteJours), ordreAnciennete, collapsed)
-    : vus.map(carteAthlete).join('');
-
-  if (S.photos) remplirPhotos();
-  z.querySelectorAll('[data-email]').forEach(b => b.onclick = () => {
-    S.coach.email = b.dataset.email;
-    S.coach.nom = b.dataset.nom;
-    S.coach.sous = 'fiche';
-    S.cal = null; S.attSel = null; S.ed = null;
-    vueCoach();
-  });
-  z.querySelectorAll('details.pli').forEach(d => d.addEventListener('toggle', () => {
-    if (d.open) collapsed.delete(d.dataset.grp); else collapsed.add(d.dataset.grp);
-  }));
 }
 
 /** Photo du pratiquant, ou ses initiales à défaut. */
@@ -5583,40 +5672,67 @@ async function vueBibliotheque() {
   peindreBibliotheque();
 }
 
-function peindreBibliotheque(filtre) {
-  const q = (filtre || '').toLowerCase();
-  // La recherche porte aussi sur le nom d'origine : « bench press » doit trouver.
-  const vus = S.cat.filter(e =>
-    !q || (e.nom + ' ' + (e.nom_en || '') + ' ' + e.groupe + ' ' + e.equipement)
-            .toLowerCase().includes(q));
+function carteExercice(e) {
+  return `<div class="ligne" data-ex="${e.id}">
+    ${e.photo ? `<img class="vignette" src="${e.photo}" alt="" loading="lazy">` : ''}
+    <div class="g">
+      <div class="nom">${e.nom}${e.nom_en ? ` <span class="vo">(${e.nom_en})</span>` : ''}</div>
+      <div class="meta">${[e.equipement, e.difficulte, e.id].filter(Boolean).join(' · ')}</div>
+    </div>
+    ${lienExercice(e)}
+  </div>`;
+}
 
-  const groupes = {};
-  vus.forEach(e => (groupes[e.groupe || 'Sans groupe'] = groupes[e.groupe || 'Sans groupe'] || []).push(e));
+/** Les valeurs distinctes d'un champ du catalogue, pour en faire des pastilles. */
+function valeursDistinctes(items, champ) {
+  return [...new Set(items.map(x => (x[champ] || '').trim()).filter(Boolean))]
+    .sort((a, b) => a.localeCompare(b, 'fr'));
+}
 
-  $('#zone').innerHTML = `
-    <div class="champ"><input class="f" id="q" placeholder="Rechercher un exercice" value="${filtre || ''}"></div>
-    <div class="barre" style="margin-top:0"><button class="btn plein" id="neuf" style="flex:1">＋ Nouvel exercice</button></div>
-    <div style="margin-top:18px">
-      ${Object.keys(groupes).sort((a, b) => a.localeCompare(b, 'fr')).map(g => `
-        <div class="eyebrow" style="margin:16px 0 8px">${g} · ${groupes[g].length}</div>
-        ${groupes[g].map(e => `<div class="ligne" data-ex="${e.id}">
-          ${e.photo ? `<img class="vignette" src="${e.photo}" alt="" loading="lazy">` : ''}
-          <div class="g">
-            <div class="nom">${e.nom}${e.nom_en ? ` <span class="vo">(${e.nom_en})</span>` : ''}</div>
-            <div class="meta">${[e.equipement, e.id].filter(Boolean).join(' · ')}</div>
-          </div>
-          ${lienExercice(e)}
-        </div>`).join('')}
-      `).join('') || `<div class="empty">Aucun exercice.</div>`}
-    </div>`;
+function peindreBibliotheque() {
+  S.coach.fBiblio = S.coach.fBiblio || etatListe({ groupe: '', equipement: '', image: '', video: '' });
+  const cat = S.cat || [];
 
-  const champ = $('#q');
-  champ.oninput = () => { const v = champ.value; peindreBibliotheque(v); const n = $('#q'); n.focus(); n.setSelectionRange(v.length, v.length); };
-  $('#neuf').onclick = () => modalExercice(null);
-  lignesCliquables($('#zone'), '[data-ex]',
-    l => modalExercice(S.cat.find(x => String(x.id) === l.dataset.ex)));
-  $('#zone').querySelectorAll('[data-video]').forEach(b =>
-    b.onclick = () => modal('Vidéo', lecteur(b.dataset.video)));
+  monterListe({
+    etat: S.coach.fBiblio,
+    creer: { libelle: '＋ Nouvel exercice', action: () => modalExercice(null) },
+    placeholder: 'Rechercher un exercice',
+    vide: 'Aucun exercice ne correspond.',
+    items: () => S.cat || [],
+    // La recherche porte aussi sur le nom d'origine : « bench press » doit trouver.
+    recherche: e => `${e.nom} ${e.nom_en || ''} ${e.groupe} ${e.equipement}`,
+    filtres: [
+      { champ: 'groupe', label: 'Groupe musculaire',
+        options: [['', 'Tous']].concat(valeursDistinctes(cat, 'groupe').map(g => [g, g])),
+        test: (e, v) => (e.groupe || '') === v },
+      { champ: 'equipement', label: 'Équipement',
+        options: [['', 'Tous']].concat(valeursDistinctes(cat, 'equipement').map(g => [g, g])),
+        test: (e, v) => (e.equipement || '') === v },
+      { champ: 'image', label: 'Illustration',
+        options: [['', 'Toutes'], ['1', 'Avec image'], ['0', 'Sans image']],
+        test: (e, v) => v === '1' ? !!e.photo : !e.photo },
+      { champ: 'video', label: 'Vidéo',
+        options: [['', 'Toutes'], ['1', 'Avec vidéo'], ['0', 'Sans vidéo']],
+        test: (e, v) => v === '1' ? !!e.video : !e.video }
+    ],
+    regroupements: [
+      { cle: 'defaut', libelle: 'Aucun' },
+      { cle: 'groupe', libelle: 'Groupe',
+        cle_de: e => e.groupe || 'Sans groupe', ordre: ordreAlpha('Sans groupe') },
+      { cle: 'equipement', libelle: 'Équipement',
+        cle_de: e => e.equipement || 'Sans équipement', ordre: ordreAlpha('Sans équipement') },
+      { cle: 'difficulte', libelle: 'Difficulté',
+        cle_de: e => e.difficulte || SANS_DIF,
+        ordre: ordreSelon(DIFFICULTES_EXO, SANS_DIF) }
+    ],
+    carte: carteExercice,
+    branche: z => {
+      lignesCliquables(z, '[data-ex]',
+        l => modalExercice(S.cat.find(x => String(x.id) === l.dataset.ex)));
+      z.querySelectorAll('[data-video]').forEach(b =>
+        b.onclick = () => modal('Vidéo', lecteur(b.dataset.video)));
+    }
+  });
 }
 
 /**
@@ -5635,7 +5751,8 @@ function lienExercice(e) {
 }
 
 function modalExercice(ex) {
-  const e = ex || { id:'', nom:'', nom_en:'', groupe:'', equipement:'', consigne:'', photo:'', video:'' };
+  const e = ex || { id:'', nom:'', nom_en:'', groupe:'', equipement:'', consigne:'', difficulte:'', photo:'', video:'' };
+  let difficulte = e.difficulte || '';
   const m = modal(ex ? 'Modifier l\'exercice' : 'Nouvel exercice', `
     <div class="champ"><label>Nom</label><input class="f" id="mNom" value="${e.nom}"></div>
     <div class="champ"><label>Nom d'origine</label>
@@ -5646,6 +5763,11 @@ function modalExercice(ex) {
       <div class="champ"><label>Équipement</label><input class="f" id="mEqp" value="${e.equipement}" list="lEqp">
         <datalist id="lEqp">${['Barre', 'Haltère', 'Poulie', 'Machine', 'Kettlebell', 'Élastique', 'Poids de corps'].map(g => `<option>${g}</option>`).join('')}</datalist></div>
     </div>
+    <div class="champ"><label>Difficulté d'exécution</label>
+      <div class="sous" data-role="mdif" style="margin-bottom:0">
+        <button type="button" data-v="" aria-pressed="${!difficulte}">Non précisée</button>
+        ${DIFFICULTES_EXO.map(d => `<button type="button" data-v="${d}" aria-pressed="${difficulte === d}">${d}</button>`).join('')}
+      </div></div>
     <div class="champ"><label>Consigne d'exécution</label><textarea class="f" id="mCon" rows="4">${e.consigne}</textarea></div>
     <div class="champ"><label>Illustration</label><input class="f" id="mPho" value="${e.photo || ''}" placeholder="https://…"></div>
     ${e.photo ? `<img class="apercu" src="${e.photo}" alt="">` : ''}
@@ -5657,6 +5779,7 @@ function modalExercice(ex) {
     ${ex ? '<div class="barre"><button class="btn danger" id="mDel">Supprimer</button></div>' : ''}`);
 
   m.querySelector('#mAnn').onclick = m.fermer;
+  pastilleGroupe(m, 'mdif', v => { difficulte = v; });
   m.querySelector('#mOk').onclick = async function () {
     this.disabled = true;
     try {
@@ -5667,6 +5790,7 @@ function modalExercice(ex) {
         groupe: m.querySelector('#mGrp').value,
         equipement: m.querySelector('#mEqp').value,
         consigne: m.querySelector('#mCon').value,
+        difficulte,
         photo: m.querySelector('#mPho').value,
         video: m.querySelector('#mVid').value
       });
@@ -6059,6 +6183,7 @@ async function importerModele(classeur) {
     duree_semaines: fiche.duree_semaines, statut: fiche.statut,
     description: fiche.description, source: fiche.source, video: fiche.video,
     nb_jours: new Set(lignes.map(l => l.jour)).size, nb_exercices: lignes.length,
+    duree_max_min: dureeMaxSeance(lignes),
     cree_le: serverTimestamp()
   });
   const b = writeBatch(db);
@@ -6229,6 +6354,11 @@ function modalExportModele() {
 
 // ── Modèles génériques ───────────────────────────────────────
 const DIFFICULTES = ['Débutant', 'Intermédiaire', 'Avancé', 'Challengeant'];
+// Trois niveaux pour un exercice, pas quatre comme pour un modèle : ce sont ceux de
+// free-exercise-db, d'où viennent les difficultés des 109 exercices qui en sortent
+// (voir scripts/generer-difficultes.mjs). La difficulté d'un modèle est un ressenti
+// de coach ; celle d'un exercice dit ce qu'il faut savoir faire pour l'exécuter.
+const DIFFICULTES_EXO = ['Débutant', 'Intermédiaire', 'Expert'];
 const SANS_CAT = 'Sans catégorie';
 const SANS_DIF = 'Sans difficulté';
 
@@ -6241,81 +6371,91 @@ function ordreDifficulte(d) {
 async function vueModeles() {
   try { S.modeles = await dataModeles(); }
   catch (err) { $('#zone').innerHTML = `<div class="empty">Impossible de charger.<br>${err.message}</div>`; return; }
-  return S.coach.categorie ? peindreCategorie() : peindreCategories();
+  peindreModeles();
+  // Les modèles d'avant la dénormalisation n'ont pas leur durée : on la pose une
+  // fois, puis on repeint pour que le filtre « temps max » les voie enfin.
+  rattraperDureesModeles(S.modeles).then(fait => { if (fait) peindreListe(vueListeModeles()); }).catch(() => {});
 }
 
-/** Premier niveau : les catégories, en boutons. */
-function peindreCategories() {
-  const cats = {};
-  S.modeles.forEach(m => {
-    const c = (m.categorie || '').trim() || SANS_CAT;
-    (cats[c] = cats[c] || []).push(m);
-  });
-  const noms = Object.keys(cats).sort((a, b) =>
-    a === SANS_CAT ? 1 : b === SANS_CAT ? -1 : a.localeCompare(b, 'fr'));
-
-  $('#zone').innerHTML = `
-    <div class="barre" style="margin-top:0">
-      <button class="btn plein" id="nm" style="flex:1">＋ Nouveau modèle</button></div>
-    <p class="consigne" style="margin-top:12px">Un modèle est un programme générique, sans pratiquant.
-      On le compose une fois, puis on le donne à qui l'on veut, autant de fois qu'on veut.</p>
-    <div class="cats">${noms.map(c => `
-      <button class="cat" data-cat="${c}">
-        <span class="nom">${c}</span>
-        <span class="compte num">${cats[c].length}</span>
-      </button>`).join('') || `<div class="empty">Aucun modèle pour l'instant.</div>`}</div>`;
-
-  $('#nm').onclick = () => modalModele(null);
-  $('#zone').querySelectorAll('[data-cat]').forEach(b => b.onclick = () => {
-    S.coach.categorie = b.dataset.cat;
-    vueCoach();
-  });
+function carteModele(m) {
+  return `<div class="ligne" data-md="${m.id}">
+    <div class="g">
+      <div class="nom">${m.nom}</div>
+      <div class="meta">${[
+        m.categorie, m.difficulte,
+        m.duree_semaines ? m.duree_semaines + ' semaines' : '',
+        m.nbJours + ' séance' + (m.nbJours > 1 ? 's' : '') + ' par semaine',
+        m.dureeMax ? dureeTexte(m.dureeMax) + ' max' : '',
+        m.nbExercices + ' exercices'].filter(Boolean).join(' · ')}</div>
+    </div>
+    ${m.video ? '<span class="poignee lien" title="Vidéo">▶</span>' : ''}
+    ${m.source ? '<span class="poignee lien" title="Source documentée">↗</span>' : ''}
+    <span class="tag ${m.statut === 'Brouillon' ? 'warn' : ''}">${m.statut}</span>
+  </div>`;
 }
 
-/** Second niveau : une catégorie, ses modèles pliés par difficulté, triés par nom. */
-function peindreCategorie() {
-  const cat = S.coach.categorie;
-  const dedans = S.modeles.filter(m =>
-    ((m.categorie || '').trim() || SANS_CAT) === cat);
+/** Les tranches du filtre « temps max d'une séance ». */
+const TRANCHES_DUREE = [
+  ['30', "30 min ou moins", d => d > 0 && d <= 30],
+  ['45', "45 min ou moins", d => d > 0 && d <= 45],
+  ['60', "1 h ou moins", d => d > 0 && d <= 60],
+  ['61', "Plus d'une heure", d => d > 60]
+];
 
-  const parDif = {};
-  dedans.forEach(m => {
-    const d = (m.difficulte || '').trim() || SANS_DIF;
-    (parDif[d] = parDif[d] || []).push(m);
-  });
-  const difs = Object.keys(parDif).sort((a, b) => ordreDifficulte(a) - ordreDifficulte(b));
-  // Une seule section : la plier n'aurait aucun intérêt.
-  const seule = difs.length === 1;
+/**
+ * La déclaration de la liste des modèles. Extraite parce que le rattrapage des
+ * durées la repeint après coup, une fois `S.modeles` complété.
+ */
+function vueListeModeles() {
+  const cats = valeursDistinctes(S.modeles || [], 'categorie');
+  return {
+    etat: S.coach.fModeles,
+    entete: `<p class="consigne" style="margin-bottom:14px">Un modèle est un programme générique,
+      sans pratiquant. On le compose une fois, puis on le donne à qui l'on veut, autant de fois qu'on veut.</p>`,
+    creer: { libelle: '＋ Nouveau modèle', action: () => modalModele(null) },
+    placeholder: 'Rechercher un modèle…',
+    vide: 'Aucun modèle ne correspond.',
+    items: () => S.modeles || [],
+    recherche: m => `${m.nom} ${m.categorie} ${m.difficulte} ${m.description}`,
+    filtres: [
+      { champ: 'categorie', label: 'Type',
+        options: [['', 'Tous']].concat(cats.map(c => [c, c])),
+        test: (m, v) => (m.categorie || '') === v },
+      { champ: 'difficulte', label: 'Difficulté',
+        options: [['', 'Toutes']].concat(DIFFICULTES.map(d => [d, d])),
+        test: (m, v) => (m.difficulte || '') === v },
+      { champ: 'seances', label: 'Séances par semaine',
+        options: [['', 'Toutes'], ['1', '1'], ['2', '2'], ['3', '3'], ['4', '4'], ['5+', '5 et plus']],
+        test: (m, v) => v === '5+' ? m.nbJours >= 5 : m.nbJours === Number(v) },
+      { champ: 'duree', label: "Temps max d'une séance",
+        options: [['', 'Tous']].concat(TRANCHES_DUREE.map(([v, l]) => [v, l])),
+        // Une durée encore inconnue (null) ne répond à aucune tranche : mieux vaut
+        // ne pas la montrer que la ranger au hasard. Le rattrapage la comblera.
+        test: (m, v) => {
+          const t = TRANCHES_DUREE.find(x => x[0] === v);
+          return !!t && m.dureeMax !== null && t[2](m.dureeMax);
+        } },
+      { champ: 'source', label: 'Page source',
+        options: [['', 'Tous'], ['1', 'Avec source'], ['0', 'Sans source']],
+        test: (m, v) => v === '1' ? !!m.source : !m.source }
+    ],
+    regroupements: [
+      { cle: 'defaut', libelle: 'Aucun' },
+      { cle: 'categorie', libelle: 'Type',
+        cle_de: m => (m.categorie || '').trim() || SANS_CAT, ordre: ordreAlpha(SANS_CAT) },
+      { cle: 'difficulte', libelle: 'Difficulté',
+        cle_de: m => (m.difficulte || '').trim() || SANS_DIF, ordre: ordreSelon(DIFFICULTES, SANS_DIF) }
+    ],
+    carte: carteModele,
+    branche: z => z.querySelectorAll('[data-md]').forEach(l =>
+      l.onclick = () => { S.coach.modele = l.dataset.md; S.ed = null; vueCoach(); })
+  };
+}
 
-  $('#zone').innerHTML = `
-    <div class="barre" style="margin-top:0">
-      <button class="btn" id="retourCats">← Catégories</button>
-      <button class="btn plein" id="nm" style="flex:1">＋ Nouveau modèle</button></div>
-    <div style="margin-top:18px">${difs.map(d => `
-      <details class="pli" ${seule ? 'open' : ''}>
-        <summary>
-          <span class="eyebrow">${d}</span>
-          <span class="compte num">${parDif[d].length}</span>
-        </summary>
-        ${parDif[d].sort((a, b) => a.nom.localeCompare(b.nom, 'fr')).map(m => `
-          <div class="ligne" data-md="${m.id}">
-            <div class="g">
-              <div class="nom">${m.nom}</div>
-              <div class="meta">${[
-                m.duree_semaines ? m.duree_semaines + ' semaines' : '',
-                m.nbJours + ' jour' + (m.nbJours > 1 ? 's' : ''),
-                m.nbExercices + ' exercices'].filter(Boolean).join(' · ')}</div>
-            </div>
-            ${m.video ? '<span class="poignee lien" title="Vidéo">▶</span>' : ''}
-            ${m.source ? '<span class="poignee lien" title="Source documentée">↗</span>' : ''}
-            <span class="tag ${m.statut === 'Brouillon' ? 'warn' : ''}">${m.statut}</span>
-          </div>`).join('')}
-      </details>`).join('') || `<div class="empty">Aucun modèle dans cette catégorie.</div>`}</div>`;
-
-  $('#retourCats').onclick = () => { S.coach.categorie = null; vueCoach(); };
-  $('#nm').onclick = () => modalModele(null);
-  $('#zone').querySelectorAll('[data-md]').forEach(l =>
-    l.onclick = () => { S.coach.modele = l.dataset.md; S.ed = null; vueCoach(); });
+function peindreModeles() {
+  S.coach.fModeles = S.coach.fModeles
+    || etatListe({ categorie: '', difficulte: '', seances: '', duree: '', source: '' });
+  monterListe(vueListeModeles());
 }
 
 /**
@@ -6335,7 +6475,9 @@ function lecteur(url) {
 }
 
 function modalModele(m) {
-  const x = m || { id:'', nom:'', categorie:S.coach.categorie === SANS_CAT ? '' : (S.coach.categorie || ''),
+  // Créer depuis une liste filtrée sur un type : le nouveau modèle le reprend.
+  const typeFiltre = (S.coach.fModeles || {}).categorie || '';
+  const x = m || { id:'', nom:'', categorie:typeFiltre,
                    difficulte:'', description:'', duree_semaines:'', statut:'Brouillon',
                    source:'', video:'' };
   const cats = [...new Set((S.modeles || []).map(y => (y.categorie || '').trim()).filter(Boolean))].sort();
@@ -6802,7 +6944,8 @@ async function sauverLignesJour(refDoc, refLignes, jour, blocs) {
   rangs.forEach(r => b.set(doc(refLignes), r));
   await b.commit();
   const toutes = (await getDocs(refLignes)).docs.map(d => d.data());
-  await updateDoc(refDoc, { nb_jours: new Set(toutes.map(l => l.jour)).size, nb_exercices: toutes.length });
+  await updateDoc(refDoc, { nb_jours: new Set(toutes.map(l => l.jour)).size, nb_exercices: toutes.length,
+    duree_max_min: dureeMaxSeance(toutes) });
   return { lignes: rangs.length };
 }
 
@@ -6815,7 +6958,8 @@ async function supprimerLignesJour(refDoc, refLignes, jour) {
   existantes.docs.forEach(d => { if (String(d.data().jour) === jour) { b.delete(d.ref); n++; } });
   await b.commit();
   const restantes = (await getDocs(refLignes)).docs.map(d => d.data());
-  await updateDoc(refDoc, { nb_jours: new Set(restantes.map(l => l.jour)).size, nb_exercices: restantes.length });
+  await updateDoc(refDoc, { nb_jours: new Set(restantes.map(l => l.jour)).size, nb_exercices: restantes.length,
+    duree_max_min: dureeMaxSeance(restantes) });
   return { supprimees: n };
 }
 
