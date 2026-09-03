@@ -554,12 +554,7 @@ const S = { token:null, moi:null, jour:null, exos:[], blocs:[], seanceId:null, d
             faits:{}, finis:[], vue:'seance', timer:null };
 const $ = s => document.querySelector(s);
 
-// ── Appels API ───────────────────────────────────────────────
-// PORTAGE EN COURS — Apps Script n'est plus joignable : il vérifiait un jeton
-// Google émis pour son propre CLIENT_ID, que Firebase Auth ne produit pas.
-// Chaque action encore appelée ici reste donc à porter vers Firestore ; on échoue
-// franchement, sans appel réseau, pour que la liste des restes soit lisible en
-// console plutôt que noyée dans des erreurs de jeton.
+// ── Divers ───────────────────────────────────────────────────
 function toast(msg) {
   const t = document.createElement('div');
   t.className = 'toast'; t.textContent = msg;
