@@ -1185,6 +1185,9 @@ async function majAttribution(id, patch) {
   const { db, doc, updateDoc, serverTimestamp } = FB;
   const data = {};
   if (patch.statut !== undefined) data.statut = patch.statut;
+  // Un nom vide laisserait une attribution sans intitulé dans le sélecteur et
+  // dans le message au pratiquant : on ignore plutôt que d'effacer.
+  if (String(patch.nom || '').trim()) data.nom = String(patch.nom).trim();
   if (patch.paye !== undefined) data.paye = patch.paye === true;
   if (patch.notes !== undefined) data.notes = patch.notes;
   if (patch.date_fin !== undefined) data.date_fin = patch.date_fin ? serverTimestamp() : '';
@@ -6717,7 +6720,7 @@ async function vueProgramme() {
       att.modele_id ? ' · issu d\'un modèle' : ' · sur mesure'}<br>${fenetreAttribution(att)}</div>
     <div class="barre" style="margin-top:0">
       <button class="btn plein" id="donner">Donner un programme</button>
-      <button class="btn" id="dates">Dates</button>
+      <button class="btn" id="dates">Nom et dates</button>
       <button class="btn" id="prevenir">Prévenir</button>
       ${att.statut === 'En cours' ? '<button class="btn" id="clore">Clore</button>' : ''}
       <button class="btn danger" id="supprAtt">Supprimer</button>
@@ -6776,10 +6779,22 @@ function fenetreAttribution(att) {
  * de deux façons : saisir l'une recalcule l'autre, sous les yeux, plutôt que
  * de demander au coach de compter les semaines lui-même.
  */
+/**
+ * Nom et dates d'un programme attribué. Le nom vient du modèle à l'attribution
+ * et ne bougeait plus ensuite ; un programme adapté en cours de route (« Force
+ * 5×5 — reprise d'épaule ») ne pouvait pas le dire. Pas d'appui long ici,
+ * contrairement aux modèles et aux jours : le nom s'affiche dans un `select`, et
+ * un appui prolongé dessus ouvre le sélecteur natif du système — le geste ne
+ * nous appartient pas. D'où un bouton qui dit ce qu'il ouvre.
+ */
 function modalDatesAttribution(att) {
   const debut0 = att.date_debut ? cleJour(new Date(att.date_debut)) : cleJour(new Date());
   const fin0 = att.fin_prevue || finPrevueDe(dateDeCle(debut0), att.duree_semaines);
-  const w = modal('Dates du programme', `
+  const w = modal('Nom et dates du programme', `
+    <div class="champ"><label>Nom</label>
+      <input class="f" id="daNom" value="${att.nom || ''}" placeholder="Force 5×5"></div>
+    <p class="consigne">Le nom vient du modèle donné ; le changer ici ne touche pas au
+      modèle. Les séances déjà faites ne s'en trouvent pas renommées.</p>
     <div class="champ"><label>Début</label>
       <input class="f" id="daDeb" type="date" value="${debut0}"></div>
     <div class="duo">
@@ -6801,14 +6816,17 @@ function modalDatesAttribution(att) {
   w.querySelector('#daAnn').onclick = w.fermer;
   w.querySelector('#daOk').onclick = async function () {
     if (!deb.value) return toast('Il faut une date de début');
+    const nom = w.querySelector('#daNom').value.trim();
+    if (!nom) return toast('Donnez un nom au programme');
     this.disabled = true;
     try {
       await majAttribution(att.id, {
+        nom,
         date_debut: deb.value,
         duree_semaines: Number(sem.value) || 0,
         fin_prevue: Number(sem.value) > 0 ? fin.value : ''
       });
-      w.fermer(); toast('Dates enregistrées');
+      w.fermer(); toast('Programme enregistré');
       S.atts = null; S.cal = null; vueProgramme();
     } catch (err) { toast(err.message); this.disabled = false; }
   };

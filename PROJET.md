@@ -255,8 +255,16 @@ qui ne doit pas bouger.
 
 Deux champs, deux natures. `fin_prevue` (chaîne `AAAA-MM-JJ`, comme le planning
 personnel, pour qu'aucun fuseau ne décale un jour) est **le plan** : elle borne
-la projection au calendrier et se pilote depuis Programme ▸ Dates. `date_fin`
-reste **le fait** : la clôture, posée le jour où le coach clôt.
+la projection au calendrier et se pilote depuis Programme ▸ Nom et dates.
+`date_fin` reste **le fait** : la clôture, posée le jour où le coach clôt.
+
+La même modale porte le **nom du programme attribué**, qui venait du modèle et ne
+bougeait plus : un programme adapté en cours de route (« Force 5×5 — reprise
+d'épaule ») peut maintenant le dire, sans toucher au modèle d'origine. Un nom
+vide est refusé — il ne resterait rien à lire dans le sélecteur ni dans le
+message au pratiquant. Pas d'appui long ici, contrairement aux modèles et aux
+jours : le nom s'affiche dans un `select`, et un appui prolongé dessus ouvre le
+sélecteur natif du système — le geste ne nous appartient pas.
 
 Durée et fin prévue disent la même chose de deux façons : `finPrevueDe()` et
 `semainesEntre()` se répondent, et la modale recalcule l'une quand on saisit
