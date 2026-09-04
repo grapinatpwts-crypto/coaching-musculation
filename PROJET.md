@@ -1551,13 +1551,24 @@ rester vide — la leçon du § 8 sur les lectures sans `try/catch`.
 
 ### La poser dans sa semaine
 
-Le détail d'une routine porte **＋ Planifier dans ma semaine** : les jours
-conseillés sont **pré-cochés**, le pratiquant ajuste, choisit son heure. Ce qu'il
-valide devient des entrées de son **planning récurrent** — celui qui existait
-déjà pour ses cours hors programme. Elles s'affichent donc dans son calendrier et
-son bandeau de semaine sans une ligne de code de plus, et le coach les voit comme
-le reste de son planning. Un champ `routine_id` les marque : c'est ce qui permet
-de les remplacer ou de les retirer sans toucher au reste.
+**＋ Planifier dans ma semaine** est sur la carte d'accueil autant que sur le
+détail : le geste ne vaut rien s'il est à deux écrans de l'endroit où la routine
+se lit. La carte dit d'ailleurs où on en est — « Lun, Mer, Ven à 07:30 · 2 fois
+cette semaine » — et le bouton devient *Modifier ma planification*.
+
+Les jours conseillés sont **pré-cochés**, le pratiquant ajuste, choisit son
+heure. Ce qu'il valide devient des entrées de son **planning récurrent** — celui
+qui existait déjà pour ses cours hors programme. Elles s'affichent donc dans son
+calendrier et son bandeau de semaine sans une ligne de code de plus, et le coach
+les voit comme le reste de son planning. Un champ `routine_id` les marque : c'est
+ce qui permet de les remplacer ou de les retirer sans toucher au reste.
+
+**Une entrée née d'une routine ne s'édite pas dans « Mon planning ».** Elle y
+porte une étiquette *Routine*, et la taper renvoie sur la routine — là où elle a
+été posée. Sans ça, l'éditeur d'activité ordinaire la refusait (son nom n'est pas
+dans la liste des sports, donc « Choisissez une activité » sur sa propre entrée)
+et lui aurait coupé son `routine_id` à la première retouche, la laissant
+orpheline dans le planning, impossible à retirer avec la routine.
 
 `date_debut` est le jour de la planification, `date_fin` en découle si la routine
 conseille un nombre de semaines — la fenêtre s'éteint d'elle-même. Modifier la

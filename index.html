@@ -1640,7 +1640,10 @@ async function dataAccueil() {
     routine: routine ? {
       ...routine,
       faitAujourdhui: faits.indexOf(cleJour(new Date())) !== -1,
-      cetteSemaine: semaineCles.filter(c => faits.indexOf(c) !== -1).length
+      cetteSemaine: semaineCles.filter(c => faits.indexOf(c) !== -1).length,
+      // Déjà posée dans la semaine, ou pas encore : l'accueil le dit et propose
+      // le geste manquant. Aucune lecture de plus — le planning est déjà chargé.
+      planif: recurrences.filter(x => x.routine_id === routine.id)
     } : null,
     nbRoutines: routines.length,
     progression,
@@ -1775,8 +1778,13 @@ async function sauverRecurrence(p) {
   const recurrent = !!p.recurrent;
   const champs = {
     sport, recurrent, heure: String(p.heure || ''), duree_min: Number(p.duree_min) || 0,
-    notes: String(p.notes || ''), routine_id: String(p.routine_id || '')
+    notes: String(p.notes || '')
   };
+  // Écrit seulement si l'appelant le fournit. L'éditeur de planning ordinaire ne
+  // le connaît pas : le poser à vide couperait le lien d'une entrée née d'une
+  // routine dès la première retouche, et elle deviendrait un doublon impossible
+  // à retirer avec elle.
+  if (p.routine_id !== undefined) champs.routine_id = String(p.routine_id || '');
   if (recurrent) {
     const jour = String(p.jour || '').trim();
     if (!jour) throw new Error('JOUR_REQUIS');
@@ -2509,11 +2517,18 @@ async function vueAccueil() {
         <div class="meta">${[a.routine.type, libelleFrequence(a.routine.frequence),
           a.routine.duree_semaines ? a.routine.duree_semaines + ' semaines' : ''].filter(Boolean).join(' · ')}</div>
         ${a.routine.note ? `<div class="note-coach">${a.routine.note}</div>` : ''}
-        <div class="meta bas">${a.routine.cetteSemaine
-          ? a.routine.cetteSemaine + ' fois cette semaine' : 'Pas encore faite cette semaine'}</div>
+        <div class="meta bas">${a.routine.planif.length
+          ? a.routine.planif.map(p => p.jour.slice(0, 3)).join(', ')
+            + (a.routine.planif[0].heure ? ' à ' + a.routine.planif[0].heure : '') + ' · '
+          : ''}${a.routine.cetteSemaine
+          ? a.routine.cetteSemaine + ' fois cette semaine' : 'pas encore faite cette semaine'}</div>
         <div class="barre">
           <button class="btn ${a.routine.faitAujourdhui ? '' : 'plein'}" id="faitRoutine" style="flex:1">${
             a.routine.faitAujourdhui ? '✓ Faite aujourd\'hui' : 'Marquer faite aujourd\'hui'}</button>
+        </div>
+        <div class="barre">
+          <button class="btn" id="planifRoutine" style="flex:1">${a.routine.planif.length
+            ? 'Modifier ma planification' : '＋ Planifier dans ma semaine'}</button>
         </div>
         <div class="barre">
           <button class="btn" id="detailRoutine" style="flex:1">Voir le détail</button>
@@ -2543,6 +2558,21 @@ async function vueAccueil() {
   if (br) br.onclick = () => { S.maRoutine = a.routine; S.vue = 'routine'; rendre(); };
   const bmr = $('#toutesRoutines');
   if (bmr) bmr.onclick = () => { S.vue = 'routines'; rendre(); };
+  // Planifier depuis l'accueil ouvre la même modale que le détail : la source de
+  // la routine (rythme conseillé, semaines) n'est pas dans l'accueil, on la lit
+  // au moment du geste plutôt que de la charger pour tout le monde à chaque fois.
+  const bpr = $('#planifRoutine');
+  if (bpr) bpr.onclick = async function () {
+    this.disabled = true;
+    try {
+      const source = await dataRoutine(a.routine.routine_id);
+      modalPlanifierRoutine(a.routine, source, a.routine.planif, rendre);
+    } catch (err) {
+      toast(err.message === 'ROUTINE_INTROUVABLE'
+        ? 'Cette routine n\'est plus disponible. Parlez-en à votre coach.' : err.message);
+    }
+    this.disabled = false;
+  };
   const bfr = $('#faitRoutine');
   if (bfr) bfr.onclick = async function () {
     this.disabled = true;
@@ -2706,15 +2736,36 @@ function modalPlanningRecurrent(liste) {
             <div class="nom">${titreRecurrence(r)}</div>
             <div class="meta">${[fenetreRecurrence(r), r.notes].filter(Boolean).join(' · ')}</div>
           </div>
+          ${r.routine_id ? '<span class="tag">Routine</span>' : ''}
         </div>`).join('')
       : `<div class="empty" style="padding:14px 0">Rien pour l'instant.</div>`;
-    lignesCliquables(w.querySelector('#prList'), '[data-r]',
-      l => modalEditerRecurrence(liste.find(r => r.id === l.dataset.r), liste, peindre));
+    // Une entrée née d'une routine ne s'édite pas ici : son nom n'est pas dans la
+    // liste des sports, l'éditeur d'activité la refuserait et lui couperait son
+    // lien. Elle se change là où elle a été posée — sur la routine elle-même.
+    lignesCliquables(w.querySelector('#prList'), '[data-r]', l => {
+      const r = liste.find(x => x.id === l.dataset.r);
+      if (r.routine_id) { w.fermer(); ouvrirRoutineDepuisPlanning(r.routine_id); return; }
+      modalEditerRecurrence(r, liste, peindre);
+    });
   };
   peindre();
 
   w.querySelector('#prFerme').onclick = w.fermer;
   w.querySelector('#prAjout').onclick = () => modalEditerRecurrence(null, liste, peindre);
+}
+
+/**
+ * Ouvre la routine derrière une entrée de planning. `routine_id` est
+ * l'identifiant de la routine **conseillée** (celle du pratiquant), pas celle du
+ * catalogue : c'est elle qui porte la note du coach et le suivi.
+ */
+async function ouvrirRoutineDepuisPlanning(id) {
+  try {
+    const list = await dataRoutinesPratiquant(S.email);
+    const trouvee = list.find(r => r.id === id);
+    if (!trouvee) return toast('Cette routine ne vous est plus conseillée');
+    S.maRoutine = trouvee; S.vue = 'routine'; rendre();
+  } catch (err) { toast(err.message); }
 }
 
 function modalEditerRecurrence(r, liste, rafraichirParent) {
@@ -2964,7 +3015,10 @@ async function vueMaRoutine() {
  * s'affichent donc dans son calendrier et son bandeau de semaine sans une ligne
  * de plus, et le coach les voit comme le reste de son planning.
  */
-function modalPlanifierRoutine(r, source, planif) {
+function modalPlanifierRoutine(r, source, planif, apres) {
+  // D'où qu'on vienne, on repeint l'écran d'où l'on vient : le détail de la
+  // routine, ou l'accueil quand le geste part de sa carte.
+  const rafraichir = apres || vueMaRoutine;
   const dejaJours = planif.map(p => p.jour);
   const choisis = new Set(dejaJours.length ? dejaJours : joursFrequence(source.frequence));
   const heure0 = (planif[0] || {}).heure || '';
@@ -3013,7 +3067,7 @@ function modalPlanifierRoutine(r, source, planif) {
     this.disabled = true;
     try {
       await remplacer(jours);
-      w.fermer(); toast('Planifiée'); vueMaRoutine();
+      w.fermer(); toast('Planifiée'); rafraichir();
     } catch (err) { toast(err.message); this.disabled = false; }
   };
   const pd = w.querySelector('#plDel');
@@ -3021,7 +3075,7 @@ function modalPlanifierRoutine(r, source, planif) {
     this.disabled = true;
     try {
       await remplacer([]);
-      w.fermer(); toast('Retirée de la semaine'); vueMaRoutine();
+      w.fermer(); toast('Retirée de la semaine'); rafraichir();
     } catch (err) { toast(err.message); this.disabled = false; }
   };
 }
