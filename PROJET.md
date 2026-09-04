@@ -466,6 +466,17 @@ coach-only : la durée d'un programme, par exemple, doit être copiée sur l'att
 l'écran d'accueil du pratiquant plante en silence à « Missing or insufficient
 permissions » dès qu'il a un programme actif.
 
+**Une requête sur un champ à `null` est refusée, pas vide.** Les règles valident
+la *requête*, pas son résultat : `where('email','==', null)` ne peut satisfaire
+`estMoi(resource.data.email)` pour aucun document, donc Firestore refuse tout le
+lot. Vu sur le fil de commentaires : `commenter` et `marquerCommentairesLus`
+résolvaient « pas d'email visé » en « le mien », mais pas la lecture, qui prenait
+son paramètre tel quel. Le pratiquant ouvrait le fil pendant sa séance et lisait
+« Missing or insufficient permissions » — alors que son envoi, lui, passait.
+`filDe()` porte cette résolution pour les trois, une fois pour toutes. La leçon
+générale : là où une valeur peut manquer, la résoudre **avant** la requête, jamais
+dans la requête.
+
 **Les transactions du SDK client ne lisent pas de requête, seulement des documents
 un par un.** L'invariant « pas deux séances ouvertes à la fois » ou « une seule
 attribution En cours » ne peut donc pas être une vraie transaction côté navigateur :

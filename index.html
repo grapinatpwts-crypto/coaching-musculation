@@ -1314,10 +1314,26 @@ async function dataPhotos(emails) {
   return out;
 }
 
+/**
+ * De quel fil on parle. Le coach passe l'email du pratiquant ; le pratiquant
+ * n'en passe aucun — c'est le sien.
+ *
+ * Cette résolution vivait en double dans `commenter` et `marquerCommentairesLus`
+ * mais manquait à la lecture : le fil partait alors en `email == null`, requête
+ * que les règles refusent puisque aucun document ne peut appartenir à personne.
+ * Le pratiquant lisait « Missing or insufficient permissions » à l'ouverture du
+ * fil, alors que son envoi, lui, passait — d'où un écran incompréhensible.
+ */
+function filDe(emailCible) {
+  const estCoach = !!(S.moi && S.moi.estCoach);
+  return estCoach && emailCible ? String(emailCible).toLowerCase() : S.email;
+}
+
 /** Fil de commentaires d'un exercice, pour un pratiquant. */
-async function dataCommentaires(email, exerciceId) {
+async function dataCommentaires(emailCible, exerciceId) {
   if (!exerciceId) throw new Error('EXERCICE_REQUIS');
   const { db, collection, query, where, getDocs } = FB;
+  const email = filDe(emailCible);
   const snap = await getDocs(query(collection(db, 'commentaires'),
     where('email', '==', email), where('exercice_id', '==', exerciceId)));
   const list = [];
@@ -1824,7 +1840,7 @@ async function commenter(exerciceId, texte, emailCible) {
   if (!t) throw new Error('TEXTE_VIDE');
   if (t.length > 2000) throw new Error('TEXTE_TROP_LONG');
   const estCoach = !!(S.moi && S.moi.estCoach);
-  const email = estCoach && emailCible ? String(emailCible).toLowerCase() : S.email;
+  const email = filDe(emailCible);
   await addDoc(collection(db, 'commentaires'), {
     email, exercice_id: exerciceId, auteur: estCoach ? 'coach' : 'pratiquant',
     texte: t, date: serverTimestamp(), lu: false
@@ -1839,7 +1855,7 @@ async function commenter(exerciceId, texte, emailCible) {
 async function marquerCommentairesLus(exerciceId, emailCible) {
   const { db, collection, query, where, getDocs, writeBatch } = FB;
   const estCoach = !!(S.moi && S.moi.estCoach);
-  const email = estCoach && emailCible ? String(emailCible).toLowerCase() : S.email;
+  const email = filDe(emailCible);
   const autre = estCoach ? 'pratiquant' : 'coach';
   const snap = await getDocs(query(collection(db, 'commentaires'),
     where('email', '==', email), where('auteur', '==', autre), where('lu', '==', false)));
