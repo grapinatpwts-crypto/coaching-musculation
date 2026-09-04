@@ -5930,6 +5930,12 @@ function choisirExercice(bi) {
   m.querySelector('#cq').oninput = ev => peindre(ev.target.value);
 }
 
+/**
+ * Charge et pause s'affichent **vides**, pas à « 0 » : un exercice ajouté arrive
+ * à zéro sur les deux, et un zéro déjà dans le champ oblige à l'effacer avant de
+ * taper — sinon on obtient « 060 ». Le placeholder dit la valeur retenue si on
+ * laisse vide, et `Number(...) || 0` à l'enregistrement la pose vraiment.
+ */
 function modalLigne(bi, ei) {
   const e = S.ed.blocs[bi].exercices[ei];
   const dernier = ei === S.ed.blocs[bi].exercices.length - 1;
@@ -5939,7 +5945,7 @@ function modalLigne(bi, ei) {
       <div class="champ"><label>ou durée (s)</label><input class="f" id="lDur" value="${e.duree_s || ''}" placeholder="45 ou max"></div>
     </div>
     <div class="duo">
-      <div class="champ"><label>Charge (kg)</label><input class="f" id="lChg" type="number" min="0" step="2.5" value="${e.charge_cible || 0}"></div>
+      <div class="champ"><label>Charge (kg)</label><input class="f" id="lChg" type="number" min="0" step="2.5" value="${e.charge_cible || ''}" placeholder="0"></div>
       <div class="champ"><label>ou % du max</label><input class="f" id="lPct" type="number" min="0" max="120" value="${e.pct_rm || ''}" placeholder="90"></div>
     </div>
     <p class="consigne">Un pourcentage l'emporte sur la charge fixe : la charge est
@@ -5949,7 +5955,7 @@ function modalLigne(bi, ei) {
         placeholder="1031" autocomplete="off"></div>
     <p class="tempo" id="apercu"></p>
     ${dernier ? '' : `<div class="champ"><label>Pause avant l'exercice suivant (s)</label>
-      <input class="f" id="lPau" type="number" min="0" step="5" value="${e.pause_s || 0}"></div>`}
+      <input class="f" id="lPau" type="number" min="0" step="5" value="${e.pause_s || ''}" placeholder="0"></div>`}
     <div class="champ"><label>Note pour le pratiquant</label>
       <textarea class="f" id="lNote" rows="3"
         placeholder="Ce que vous lui diriez à l'oreille pendant la série">${e.note || ''}</textarea></div>
