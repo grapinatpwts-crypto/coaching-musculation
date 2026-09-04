@@ -1620,6 +1620,13 @@ async function dataAccueil() {
   const triees = seances.slice().sort((a, b) => dateDe(a.date) - dateDe(b.date));
   const prev = att ? await dataPrevisions(email, att) : null;
 
+  // La routine que l'accueil montre : la dernière encore en cours (la liste est
+  // déjà triée du plus récent au plus ancien). Ses exécutions ne se lisent qu'à
+  // ce moment-là — une lecture de plus seulement s'il y a une routine à montrer.
+  const routine = routines.find(r => r.statut === 'Conseillée') || null;
+  const faits = routine ? await dataFaitsRoutine(email, routine.id) : [];
+  const semaineCles = joursDeLaSemaine();
+
   return {
     jours,
     semaine: semaineCourante(jours, seances, recurrences, prev, activites),
@@ -1627,11 +1634,14 @@ async function dataAccueil() {
     prochaine: prochaine ? { jour: prochaine.jour, dans: prochaine.dans,
       duree_estimee: estimerDuree(blocsBruts(att, prochaine.jour)) } : null,
     programme: att ? { id: att.id, nom: att.nom, date_debut: versDate(att.date_debut), duree_semaines: dureeS } : null,
-    // La liste est déjà triée de la plus récente à la plus ancienne : la dernière
-    // encore en cours est celle que l'accueil montre. Terminée ou arrêtée, une
-    // routine reste consultable dans « Toutes mes routines », mais n'occupe plus
-    // l'accueil — c'est du passé, pas une consigne du jour.
-    routine: routines.find(r => r.statut === 'Conseillée') || null,
+    // Terminée ou arrêtée, une routine reste consultable dans « Toutes mes
+    // routines », mais n'occupe plus l'accueil — c'est du passé, pas une
+    // consigne du jour.
+    routine: routine ? {
+      ...routine,
+      faitAujourdhui: faits.indexOf(cleJour(new Date())) !== -1,
+      cetteSemaine: semaineCles.filter(c => faits.indexOf(c) !== -1).length
+    } : null,
     nbRoutines: routines.length,
     progression,
     nbSeances: seances.length,
@@ -1746,7 +1756,11 @@ async function dataRecurrences(email) {
       jour: r.jour || '', frequence: r.frequence || 'semaine',
       date_debut: r.date_debut || '', date_fin: r.date_fin || '',
       date: r.date || '',
-      heure: r.heure || '', duree_min: Number(r.duree_min) || 0, notes: r.notes || ''
+      heure: r.heure || '', duree_min: Number(r.duree_min) || 0, notes: r.notes || '',
+      // Posé quand l'entrée vient d'une routine : c'est ce qui permet de la
+      // reconnaître pour la remplacer ou la retirer quand le pratiquant change
+      // d'avis, sans toucher à son planning à lui.
+      routine_id: r.routine_id || ''
     });
   });
   return list.sort((a, b) =>
@@ -1761,7 +1775,7 @@ async function sauverRecurrence(p) {
   const recurrent = !!p.recurrent;
   const champs = {
     sport, recurrent, heure: String(p.heure || ''), duree_min: Number(p.duree_min) || 0,
-    notes: String(p.notes || '')
+    notes: String(p.notes || ''), routine_id: String(p.routine_id || '')
   };
   if (recurrent) {
     const jour = String(p.jour || '').trim();
@@ -2098,6 +2112,32 @@ async function majRoutinePratiquant(email, id, patch) {
 async function retirerRoutinePratiquant(email, id) {
   const { db, doc, deleteDoc } = FB;
   await deleteDoc(doc(db, 'pratiquants', email, 'routines', id));
+}
+
+/**
+ * Les jours où la routine a été faite. L'identifiant du document **est** la clé
+ * du jour : cocher deux fois le même jour réécrit le même document au lieu d'en
+ * empiler deux, et la liste se lit sans tri ni dédoublonnage.
+ */
+async function dataFaitsRoutine(email, id) {
+  const { db, collection, getDocs } = FB;
+  const snap = await getDocs(collection(db, 'pratiquants', email, 'routines', id, 'faits'));
+  return snap.docs.map(d => d.id).sort();
+}
+
+async function marquerRoutineFaite(email, id, cle, fait) {
+  const { db, doc, setDoc, deleteDoc, serverTimestamp } = FB;
+  const ref = doc(db, 'pratiquants', email, 'routines', id, 'faits', cle);
+  if (fait) await setDoc(ref, { le: serverTimestamp() });
+  else await deleteDoc(ref);
+}
+
+/** Les jours de la semaine en cours, du lundi au dimanche, en clés de jour. */
+function joursDeLaSemaine() {
+  const lundi = new Date();
+  lundi.setDate(lundi.getDate() - ((lundi.getDay() + 6) % 7));
+  lundi.setHours(0, 0, 0, 0);
+  return [0, 1, 2, 3, 4, 5, 6].map(i => cleJour(new Date(lundi.getTime() + i * 86400000)));
 }
 
 /** Supprime un modèle et ses lignes. Les programmes déjà attribués — des
@@ -2469,6 +2509,12 @@ async function vueAccueil() {
         <div class="meta">${[a.routine.type, libelleFrequence(a.routine.frequence),
           a.routine.duree_semaines ? a.routine.duree_semaines + ' semaines' : ''].filter(Boolean).join(' · ')}</div>
         ${a.routine.note ? `<div class="note-coach">${a.routine.note}</div>` : ''}
+        <div class="meta bas">${a.routine.cetteSemaine
+          ? a.routine.cetteSemaine + ' fois cette semaine' : 'Pas encore faite cette semaine'}</div>
+        <div class="barre">
+          <button class="btn ${a.routine.faitAujourdhui ? '' : 'plein'}" id="faitRoutine" style="flex:1">${
+            a.routine.faitAujourdhui ? '✓ Faite aujourd\'hui' : 'Marquer faite aujourd\'hui'}</button>
+        </div>
         <div class="barre">
           <button class="btn" id="detailRoutine" style="flex:1">Voir le détail</button>
           <button class="btn" id="toutesRoutines">Toutes mes routines</button>
@@ -2497,6 +2543,14 @@ async function vueAccueil() {
   if (br) br.onclick = () => { S.maRoutine = a.routine; S.vue = 'routine'; rendre(); };
   const bmr = $('#toutesRoutines');
   if (bmr) bmr.onclick = () => { S.vue = 'routines'; rendre(); };
+  const bfr = $('#faitRoutine');
+  if (bfr) bfr.onclick = async function () {
+    this.disabled = true;
+    try {
+      await marquerRoutineFaite(S.email, a.routine.id, cleJour(new Date()), !a.routine.faitAujourdhui);
+      rendre();
+    } catch (err) { toast(err.message); this.disabled = false; }
+  };
   $('#zone').querySelectorAll('[data-jsem]').forEach(b =>
     b.onclick = () => { S.jour = b.dataset.jsem; S.vue = 'seance'; rendre(); });
   $('#zone').querySelectorAll('[data-act]').forEach(b =>
@@ -2832,14 +2886,24 @@ async function vueMaRoutine() {
   $('#retourRoutines').onclick = () => { S.vue = 'routines'; rendre(); };
   if (!r) { $('#zone').innerHTML = `<div class="empty">Aucune routine.</div>`; return; }
 
-  let source;
-  try { source = await dataRoutine(r.routine_id); }
-  catch (err) {
+  let source, faits, planif;
+  try {
+    [source, faits, planif] = await Promise.all([
+      dataRoutine(r.routine_id),
+      dataFaitsRoutine(S.email, r.id),
+      dataRecurrences().then(l => l.filter(x => x.routine_id === r.id))
+    ]);
+  } catch (err) {
     $('#zone').innerHTML = `<div class="empty">${err.message === 'ROUTINE_INTROUVABLE'
       ? 'Cette routine n\'est plus disponible. Parlez-en à votre coach.'
       : 'Impossible de charger.<br>' + err.message}</div>`;
     return;
   }
+
+  const semaine = joursDeLaSemaine();
+  const aujourdhui = cleJour(new Date());
+  const faitAujourdhui = faits.indexOf(aujourdhui) !== -1;
+  const cetteSemaine = semaine.filter(c => faits.indexOf(c) !== -1).length;
 
   $('#zone').innerHTML = `
     <div class="card" style="display:block;margin-bottom:16px">
@@ -2849,6 +2913,29 @@ async function vueMaRoutine() {
       ${source.description ? `<p class="consigne" style="margin-top:8px">${source.description}</p>` : ''}
       ${lecteur(source.video)}
     </div>
+
+    <div class="card" style="display:block;margin-bottom:16px">
+      <div class="eyebrow">Cette semaine</div>
+      <div class="sous" style="margin:10px 0 4px;pointer-events:none">
+        ${semaine.map((c, i) => `<button type="button" aria-pressed="${faits.indexOf(c) !== -1}"
+          >${SEMAINE[i].slice(0, 3)}</button>`).join('')}
+      </div>
+      <div class="meta bas">${cetteSemaine
+        ? cetteSemaine + ' fois cette semaine' : 'Pas encore faite cette semaine'}${
+        faits.length ? ' · ' + faits.length + ' en tout' : ''}</div>
+      <div class="barre">
+        <button class="btn ${faitAujourdhui ? '' : 'plein'}" id="rtFait" style="flex:1">${
+          faitAujourdhui ? '✓ Faite aujourd\'hui' : 'Marquer faite aujourd\'hui'}</button>
+      </div>
+      <div class="barre">
+        <button class="btn" id="rtPlanif" style="flex:1">${planif.length
+          ? 'Modifier ma planification · ' + planif.length + ' jour' + (planif.length > 1 ? 's' : '')
+          : '＋ Planifier dans ma semaine'}</button>
+      </div>
+      ${planif.length ? `<div class="meta bas">${planif.map(p =>
+        p.jour + (p.heure ? ' ' + p.heure : '')).join(' · ')}</div>` : ''}
+    </div>
+
     ${source.exercices.length ? `<div class="eyebrow" style="margin-bottom:10px">Les exercices</div>` : ''}
     ${source.exercices.map(e => `<div class="ligne">
       <div class="g">
@@ -2858,6 +2945,85 @@ async function vueMaRoutine() {
           e.repos_s ? 'repos ' + e.repos_s + ' s' : ''].filter(Boolean).join(' · ')}</div>
       </div>
     </div>`).join('') || `<div class="empty">Cette routine n'a pas encore d'exercice.</div>`}`;
+
+  $('#rtFait').onclick = async function () {
+    this.disabled = true;
+    try {
+      await marquerRoutineFaite(S.email, r.id, aujourdhui, !faitAujourdhui);
+      vueMaRoutine();
+    } catch (err) { toast(err.message); this.disabled = false; }
+  };
+  $('#rtPlanif').onclick = () => modalPlanifierRoutine(r, source, planif);
+}
+
+/**
+ * Poser une routine dans sa semaine. Les jours conseillés sont pré-cochés — le
+ * rythme du coach est une proposition, pas une contrainte : c'est le pratiquant
+ * qui sait quand il peut. Ce qu'il valide devient des entrées de son **planning
+ * récurrent**, celui qui existait déjà pour ses cours hors programme : elles
+ * s'affichent donc dans son calendrier et son bandeau de semaine sans une ligne
+ * de plus, et le coach les voit comme le reste de son planning.
+ */
+function modalPlanifierRoutine(r, source, planif) {
+  const dejaJours = planif.map(p => p.jour);
+  const choisis = new Set(dejaJours.length ? dejaJours : joursFrequence(source.frequence));
+  const heure0 = (planif[0] || {}).heure || '';
+  const w = modal('Planifier ' + r.nom, `
+    <div class="champ"><label>Mes jours</label>
+      <div class="sous" data-role="plj" style="margin-bottom:0;flex-wrap:wrap">
+        ${SEMAINE.map(j => `<button type="button" data-j="${j}"
+          aria-pressed="${choisis.has(j)}">${j.slice(0, 3)}</button>`).join('')}
+      </div></div>
+    <p class="consigne">${libelleFrequence(source.frequence)
+      ? 'Rythme conseillé : ' + libelleFrequence(source.frequence).toLowerCase() + '. À vous d\'ajuster.'
+      : 'Aucun rythme conseillé : posez les jours qui vous arrangent.'}</p>
+    <div class="champ"><label>Heure</label>
+      <input class="f" id="plHeure" type="time" value="${heure0}"></div>
+    <div class="barre"><button class="btn" id="plAnn">Annuler</button>
+      <button class="btn plein" id="plOk" style="flex:1">Enregistrer</button></div>
+    ${planif.length ? '<div class="barre"><button class="btn danger" id="plDel">Retirer de ma semaine</button></div>' : ''}`);
+
+  w.querySelectorAll('[data-role="plj"] button').forEach(b => b.onclick = () => {
+    const j = b.dataset.j;
+    if (choisis.has(j)) choisis.delete(j); else choisis.add(j);
+    b.setAttribute('aria-pressed', choisis.has(j) ? 'true' : 'false');
+  });
+  w.querySelector('#plAnn').onclick = w.fermer;
+
+  // Réécrire plutôt que rapprocher : on retire les entrées nées de cette routine
+  // et on repose celles qui sont cochées. Trois écritures pour un jour changé,
+  // mais aucun cas tordu à tenir — et un planning se retouche rarement.
+  const remplacer = async (jours) => {
+    for (const p of planif) await supprimerRecurrence(p.id);
+    const debut = cleJour(new Date());
+    const fin = source.duree_semaines ? finPrevueDe(dateDeCle(debut), source.duree_semaines) : '';
+    for (const j of jours) {
+      await sauverRecurrence({
+        sport: r.nom, recurrent: true, jour: j,
+        heure: w.querySelector('#plHeure').value, duree_min: 0,
+        notes: 'Routine conseillée', routine_id: r.id,
+        date_debut: debut, date_fin: fin
+      });
+    }
+  };
+
+  w.querySelector('#plOk').onclick = async function () {
+    const jours = SEMAINE.filter(j => choisis.has(j));
+    if (!jours.length) return toast('Choisissez au moins un jour');
+    this.disabled = true;
+    try {
+      await remplacer(jours);
+      w.fermer(); toast('Planifiée'); vueMaRoutine();
+    } catch (err) { toast(err.message); this.disabled = false; }
+  };
+  const pd = w.querySelector('#plDel');
+  if (pd) pd.onclick = async function () {
+    this.disabled = true;
+    try {
+      await remplacer([]);
+      w.fermer(); toast('Retirée de la semaine'); vueMaRoutine();
+    } catch (err) { toast(err.message); this.disabled = false; }
+  };
 }
 
 // ── Vue séance ───────────────────────────────────────────────
@@ -7282,6 +7448,7 @@ function modalRoutineConseillee(r) {
   const w = modal(r.nom, `
     <div class="meta" style="margin:-6px 0 12px">${[r.type, libelleFrequence(r.frequence),
       r.duree_semaines ? r.duree_semaines + ' semaines' : ''].filter(Boolean).join(' · ')}</div>
+    <p class="consigne" id="rcnSuivi">Chargement du suivi…</p>
     <div class="champ"><label>Pourquoi cette routine</label>
       <textarea class="f" id="rcnNote" rows="3">${r.note || ''}</textarea></div>
     <div class="champ"><label>Statut</label>
@@ -7291,6 +7458,23 @@ function modalRoutineConseillee(r) {
     <div class="barre"><button class="btn" id="rcnAnn">Annuler</button>
       <button class="btn plein" id="rcnOk" style="flex:1">Enregistrer</button></div>
     <div class="barre"><button class="btn danger" id="rcnDel">Retirer</button></div>`);
+
+  // Le suivi arrive après coup : une lecture de plus, faite seulement quand le
+  // coach ouvre une routine précise — pas pour peindre la liste entière.
+  dataFaitsRoutine(S.coach.email, r.id).then(faits => {
+    const cible = w.querySelector('#rcnSuivi');
+    if (!cible) return;
+    const semaine = joursDeLaSemaine().filter(c => faits.indexOf(c) !== -1).length;
+    const dernier = faits.length ? faits[faits.length - 1] : '';
+    cible.textContent = faits.length
+      ? `${semaine} fois cette semaine · ${faits.length} en tout · dernière le ${
+          new Date(dernier).toLocaleDateString('fr-FR')}`
+      : 'Jamais cochée comme faite pour l\'instant.';
+  }).catch(() => {
+    const cible = w.querySelector('#rcnSuivi');
+    if (cible) cible.textContent = 'Suivi indisponible.';
+  });
+
   w.querySelector('#rcnAnn').onclick = w.fermer;
   w.querySelector('#rcnOk').onclick = async function () {
     this.disabled = true;

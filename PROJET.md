@@ -1549,12 +1549,37 @@ exercices avec leurs séries, répétitions ou durée et repos. Si la routine a
 disparu du catalogue, l'écran le dit (« Parlez-en à votre coach ») au lieu de
 rester vide — la leçon du § 8 sur les lectures sans `try/catch`.
 
-### Ce qui reste
+### La poser dans sa semaine
 
-L'étape 3 : la **planification** par le pratiquant — choisir ses jours et son
-heure, dans le planning récurrent qui existe déjà (§ 8) — et le suivi « faite ».
-Rien n'est ouvert en écriture au pratiquant sur ses routines : ce qu'il en
-décidera vivra dans ses `recurrences`, déjà self-service.
+Le détail d'une routine porte **＋ Planifier dans ma semaine** : les jours
+conseillés sont **pré-cochés**, le pratiquant ajuste, choisit son heure. Ce qu'il
+valide devient des entrées de son **planning récurrent** — celui qui existait
+déjà pour ses cours hors programme. Elles s'affichent donc dans son calendrier et
+son bandeau de semaine sans une ligne de code de plus, et le coach les voit comme
+le reste de son planning. Un champ `routine_id` les marque : c'est ce qui permet
+de les remplacer ou de les retirer sans toucher au reste.
+
+`date_debut` est le jour de la planification, `date_fin` en découle si la routine
+conseille un nombre de semaines — la fenêtre s'éteint d'elle-même. Modifier la
+planification **réécrit** : on retire les entrées nées de cette routine et on
+repose celles qui sont cochées. Trois écritures pour un jour changé, mais aucun
+cas tordu à tenir, et un planning se retouche rarement.
+
+### « Faite », et rien de plus
+
+Un bouton sur l'accueil et sur le détail : *Marquer faite aujourd'hui*, qui
+devient *✓ Faite aujourd'hui*. Une rangée de sept pastilles montre la semaine.
+
+`pratiquants/{email}/routines/{id}/faits/{AAAA-MM-JJ}` : **l'identifiant du
+document est la clé du jour**, donc cocher deux fois le même jour réécrit le même
+document au lieu d'en empiler deux, et la liste se lit sans tri ni
+dédoublonnage. Les règles n'y autorisent que `create` et `delete` par le
+concerné — une exécution est faite ou ne l'est pas, elle ne se modifie pas.
+
+Pas de séries, pas de charges : consigner une routine de mobilité comme une
+séance aurait demandé plus de gestes que le mouvement lui-même. Le coach retrouve
+le décompte en ouvrant la routine conseillée dans la fiche de l'athlète — une
+lecture faite à ce moment-là seulement, pas pour peindre la liste entière.
 
 ## 9. Parti pris visuel — charte Wellness Sport Club
 

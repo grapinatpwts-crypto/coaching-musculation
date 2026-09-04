@@ -99,6 +99,15 @@ service cloud.firestore {
       match /routines/{routineId} {
         allow read: if estMoi(email) || estCoach();
         allow write: if estCoach();
+
+        // Ce que le pratiquant a fait, lui. Un document par jour, l'identifiant
+        // étant la clé du jour (AAAA-MM-JJ) : cocher deux fois le même jour
+        // réécrit le même document au lieu d'en empiler deux. Pas d'`update` —
+        // une exécution est faite ou ne l'est pas, elle ne se modifie pas.
+        match /faits/{cleJour} {
+          allow read: if estMoi(email) || estCoach();
+          allow create, delete: if estMoi(email) && statutOk();
+        }
       }
     }
 
