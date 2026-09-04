@@ -6581,14 +6581,14 @@ async function vueModele() {
       </div>
     </div>
     <div class="days" id="jours">
-      ${jours.map(j => `<button class="day" data-j="${j}" aria-pressed="${S.ed && S.ed.jour === j}">${j}</button>`).join('')}
+      ${jours.map(j => `<button class="day" data-j="${j}" aria-pressed="${S.ed && S.ed.jour === j}"
+        title="${j} — appui long pour renommer">${j}</button>`).join('')}
       <button class="day" id="addJour">＋ jour</button>
     </div>
     <div id="edit"></div>`;
 
   $('#editMeta').onclick = () => modalModele(m);
-  $('#zone').querySelectorAll('.day[data-j]').forEach(b =>
-    b.onclick = () => { chargerJour(b.dataset.j); vueModele(); });
+  cablerJours(vueModele);
   $('#addJour').onclick = modalNouveauJour;
   peindreEditeur();
 }
@@ -6717,7 +6717,8 @@ async function vueProgramme() {
       <button class="btn danger" id="supprAtt">Supprimer</button>
     </div>
     <div class="days" id="jours" style="margin-top:16px">
-      ${jours.map(j => `<button class="day" data-j="${j}" aria-pressed="${S.ed && S.ed.jour === j}">${j}</button>`).join('')}
+      ${jours.map(j => `<button class="day" data-j="${j}" aria-pressed="${S.ed && S.ed.jour === j}"
+        title="${j} — appui long pour renommer">${j}</button>`).join('')}
       <button class="day" id="addJour">＋ jour</button>
     </div>
     <div id="edit"></div>`;
@@ -6727,8 +6728,7 @@ async function vueProgramme() {
   $('#dates').onclick = () => modalDatesAttribution(att);
   $('#prevenir').onclick = () => modalNotifier(S.attSel, S.coach.email);
   $('#addJour').onclick = modalNouveauJour;
-  $('#zone').querySelectorAll('.day[data-j]').forEach(b =>
-    b.onclick = () => { chargerJour(b.dataset.j); vueProgramme(); });
+  cablerJours(vueProgramme);
 
   const cl = $('#clore');
   if (cl) cl.onclick = async function () {
@@ -6967,6 +6967,89 @@ async function supprimerLignesJour(refDoc, refLignes, jour) {
   await updateDoc(refDoc, { nb_jours: new Set(restantes.map(l => l.jour)).size, nb_exercices: restantes.length,
     duree_max_min: dureeMaxSeance(restantes) });
   return { supprimees: n };
+}
+
+/**
+ * Renomme un jour : les lignes gardent leur document, seul le champ `jour`
+ * change. Surtout pas un « supprimer puis réécrire » comme `sauverLignesJour` :
+ * `ligne_id` **est** l'identifiant du document de ligne, et chaque série déjà
+ * enregistrée le porte (§ « Une ligne, un compteur ») — recréer les lignes
+ * couperait l'historique de tout ce qui a été fait ce jour-là.
+ *
+ * Les compteurs du doc parent ne sont pas recalculés : même nombre de jours, de
+ * lignes et de durée, seul l'intitulé bouge.
+ *
+ * Une séance ouverte au même moment retrouve ses exercices par l'intitulé du
+ * jour : la renommer sous les pieds du pratiquant lui viderait l'écran jusqu'à
+ * ce qu'il reprenne. Risque accepté — le coach retouche ses programmes entre
+ * les séances, pas pendant.
+ */
+async function renommerLignesJour(refLignes, ancien, nouveau) {
+  const { db, getDocs, writeBatch } = FB;
+  const existantes = await getDocs(refLignes);
+  // Deux jours du même nom fusionneraient en silence : refusé plutôt que subi.
+  if (existantes.docs.some(d => String(d.data().jour) === nouveau)) throw new Error('JOUR_EXISTE');
+  const b = writeBatch(db);
+  let n = 0;
+  existantes.docs.forEach(d => {
+    if (String(d.data().jour) === ancien) { b.update(d.ref, { jour: nouveau }); n++; }
+  });
+  if (!n) throw new Error('JOUR_INTROUVABLE');
+  await b.commit();
+  return { renommees: n };
+}
+
+/**
+ * Renommer un jour, ouvert par un **appui long sur son onglet** — le geste
+ * existait déjà sur la pastille de séries, autant garder le même. Un bouton de
+ * plus dans la barre de l'éditeur aurait chargé un écran déjà dense pour une
+ * action rare, et l'onglet est justement là où se lit l'intitulé qu'on veut
+ * changer.
+ */
+function modalRenommerJour(ancien, refresh) {
+  const w = modal('Renommer le jour', `
+    <div class="champ"><label>Intitulé</label>
+      <input class="f" id="rj" value="${ancien}" list="lrj">
+      <datalist id="lrj">${SEMAINE.map(j => `<option>${j} — </option>`).join('')}</datalist></div>
+    <p class="consigne">Le jour de la semaine doit apparaître dans l'intitulé : c'est lui
+      qui donne l'ordre d'affichage. Les séances déjà faites gardent l'ancien intitulé —
+      c'est ce qui s'est passé, ça ne se réécrit pas.</p>
+    <div class="barre"><button class="btn" id="rjAnn">Annuler</button>
+      <button class="btn plein" id="rjOk" style="flex:1">Renommer</button></div>`);
+  w.querySelector('#rjAnn').onclick = w.fermer;
+  w.querySelector('#rjOk').onclick = async function () {
+    const v = w.querySelector('#rj').value.trim();
+    if (!v) return toast('Donnez un intitulé');
+    if (v === ancien) return w.fermer();
+    this.disabled = true;
+    const { db, collection } = FB;
+    try {
+      await renommerLignesJour(S.coach.modele
+        ? collection(db, 'modeles', S.coach.modele, 'lignes')
+        : collection(db, 'attributions', S.attSel, 'programme'), ancien, v);
+      // L'éditeur ouvert sur ce jour doit suivre, sinon la vue le croit disparu
+      // et rebascule sur le premier jour du programme.
+      if (S.ed && S.ed.jour === ancien) S.ed.jour = v;
+      toast('Jour renommé'); w.fermer(); refresh();
+    } catch (err) {
+      toast(err.message === 'JOUR_EXISTE' ? 'Un jour porte déjà cet intitulé'
+        : err.message === 'JOUR_INTROUVABLE' ? 'Ce jour n\'a plus de ligne à renommer'
+        : err.message);
+      this.disabled = false;
+    }
+  };
+}
+
+/**
+ * Les onglets de jours : appui court pour ouvrir le jour, appui long pour le
+ * renommer. Même câblage pour un modèle et pour un programme attribué, seul
+ * l'écran à repeindre change.
+ */
+function cablerJours(refresh) {
+  $('#zone').querySelectorAll('.day[data-j]').forEach(b =>
+    appuiLong(b,
+      () => { chargerJour(b.dataset.j); refresh(); },
+      () => modalRenommerJour(b.dataset.j, refresh)));
 }
 
 function chargerJour(jour) {

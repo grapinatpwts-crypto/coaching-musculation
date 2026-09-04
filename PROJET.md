@@ -581,6 +581,21 @@ L'enregistrement **réécrit un jour entier** : les lignes existantes de ce coup
 pratiquants ne bougent pas. Les numéros de bloc et d'ordre sont renumérotés à
 l'écriture — l'éditeur n'a pas à les tenir à jour.
 
+**Renommer un jour** — modèle ou programme attribué — se fait par un **appui long
+sur son onglet** (550 ms, le même geste que la pastille de séries ; le `title` de
+l'onglet le dit). C'est la seule écriture de l'éditeur qui ne passe *pas* par la
+réécriture ci-dessus : elle met à jour le champ `jour` des lignes **en place**,
+document par document. `ligne_id` est l'identifiant de ces documents et chaque
+série enregistrée le porte (§ « Une ligne, un compteur ») : les recréer sous un
+autre nom couperait l'historique de tout ce qui a été fait ce jour-là. Les
+compteurs du parent ne bougent pas non plus — mêmes lignes, même durée.
+
+Deux garde-fous : un intitulé déjà porté par un autre jour est refusé, sinon les
+deux fusionneraient en silence ; et **les séances déjà faites gardent l'ancien
+intitulé**, elles racontent ce qui s'est passé. Renommer pendant qu'un pratiquant
+a la séance ouverte lui viderait l'écran jusqu'à ce qu'il la reprenne : risque
+accepté, le coach retouche entre les séances.
+
 **Calendrier.** Le même composant sert au pratiquant pour lui-même et au coach par
 pratiquant : grille mensuelle, bilan du mois, détail au clic sur un jour. Chargé une
 fois sur douze mois, la navigation entre mois ne recharge rien.
