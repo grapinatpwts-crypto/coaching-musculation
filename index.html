@@ -2379,7 +2379,29 @@ function modalTheme() {
 const CLE_BIP_PREMIER = 'muscu.bipPremier';     // 'on' | 'off', défaut 'on'
 const CLE_BIP_PREMIER_S = 'muscu.bipPremierS';  // secondes avant la fin, défaut 10
 const CLE_BIP_DECOMPTE = 'muscu.bipDecompte';   // 'on' | 'off', défaut 'on'
+const CLE_BIP_VOLUME = 'muscu.bipVolume';       // 0 à 100, défaut 25
 const BIP_SECONDES = [5, 10, 15, 20, 30];
+
+/**
+ * Le volume du bip, en pour-cent du gain maximal de l'oscillateur. 25 est la
+ * valeur qu'il avait en dur : ceux qui n'y touchent pas n'entendent aucune
+ * différence. Monter sert quand de la musique tourne dans les écouteurs — c'était
+ * le seul niveau possible, et il passait dessous.
+ * À zéro, plus aucun son : seule la vibration reste, ce qui est un réglage à
+ * part entière dans une salle bruyante ou un appartement à minuit.
+ */
+function volumeBip() {
+  try {
+    // Le test d'absence vient en premier, et ce n'est pas une précaution de
+    // style : `Number(null)` vaut 0, un zéro parfaitement valide pour la borne
+    // qui suit. Sans cette ligne, tout appareil n'ayant jamais ouvert ce réglage
+    // se retrouvait muet — le bip aurait disparu pour tout le monde.
+    const brut = localStorage.getItem(CLE_BIP_VOLUME);
+    if (brut === null || String(brut).trim() === '') return 25;
+    const v = Number(brut);
+    return Number.isFinite(v) && v >= 0 && v <= 100 ? v : 25;
+  } catch (e) { return 25; }
+}
 
 function bipPremierActif() {
   try { return localStorage.getItem(CLE_BIP_PREMIER) !== 'off'; } catch (e) { return true; }
@@ -2404,19 +2426,42 @@ function modalSon() {
     </div>
     <label class="paye"><input type="checkbox" id="sonDecompte" ${bipDecompteActif() ? 'checked' : ''}>
       <span>Décompte sonore des 3 dernières secondes</span></label>
-    <p class="consigne" style="margin-top:14px">Ce réglage ne vaut que sur cet appareil.</p>
+
+    <div class="champ" style="margin-top:18px">
+      <label>Volume des bips — <span id="sonVolVal"></span></label>
+      <input class="curseur" id="sonVol" type="range" min="0" max="100" step="5" value="${volumeBip()}">
+      <div class="meta" style="display:flex;justify-content:space-between;margin-top:2px">
+        <span>vibration seule</span><span>maximum</span></div>
+    </div>
+    <div class="barre" style="margin-top:0">
+      <button class="btn" id="sonTest" style="flex:1">Écouter</button></div>
+
+    <p class="consigne" style="margin-top:14px">Un volume se règle à l'oreille, et
+      dans les conditions réelles : mettez votre musique, puis montez jusqu'à
+      entendre le bip par-dessus. Ce réglage ne vaut que sur cet appareil.</p>
     <div class="barre" style="margin-top:10px"><button class="btn plein" id="sonOk" style="flex:1">Fermer</button></div>`);
 
+  const vol = w.querySelector('#sonVol');
+  const etiquette = () => {
+    w.querySelector('#sonVolVal').textContent =
+      Number(vol.value) === 0 ? 'silencieux' : vol.value + ' %';
+  };
   const maj = () => {
     try {
       localStorage.setItem(CLE_BIP_PREMIER, w.querySelector('#sonPremier').checked ? 'on' : 'off');
       localStorage.setItem(CLE_BIP_PREMIER_S, w.querySelector('#sonPremierS').value);
       localStorage.setItem(CLE_BIP_DECOMPTE, w.querySelector('#sonDecompte').checked ? 'on' : 'off');
+      localStorage.setItem(CLE_BIP_VOLUME, vol.value);
     } catch (e) {}
   };
+  etiquette();
   w.querySelector('#sonPremier').onchange = maj;
   w.querySelector('#sonPremierS').onchange = maj;
   w.querySelector('#sonDecompte').onchange = maj;
+  // Pendant qu'on glisse : l'étiquette suit, le réglage est posé, mais on ne
+  // fait pas biper à chaque pas — ce serait un grésillement, pas un essai.
+  vol.oninput = () => { etiquette(); maj(); };
+  w.querySelector('#sonTest').onclick = () => bip(880, .4, Number(vol.value));
   w.querySelector('#sonOk').onclick = w.fermer;
 }
 
@@ -4355,17 +4400,23 @@ function lancerMinuteur(secondes, libelle, apres, suite) {
   }, 1000);
 }
 
-function bip(frequence, duree) {
+function bip(frequence, duree, volume) {
   try {
     const d = duree || .4;
+    // `volume` n'est passé que par le bouton d'essai des réglages : ailleurs,
+    // c'est le réglage de l'appareil qui décide.
+    const v = (volume === undefined ? volumeBip() : volume) / 100;
+    // La vibration ne dépend pas du volume : à zéro, elle est ce qui reste.
+    // 200 ms pour un bip court, le double pour le départ.
+    if (navigator.vibrate) navigator.vibrate(Math.round(d * 500));
+    if (v <= 0) return;
     const c = new (window.AudioContext || window.webkitAudioContext)();
     const o = c.createOscillator(), g = c.createGain();
     o.frequency.value = frequence || 880; o.connect(g); g.connect(c.destination);
-    g.gain.setValueAtTime(.25, c.currentTime);
+    g.gain.setValueAtTime(v, c.currentTime);
+    // La rampe est exponentielle : elle ne peut pas viser zéro, d'où ce plancher.
     g.gain.exponentialRampToValueAtTime(.001, c.currentTime + d);
     o.start(); o.stop(c.currentTime + d);
-    // La vibration suit le son : 200 ms pour un bip court, le double pour le départ.
-    if (navigator.vibrate) navigator.vibrate(Math.round(d * 500));
   } catch (e) {}
 }
 

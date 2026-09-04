@@ -228,6 +228,22 @@ et les trois sons se distinguent à l'oreille sans qu'on ait à les compter :
 | décompte 3-2-1 | 880 Hz, 0,4 s — le défaut historique |
 | fin du temps mort | 1175 Hz, 0,8 s — plus aigu et deux fois plus long : il ne dit pas « encore une seconde » mais « c'est parti » |
 
+**Le volume se règle** (`volumeBip`, curseur de 0 à 100 %, défaut 25). Le gain
+était figé à 0,25 : de la musique dans les écouteurs passait par-dessus le bip,
+et il n'y avait aucun moyen de monter. Le curseur va jusqu'au gain maximal de
+l'oscillateur, soit quatre fois l'ancien niveau, et un bouton **Écouter** joue le
+bip au niveau choisi — un volume se règle à l'oreille, musique allumée, pas en
+lisant un pourcentage.
+
+**À zéro, la vibration reste.** C'est un réglage à part entière — salle bruyante,
+appartement à minuit — et pas une panne : `bip()` sort avant l'oscillateur, mais
+après `navigator.vibrate`.
+
+Le piège de ce réglage, attrapé au banc d'essai : `Number(localStorage.getItem())`
+sur une clé absente vaut **0**, un zéro parfaitement valide pour la borne
+`0 ≤ v ≤ 100`. Tout appareil n'ayant jamais ouvert le réglage serait donc devenu
+muet. L'absence se teste **avant** la conversion.
+
 La vibration suit la durée du son (`d * 500` ms), le départ se sent donc aussi
 dans la poche. Réglage `localStorage`, comme l'apparence : le même compte peut
 vouloir du silence sur son téléphone et du son sur la tablette de la salle.
