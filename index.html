@@ -429,6 +429,13 @@ header h2{font-size:30px;text-transform:uppercase;line-height:1}
 #repos .anneau svg{transform:rotate(-90deg)}
 #repos .mid{flex:1;min-width:0}
 #repos .t{font-size:26px;font-family:'Bebas Neue';font-variant-numeric:tabular-nums;line-height:1.2}
+/* Ce qui vient après. Sur une seule ligne coupée par des points de suspension :
+   le bandeau est fixe au-dessus de la navigation, il ne peut pas grandir sans
+   manger l'écran de saisie qu'il surplombe. */
+#repos .suite{display:block;font-size:12.5px;color:var(--dust);line-height:1.3;
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+#repos .suite b{font-weight:600;color:var(--chalk)}
+#repos .suite.det{font-variant-numeric:tabular-nums}
 #repos button{width:40px;height:40px;border-radius:50%;border:1.5px solid var(--edge);flex:0 0 auto;
   display:flex;align-items:center;justify-content:center}
 
@@ -3686,6 +3693,28 @@ const enAttente = id => ((S.nonLus || {}).exercices || {})[id] || 0;
  * Toujours une <div>, jamais <button> : un bouton dans un bouton est
  * invalide, et la pastille doit rester cliquable indépendamment.
  */
+/**
+ * L'exercice qui vient, en une ligne : son nom, la série qui commence, et ce
+ * qu'elle demande. Le nom d'abord, en gras — c'est lui qu'on cherche du regard
+ * pendant le repos, et la ligne peut être coupée à droite sur un petit écran.
+ */
+function aVenir(e, serie, total) {
+  if (!e) return '';
+  const cible = e.duree_s ? duree(e.duree_s)
+    : (e.reps_cible ? e.reps_cible + ' rep' + (String(e.reps_cible).trim() === '1' ? '' : 's') : '');
+  const serieTexte = serie && total && serie <= total ? `série ${serie} sur ${total}` : '';
+  // Les kilos seuls, pas `chargeTexte` : « 65 kg · 80 % de 82 kg estimés » ne
+  // tient pas dans un bandeau, et pendant le repos on charge la barre, on ne
+  // recalcule pas son pourcentage.
+  const charge = e.charge_cible ? e.charge_cible + ' kg' : '';
+  const detail = [serieTexte, cible, charge].filter(Boolean).join(' · ');
+  // Deux lignes plutôt qu'une. Sur un téléphone, « Développé incliné aux
+  // haltères prise neutre » remplit la largeur à lui seul : tout mettre à la
+  // suite coupait la série et la charge, c'est-à-dire ce qu'on vient y chercher.
+  return `<span class="suite">Ensuite : <b>${e.nom}</b></span>${
+    detail ? `<span class="suite det">${detail}</span>` : ''}`;
+}
+
 function carte(e, seul) {
   const n = faitsDe(e).length;
   const complet = n >= e.series;
@@ -4031,14 +4060,20 @@ async function ouvrirLogger(i) {
     const apres = b.exercices.slice(e._e + 1).filter(ouvert);
 
     if (N > 1 && apres.length) {
-      return lancerMinuteur(e.pause_s, 'Pause', () => ouvrirLogger(apres[0]._i));
+      // Sa série à lui, pas celle qu'on vient de faire : dans un superset chaque
+      // exercice a son propre compteur (voir « Une ligne, un compteur »).
+      return lancerMinuteur(e.pause_s, 'Pause', () => ouvrirLogger(apres[0]._i),
+        aVenir(apres[0], faitsDe(apres[0]).length + 1, b.series));
     }
     // Tour bouclé. Reste-t-il des tours à faire, sur des exercices encore ouverts ?
     const restants = b.exercices.filter(ouvert);
     if (!clos && faits < b.series && restants.length) {
+      // Nouveau tour : le prochain exercice est le premier encore ouvert du bloc,
+      // et sa série est celle du tour qui commence.
+      const prochain = N > 1 ? restants[0] : e;
       return lancerMinuteur(b.repos_s, 'Repos', () => {
         if (N > 1) ouvrirLogger(restants[0]._i);
-      });
+      }, aVenir(prochain, faitsDe(prochain).length + 1, b.series));
     }
     clearInterval(chrono);
     L.classList.add('hidden');
@@ -4276,7 +4311,13 @@ function majPastilles() {
 // dashoffset recalculé à chaque seconde pour vider l'anneau au fil du temps.
 const REPOS_C = 2 * Math.PI * 22;
 
-function lancerMinuteur(secondes, libelle, apres) {
+/**
+ * `suite` : ce qui vient après, en clair. Dans un superset, le repos est
+ * justement le moment où l'on va chercher la barre du mouvement suivant —
+ * l'apprendre en rouvrant l'écran, une fois le minuteur fini, c'est trente
+ * secondes perdues à ne pas se préparer.
+ */
+function lancerMinuteur(secondes, libelle, apres, suite) {
   clearInterval(S.timer);
   const box = $('#repos');
   const total = Number(secondes) || 0;
@@ -4294,7 +4335,8 @@ function lancerMinuteur(secondes, libelle, apres) {
           stroke-linecap="round" stroke-dasharray="${REPOS_C}" stroke-dashoffset="${offset}"/>
       </svg></span>
       <span class="mid"><span class="eyebrow" style="color:var(--brand-ink)">${libelle}</span><br>
-       <span class="t">${String(Math.floor(t / 60))}:${String(t % 60).padStart(2, '0')}</span></span>
+       <span class="t">${String(Math.floor(t / 60))}:${String(t % 60).padStart(2, '0')}</span>
+       ${suite || ''}</span>
       <button id="skip" aria-label="Passer">
         <svg width="15" height="15" viewBox="0 0 24 24" fill="var(--chalk)"><path d="M4 5v14l10-7z"/><rect x="16" y="5" width="3" height="14"/></svg>
       </button>`;

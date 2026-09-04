@@ -179,6 +179,17 @@ L'app enchaîne toute seule : série validée → pause → exercice suivant du 
 … → dernier du bloc → repos → retour au premier. Une `pause_s` à 0 enchaîne sans
 temps mort. Un bloc à un seul exercice ne connaît que `repos_s`, comportement d'avant.
 
+**Le bandeau dit ce qui vient** (`aVenir`) : le nom du prochain exercice, la
+série qui commence et ce qu'elle demande. C'est dans un superset que ça compte —
+le repos est le moment où l'on va chercher la barre du mouvement suivant, et
+l'apprendre à la fin du minuteur, c'est trente secondes passées à ne pas se
+préparer. Deux lignes, pas une : sur un téléphone, « Développé incliné aux
+haltères prise neutre » remplit la largeur à lui seul, et tout mettre à la suite
+coupait justement la série et la charge. Le nom peut être tronqué, jamais ce
+qu'il faut charger. Les kilos y sont seuls, sans le « 80 % de 82 kg estimés » de
+`chargeTexte` : pendant le repos on charge la barre, on ne recalcule pas son
+pourcentage.
+
 **Ces deux enchaînements ne partent que depuis le panneau de saisie.** Valider
 une série depuis la pastille est un raccourci : il écrit la série et rien
 d'autre, sans armer de minuteur. D'où la **rangée de chronos** en haut de
