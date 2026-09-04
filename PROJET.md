@@ -738,6 +738,16 @@ séance est ouverte. La durée est pré-remplie depuis l'heure de début ; resse
 notes sont libres. Les exercices jamais commencés restent simplement non commencés :
 aucune notion d'échec.
 
+**Une séance ouverte prime sur la prochaine à faire.** L'accueil montrait
+toujours la séance *programmée* : celui qui avait démarré un autre jour — matériel
+occupé, envie d'autre chose — voyait son accueil pointer ailleurs et devait
+passer par le calendrier pour retrouver la sienne. `dataAccueil` lit désormais la
+séance ouverte (`seanceOuverteQuelconque`, tous jours confondus) et, s'il y en a
+une, la carte du haut devient **Séance en cours** — depuis quand, et l'intitulé
+prévu en second rang quand ce n'est pas le même jour. « Voir le détail » du
+programme y mène aussi. Cohérent avec la règle qui existait déjà : tant qu'une
+séance est ouverte, aucune autre ne peut démarrer.
+
 **Corriger une série déjà validée.** Les pastilles de séries de l'écran de saisie
 (« 2 · 10 × 65 kg ») sont cliquables tant que la séance est ouverte, et bordées de
 pointillés pour le dire ; la modale corrige les répétitions ou la durée et la

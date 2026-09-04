@@ -1615,12 +1615,13 @@ function semaineCourante(jours, seances, recurrences, prev, activites) {
 async function dataAccueil() {
   const { db, collection, query, where, getDocs } = FB;
   const email = S.email;
-  const [att, seancesSnap, activites, recurrences, routines] = await Promise.all([
+  const [att, seancesSnap, activites, recurrences, routines, ouverte] = await Promise.all([
     attributionActive(email),
     getDocs(query(collection(db, 'seances'), where('email', '==', email))),
     dataActivites(email, { depuis: new Date(Date.now() - 30 * 86400000).toISOString() }),
     dataRecurrences(),
-    dataRoutinesPratiquant(email)
+    dataRoutinesPratiquant(email),
+    seanceOuverteQuelconque()
   ]);
   const seances = seancesSnap.docs.map(d => d.data());
 
@@ -1664,6 +1665,11 @@ async function dataAccueil() {
     recurrences,
     prochaine: prochaine ? { jour: prochaine.jour, dans: prochaine.dans,
       duree_estimee: estimerDuree(blocsBruts(att, prochaine.jour)) } : null,
+    // Une séance ouverte prime sur la prochaine à faire : c'est celle où l'on
+    // est, éventuellement sur un autre jour que celui prévu — matériel occupé,
+    // envie d'autre chose. L'accueil pointait quand même la séance programmée,
+    // et il fallait passer par le calendrier pour retrouver la sienne.
+    enCours: ouverte ? { id: ouverte.id, jour: ouverte.jour, debut: versDate(ouverte.date) } : null,
     programme: att ? { id: att.id, nom: att.nom, date_debut: versDate(att.date_debut), duree_semaines: dureeS } : null,
     // Terminée ou arrêtée, une routine reste consultable dans « Toutes mes
     // routines », mais n'occupe plus l'accueil — c'est du passé, pas une
@@ -2512,6 +2518,22 @@ const salut = () => {
 
 const quand = d => d === 0 ? "aujourd'hui" : d === 1 ? 'demain' : `dans ${d} jours`;
 
+/**
+ * Depuis combien de temps la séance est ouverte. En minutes tant que l'heure
+ * n'est pas passée : « commencée il y a 40 min » situe mieux qu'un horaire à
+ * relire. Au-delà, l'heure de début redevient le repère — et une séance ouverte
+ * la veille se dit franchement, c'est souvent qu'on a oublié de la clore.
+ */
+function depuisQuand(debut) {
+  if (!debut) return 'en cours';
+  const d = new Date(debut);
+  const min = Math.max(0, Math.round((Date.now() - d.getTime()) / 60000));
+  if (min < 90) return `commencée il y a ${min} min`;
+  const memeJour = cleJour(d) === cleJour(new Date());
+  const heure = d.toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' });
+  return memeJour ? `commencée à ${heure}` : `ouverte depuis le ${d.toLocaleDateString('fr-FR')}`;
+}
+
 async function vueAccueil() {
   const app = $('#app');
   app.innerHTML = `<header>
@@ -2557,7 +2579,20 @@ async function vueAccueil() {
       }).join('')}
     </div>
 
-    ${a.prochaine ? `
+    ${a.enCours ? `
+      <div class="eyebrow" style="color:var(--brand-ink)">Séance en cours</div>
+      <button class="card grande" id="allerEnCours">
+        <div class="body">
+          <div class="nom gros">${a.enCours.jour}</div>
+          <div class="meta">${depuisQuand(a.enCours.debut)}${
+            // L'intitulé du jour est écrit par le coach : on le cite tel quel,
+            // le mettre en minuscules donnait « vendredi — bas ».
+            a.prochaine && a.prochaine.jour !== a.enCours.jour
+              ? ' · au programme : ' + a.prochaine.jour : ''}</div>
+        </div>
+        <span class="fleche-carte">›</span>
+      </button>`
+    : a.prochaine ? `
       <div class="eyebrow">Prochaine séance</div>
       <button class="card grande" id="allerSeance">
         <div class="body">
@@ -2626,7 +2661,14 @@ async function vueAccueil() {
 
   const go = () => { S.jour = a.prochaine.jour; S.vue = 'seance'; rendre(); };
   const bs = $('#allerSeance'); if (bs) bs.onclick = go;
-  const bd = $('#detail'); if (bd) bd.onclick = go;
+  const bec = $('#allerEnCours');
+  if (bec) bec.onclick = () => { S.jour = a.enCours.jour; S.vue = 'seance'; rendre(); };
+  // « Voir le détail » du programme mène à la séance en cours quand il y en a
+  // une : c'est là qu'on veut aller, pas sur celle de la semaine prochaine.
+  const bd = $('#detail');
+  if (bd) bd.onclick = a.enCours
+    ? () => { S.jour = a.enCours.jour; S.vue = 'seance'; rendre(); }
+    : (a.prochaine ? go : () => { S.vue = 'programmes'; rendre(); });
   const bt = $('#tous'); if (bt) bt.onclick = () => { S.vue = 'programmes'; rendre(); };
   $('#consigner').onclick = () => modalActivite(null);
   $('#gererPlanning').onclick = () => modalPlanningRecurrent(a.recurrences);
