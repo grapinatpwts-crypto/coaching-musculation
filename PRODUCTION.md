@@ -116,13 +116,43 @@ clore un exercice entamé, clore la séance, ou ne rien clore. Calendrier, courb
 progression, activités libres hors programme. Commentaires attachés à chaque
 exercice.
 
+Une **séance ouverte prime sur la séance programmée** à l'accueil : démarrer un
+autre jour que prévu est ordinaire, l'app suit. Le **bandeau de repos annonce ce
+qui vient** — nom, série, répétitions, charge — parce que c'est le moment où l'on
+va chercher la barre. Un **exercice au temps** démarre après cinq secondes de
+mise en place, et sa fin enregistre la série et lance le repos toute seule : le
+bouton « Valider » n'est pas atteignable les mains au sol. Une **série mal saisie
+se corrige** ou se supprime tant que la séance est ouverte, et une séance passée
+se **rouvre en lecture seule** depuis le calendrier. Le **volume des bips** se
+règle, avec un bouton pour les écouter — de la musique dans les écouteurs
+couvrait le seul niveau possible.
+
+**Routines** : mobilité, étirements, renforcement, conseillés hors séance. Le
+pratiquant les voit à son accueil entre son programme et la consignation, les
+pose dans sa semaine s'il le veut (jours et heure, dans son planning récurrent
+existant) et les coche faites — le calendrier bascule alors de « prévu » à « eu
+lieu ».
+
 ### Pour le coach
 
 Accueil listant les athlètes avec statut, programme et barre d'assiduité. Fiche avec
 contacts WhatsApp, appel et e-mail, statut, historique des programmes, planning
 personnel déclaré par le pratiquant et suivi de paiement. Bibliothèque de 171
-exercices. Modèles génériques réutilisables, rangés par catégorie puis par
-difficulté, importables depuis un fichier Excel. Attribution datée avec durée et fin prévue pilotables, le même modèle
+exercices, chacun typé — musculation, mobilité, étirement, renforcement — et 34
+d'entre eux reliés à une vidéo de démonstration. Modèles génériques réutilisables,
+rangés par catégorie puis par difficulté, importables depuis un fichier Excel.
+
+**Onglet Routines** : un catalogue de mini-programmes d'une séance, parfois d'un
+seul exercice, avec un rythme conseillé (tous les jours, un jour sur deux, une ou
+deux fois par semaine), un nombre de semaines et une vidéo d'ensemble. Ils se
+**conseillent** à un athlète depuis sa fiche, en disant pourquoi, avec un suivi
+des exécutions. Ce sont des conseils qui pointent une vidéo, pas de la
+programmation reprise — voir « Le sujet Eric Flag ».
+
+Le **jour de la semaine d'une séance** se choisit sur des pastilles, et la
+déplacer est le même geste : un appui long sur son onglet. C'était auparavant une
+convention de nommage invisible, qui laissait les programmes importés hors de la
+semaine du pratiquant. Attribution datée avec durée et fin prévue pilotables, le même modèle
 pouvant être redonné. Les séances du programme se déroulent au calendrier, où
 chacune peut être déplacée ou annulée par l'athlète, supprimée par le coach —
 sans que le rythme des suivantes ne bouge. Éditeur de programme avec glisser-déposer. Notes sur les
@@ -216,6 +246,13 @@ ici pour ne pas être redécouvertes comme des oublis.
   ancienne.
 - Le **déplacement et l'annulation** d'une séance planifiée, du côté de
   l'athlète comme du coach.
+- Le **parcours complet des routines** — conseiller, planifier, cocher — vérifié
+  au banc d'essai sur le vrai code, pas encore sur plusieurs semaines réelles.
+  En particulier le rythme « un jour sur deux », qui est deux jeux de jours fixes
+  et non un vrai J+2 : à l'usage, on verra si ça se sent.
+- La **charge ajustée à zéro** — le poids du corps sur un mouvement que le coach
+  a lesté : le cas était impossible jusqu'au 4 septembre 2026, personne ne l'a
+  donc encore vécu sur plusieurs séances.
 
 ### Fonctionnalités en attente
 
@@ -242,6 +279,12 @@ la proposer à des pratiquants, c'est une licence à négocier avec lui.
 
 L'idée de lui présenter l'app reste ouverte, et son format de séance montre exactement
 ce qu'un auteur de programmes attend d'un outil.
+
+Les **routines** ne changent rien à cette ligne : une routine porte un lien vers
+une vidéo et le rythme conseillé par Jérémy, elle ne recopie pas le contenu d'un
+auteur. Même règle que pour les vidéos Rehab-U du catalogue, que le coach partage
+déjà à ses pratiquants en tant que client de leurs formations : on pointe, on ne
+reproduit pas.
 
 ---
 
