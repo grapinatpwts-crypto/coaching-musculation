@@ -1912,7 +1912,7 @@ async function sauverExercice(p) {
   const champs = {
     nom, nom_en: String(p.nom_en || '').trim(), groupe: String(p.groupe || '').trim(),
     equipement: String(p.equipement || '').trim(), consigne: String(p.consigne || '').trim(),
-    difficulte: String(p.difficulte || '').trim(),
+    difficulte: String(p.difficulte || '').trim(), type: String(p.type || '').trim(),
     photo: String(p.photo || '').trim(), video: String(p.video || '').trim()
   };
   if (p.id) {
@@ -1969,6 +1969,76 @@ async function sauverModele(p) {
   champs.nb_jours = 0; champs.nb_exercices = 0; champs.cree_le = serverTimestamp();
   const ref = await addDoc(collection(db, 'modeles'), champs);
   return { id: ref.id, cree: true };
+}
+
+// ── Routines ─────────────────────────────────────────────────
+/**
+ * Une routine est un **mini-programme d'une seule séance**, parfois d'un seul
+ * exercice : la mobilité, les étirements ou le renforcement que le coach
+ * conseille en dehors du programme, souvent après une douleur signalée.
+ *
+ * Ses exercices vivent **dans le document**, pas dans une sous-collection comme
+ * ceux d'un modèle. Une routine ne se dissocie pas — c'est le sens du mot ici,
+ * et une seule vidéo la montre souvent en entier ; l'embarquer épargne une
+ * sous-collection, ses compteurs dénormalisés et une lecture par routine.
+ */
+const enRoutine = (id, r) => ({
+  id, nom: r.nom, type: r.type || '', description: r.description || '',
+  video: r.video || '', source: r.source || '', frequence: r.frequence || '',
+  duree_semaines: Number(r.duree_semaines) || 0, statut: r.statut || 'Brouillon',
+  exercices: (Array.isArray(r.exercices) ? r.exercices : [])
+    .slice().sort((a, b) => (Number(a.ordre) || 0) - (Number(b.ordre) || 0))
+});
+
+async function dataRoutines() {
+  const { db, collection, getDocs } = FB;
+  const snap = await getDocs(collection(db, 'routines'));
+  const list = [];
+  snap.forEach(d => list.push(enRoutine(d.id, d.data())));
+  return list.sort((a, b) => String(a.nom).localeCompare(String(b.nom), 'fr'));
+}
+
+async function dataRoutine(id) {
+  const { db, doc, getDoc } = FB;
+  const s = await getDoc(doc(db, 'routines', id));
+  if (!s.exists()) throw new Error('ROUTINE_INTROUVABLE');
+  return enRoutine(s.id, s.data());
+}
+
+async function sauverRoutine(p) {
+  const { db, doc, collection, addDoc, updateDoc, serverTimestamp } = FB;
+  const nom = String(p.nom || '').trim();
+  if (!nom) throw new Error('NOM_REQUIS');
+  const champs = {
+    nom, type: String(p.type || '').trim(), description: String(p.description || '').trim(),
+    video: String(p.video || '').trim(), source: String(p.source || '').trim(),
+    frequence: String(p.frequence || '').trim(),
+    duree_semaines: Number(p.duree_semaines) || 0,
+    statut: String(p.statut || 'Brouillon').trim()
+  };
+  // Les exercices ne sont écrits que si l'appelant les fournit : la fiche et le
+  // contenu s'enregistrent séparément, et une fiche modifiée ne doit pas effacer
+  // le contenu que l'éditeur n'avait pas en main.
+  if (p.exercices) champs.exercices = p.exercices.map((e, i) => ({
+    exercice_id: String(e.exercice_id || ''), nom: String(e.nom || ''),
+    series: Number(e.series) || 1,
+    reps_cible: e.reps_cible === undefined ? '' : String(e.reps_cible),
+    duree_s: e.duree_s === undefined ? '' : String(e.duree_s),
+    repos_s: Number(e.repos_s) || 0, ordre: i + 1
+  }));
+  if (p.id) {
+    await updateDoc(doc(db, 'routines', p.id), champs);
+    return { id: p.id, cree: false };
+  }
+  champs.exercices = champs.exercices || [];
+  champs.cree_le = serverTimestamp();
+  const ref = await addDoc(collection(db, 'routines'), champs);
+  return { id: ref.id, cree: true };
+}
+
+async function supprimerRoutine(id) {
+  const { db, doc, deleteDoc } = FB;
+  await deleteDoc(doc(db, 'routines', id));
 }
 
 /** Supprime un modèle et ses lignes. Les programmes déjà attribués — des
@@ -2062,7 +2132,8 @@ async function connexionGoogle() {
  */
 function construireNav(estCoach) {
   const onglets = estCoach
-    ? [['athletes','Athlètes'], ['modeles','Modèles'], ['biblio','Bibliothèque'], ['reglages','Réglages']]
+    ? [['athletes','Athlètes'], ['modeles','Modèles'], ['routines','Routines'],
+       ['biblio','Bibliothèque'], ['reglages','Réglages']]
     : [['accueil','Accueil'], ['calendrier','Calendrier'], ['progres','Progrès']];
   if (!onglets.some(o => o[0] === S.vue)) S.vue = onglets[0][0];
   $('#nav').innerHTML = onglets.map(([v, t]) =>
@@ -2227,17 +2298,17 @@ $('#nav').addEventListener('click', e => {
   rendre();
 });
 
-const VUES_COACH = ['athletes', 'modeles', 'biblio', 'reglages'];
+const VUES_COACH = ['athletes', 'modeles', 'routines', 'biblio', 'reglages'];
 
 async function rendre() {
   clearInterval(S.pendule);
   $('#logger').classList.add('hidden');   // l'overlay ne doit pas survivre à un changement de vue
   if (VUES_COACH.indexOf(S.vue) !== -1) {
-    S.coach = S.coach || { onglet:'athletes', email:null, nom:'', sous:'fiche', modele:null, categorie:null };
-    // Changer d'onglet principal quitte la fiche ou le modèle en cours.
+    S.coach = S.coach || { onglet:'athletes', email:null, nom:'', sous:'fiche', modele:null, routine:null, categorie:null };
+    // Changer d'onglet principal quitte la fiche, le modèle ou la routine en cours.
     if (S.coach.onglet !== S.vue) {
-      S.coach.onglet = S.vue; S.coach.email = null; S.coach.modele = null;
-      S.attSel = null; S.ed = null; S.cal = null;
+      S.coach.onglet = S.vue; S.coach.email = null; S.coach.modele = null; S.coach.routine = null;
+      S.attSel = null; S.ed = null; S.cal = null; S.rt = null;
     }
     return vueCoach();
   }
@@ -4313,7 +4384,7 @@ function resumeJour(items) {
 
 // ── Vue coach ────────────────────────────────────────────────
 async function vueCoach() {
-  S.coach = S.coach || { onglet:'athletes', email:null, nom:'', sous:'fiche', modele:null, categorie:null };
+  S.coach = S.coach || { onglet:'athletes', email:null, nom:'', sous:'fiche', modele:null, routine:null, categorie:null };
   const c = S.coach;
   const app = $('#app');
 
@@ -4325,8 +4396,17 @@ async function vueCoach() {
     return vueModele();
   }
 
+  if (c.routine) {
+    app.innerHTML = `
+      <header><h2>Routine</h2><button class="close" id="retour">← Routines</button></header>
+      <div id="zone"><div class="empty">Chargement…</div></div>`;
+    $('#retour').onclick = () => { c.routine = null; S.rt = null; vueCoach(); };
+    return vueRoutine();
+  }
+
   if (!c.email) {
-    const titres = { athletes:'Athlètes', modeles:'Modèles', biblio:'Bibliothèque', reglages:'Réglages' };
+    const titres = { athletes:'Athlètes', modeles:'Modèles', routines:'Routines',
+                     biblio:'Bibliothèque', reglages:'Réglages' };
     app.innerHTML = `
       <header>
         <div class="titre-bloc">
@@ -4337,6 +4417,7 @@ async function vueCoach() {
       <div id="zone"><div class="empty">Chargement…</div></div>`;
     if (c.onglet === 'biblio') return vueBibliotheque();
     if (c.onglet === 'modeles') return vueModeles();
+    if (c.onglet === 'routines') return vueRoutines();
     if (c.onglet === 'reglages') return vueReglages();
     return listeAthletes();
   }
@@ -5680,7 +5761,11 @@ function carteExercice(e) {
     ${e.photo ? `<img class="vignette" src="${e.photo}" alt="" loading="lazy">` : ''}
     <div class="g">
       <div class="nom">${e.nom}${e.nom_en ? ` <span class="vo">(${e.nom_en})</span>` : ''}</div>
-      <div class="meta">${[e.equipement, e.difficulte, e.id].filter(Boolean).join(' · ')}</div>
+      <div class="meta">${[
+        // Le type ne s'affiche que s'il sort de l'ordinaire : « Musculation » sur
+        // 171 cartes sur 171 n'apprendrait rien et mangerait la ligne.
+        typeExo(e) === TYPES_EXO[0] ? '' : typeExo(e),
+        e.equipement, e.difficulte, e.id].filter(Boolean).join(' · ')}</div>
     </div>
     ${lienExercice(e)}
   </div>`;
@@ -5693,7 +5778,7 @@ function valeursDistinctes(items, champ) {
 }
 
 function peindreBibliotheque() {
-  S.coach.fBiblio = S.coach.fBiblio || etatListe({ groupe: '', equipement: '', image: '', video: '' });
+  S.coach.fBiblio = S.coach.fBiblio || etatListe({ type: '', groupe: '', equipement: '', image: '', video: '' });
   const cat = S.cat || [];
 
   monterListe({
@@ -5705,6 +5790,9 @@ function peindreBibliotheque() {
     // La recherche porte aussi sur le nom d'origine : « bench press » doit trouver.
     recherche: e => `${e.nom} ${e.nom_en || ''} ${e.groupe} ${e.equipement}`,
     filtres: [
+      { champ: 'type', label: 'Type',
+        options: [['', 'Tous']].concat(TYPES_EXO.map(t => [t, t])),
+        test: (e, v) => typeExo(e) === v },
       { champ: 'groupe', label: 'Groupe musculaire',
         options: [['', 'Tous']].concat(valeursDistinctes(cat, 'groupe').map(g => [g, g])),
         test: (e, v) => (e.groupe || '') === v },
@@ -5720,6 +5808,8 @@ function peindreBibliotheque() {
     ],
     regroupements: [
       { cle: 'defaut', libelle: 'Aucun' },
+      { cle: 'type', libelle: 'Type',
+        cle_de: typeExo, ordre: ordreSelon(TYPES_EXO, '') },
       { cle: 'groupe', libelle: 'Groupe',
         cle_de: e => e.groupe || 'Sans groupe', ordre: ordreAlpha('Sans groupe') },
       { cle: 'equipement', libelle: 'Équipement',
@@ -5754,10 +5844,15 @@ function lienExercice(e) {
 }
 
 function modalExercice(ex) {
-  const e = ex || { id:'', nom:'', nom_en:'', groupe:'', equipement:'', consigne:'', difficulte:'', photo:'', video:'' };
+  const e = ex || { id:'', nom:'', nom_en:'', groupe:'', equipement:'', consigne:'', difficulte:'', type:'', photo:'', video:'' };
   let difficulte = e.difficulte || '';
+  let type = typeExo(e);
   const m = modal(ex ? 'Modifier l\'exercice' : 'Nouvel exercice', `
     <div class="champ"><label>Nom</label><input class="f" id="mNom" value="${e.nom}"></div>
+    <div class="champ"><label>Type</label>
+      <div class="sous" data-role="mtyp" style="margin-bottom:0">
+        ${TYPES_EXO.map(t => `<button type="button" data-v="${t}" aria-pressed="${type === t}">${t}</button>`).join('')}
+      </div></div>
     <div class="champ"><label>Nom d'origine</label>
       <input class="f" id="mNomEn" value="${e.nom_en || ''}" placeholder="Barbell Bench Press"></div>
     <div class="duo">
@@ -5783,6 +5878,7 @@ function modalExercice(ex) {
 
   m.querySelector('#mAnn').onclick = m.fermer;
   pastilleGroupe(m, 'mdif', v => { difficulte = v; });
+  pastilleGroupe(m, 'mtyp', v => { type = v; });
   m.querySelector('#mOk').onclick = async function () {
     this.disabled = true;
     try {
@@ -5793,7 +5889,7 @@ function modalExercice(ex) {
         groupe: m.querySelector('#mGrp').value,
         equipement: m.querySelector('#mEqp').value,
         consigne: m.querySelector('#mCon').value,
-        difficulte,
+        difficulte, type,
         photo: m.querySelector('#mPho').value,
         video: m.querySelector('#mVid').value
       });
@@ -6371,6 +6467,18 @@ const DIFFICULTES_EXO = ['Débutant', 'Intermédiaire', 'Expert'];
 const SANS_CAT = 'Sans catégorie';
 const SANS_DIF = 'Sans difficulté';
 
+/**
+ * Ce qu'un exercice sert à faire. Les 171 du catalogue de départ sont tous de la
+ * musculation et ne portent pas le champ : un type absent vaut « Musculation »
+ * (`typeExo`), ce qui évite un script de reprise sur toute la base pour poser
+ * partout la seule valeur qu'ils pouvaient avoir.
+ *
+ * Les trois autres sont le vocabulaire des conseils que le coach donne hors
+ * séance — ce dont sont faites les routines.
+ */
+const TYPES_EXO = ['Musculation', 'Mobilité', 'Étirement', 'Renforcement'];
+const typeExo = e => (e && String(e.type || '').trim()) || TYPES_EXO[0];
+
 /** Ordre d'affichage des difficultés : celles qu'on connaît, puis les autres. */
 function ordreDifficulte(d) {
   const i = DIFFICULTES.indexOf(d);
@@ -6600,6 +6708,321 @@ async function vueModele() {
   cablerJours(vueModele);
   $('#addJour').onclick = modalNouveauJour;
   peindreEditeur();
+}
+
+// ── Routines : ce que le coach conseille hors séance ─────────
+/**
+ * Les rythmes conseillés. Chacun porte les jours qu'il vise, parce que « un jour
+ * sur deux » ne se calcule pas sur une semaine de sept : partir du lundi ou du
+ * mardi donne deux rythmes différents, et un vrai J+2 glisserait de semaine en
+ * semaine. Deux variantes fixes valent mieux qu'un calcul qui dérive.
+ * Pour « une » et « deux fois par semaine », les jours ne sont qu'un point de
+ * départ : c'est le pratiquant qui posera les siens à la planification.
+ */
+const FREQUENCES = [
+  ['quotidien', 'Tous les jours', ['Lundi', 'Mardi', 'Mercredi', 'Jeudi', 'Vendredi', 'Samedi', 'Dimanche']],
+  ['lmvd', 'Un jour sur deux · lun, mer, ven, dim', ['Lundi', 'Mercredi', 'Vendredi', 'Dimanche']],
+  ['mjs', 'Un jour sur deux · mar, jeu, sam', ['Mardi', 'Jeudi', 'Samedi']],
+  ['2x', 'Deux fois par semaine', ['Lundi', 'Jeudi']],
+  ['1x', 'Une fois par semaine', ['Lundi']]
+];
+const SANS_FREQ = 'Sans rythme conseillé';
+const libelleFrequence = c => (FREQUENCES.find(f => f[0] === c) || ['', ''])[1];
+const joursFrequence = c => (FREQUENCES.find(f => f[0] === c) || ['', '', []])[2];
+
+// Une routine est faite de ces trois natures-là, ou les mêle.
+const TYPES_ROUTINE = ['Mobilité', 'Étirement', 'Renforcement', 'Mixte'];
+
+async function vueRoutines() {
+  try { S.routines = await dataRoutines(); }
+  catch (err) { $('#zone').innerHTML = `<div class="empty">Impossible de charger.<br>${err.message}</div>`; return; }
+  peindreRoutines();
+}
+
+function peindreRoutines() {
+  S.coach.fRoutines = S.coach.fRoutines || etatListe({ type: '', frequence: '', video: '' });
+  monterListe(vueListeRoutines());
+}
+
+function carteRoutine(r) {
+  return `<div class="ligne" data-rt="${r.id}" title="${r.nom} — appui long pour la fiche">
+    <div class="g">
+      <div class="nom">${r.nom}</div>
+      <div class="meta">${[
+        r.type, libelleFrequence(r.frequence),
+        r.duree_semaines ? r.duree_semaines + ' semaines' : '',
+        r.exercices.length + ' exercice' + (r.exercices.length > 1 ? 's' : '')
+      ].filter(Boolean).join(' · ')}</div>
+    </div>
+    ${r.video ? '<span class="poignee lien" title="Vidéo">▶</span>' : ''}
+    <span class="tag ${r.statut === 'Brouillon' ? 'warn' : ''}">${r.statut}</span>
+  </div>`;
+}
+
+function vueListeRoutines() {
+  return {
+    etat: S.coach.fRoutines,
+    entete: `<p class="consigne" style="margin-bottom:14px">Une routine est un mini-programme
+      d'une séance — parfois d'un seul exercice — à faire en dehors des séances : mobilité,
+      étirements, renforcement. Elle se conseille avec un rythme, pas avec des dates.</p>`,
+    creer: { libelle: '＋ Nouvelle routine', action: () => modalRoutine(null) },
+    placeholder: 'Rechercher une routine…',
+    vide: 'Aucune routine ne correspond.',
+    items: () => S.routines || [],
+    recherche: r => `${r.nom} ${r.type} ${r.description}`,
+    filtres: [
+      { champ: 'type', label: 'Type',
+        options: [['', 'Tous']].concat(TYPES_ROUTINE.map(t => [t, t])),
+        test: (r, v) => (r.type || '') === v },
+      { champ: 'frequence', label: 'Rythme',
+        options: [['', 'Tous']].concat(FREQUENCES.map(f => [f[0], f[1]])),
+        test: (r, v) => (r.frequence || '') === v },
+      { champ: 'video', label: 'Vidéo',
+        options: [['', 'Toutes'], ['1', 'Avec vidéo'], ['0', 'Sans vidéo']],
+        test: (r, v) => v === '1' ? !!r.video : !r.video }
+    ],
+    regroupements: [
+      { cle: 'defaut', libelle: 'Aucun' },
+      { cle: 'type', libelle: 'Type',
+        cle_de: r => r.type || 'Sans type', ordre: ordreSelon(TYPES_ROUTINE, 'Sans type') },
+      { cle: 'frequence', libelle: 'Rythme',
+        cle_de: r => libelleFrequence(r.frequence) || SANS_FREQ,
+        ordre: ordreSelon(FREQUENCES.map(f => f[1]), SANS_FREQ) }
+    ],
+    carte: carteRoutine,
+    // Même geste que les modèles : appui court pour ouvrir, appui long pour la fiche.
+    branche: z => z.querySelectorAll('[data-rt]').forEach(l =>
+      appuiLong(l,
+        () => { S.coach.routine = l.dataset.rt; S.rt = null; vueCoach(); },
+        () => modalRoutine((S.routines || []).find(r => String(r.id) === l.dataset.rt))))
+  };
+}
+
+/** La fiche d'une routine : ce qu'elle est et à quel rythme, pas son contenu. */
+function modalRoutine(r) {
+  const x = r || { id:'', nom:'', type:'', description:'', video:'', source:'',
+                   frequence:'', duree_semaines:'', statut:'Brouillon' };
+  let type = x.type;
+  const w = modal(r ? 'Modifier la routine' : 'Nouvelle routine', `
+    <div class="champ"><label>Nom</label>
+      <input class="f" id="rtNom" value="${x.nom}" placeholder="Mobilité d'épaule du matin"></div>
+    <div class="champ"><label>Type</label>
+      <div class="sous" data-role="rttyp" style="margin-bottom:0">
+        ${TYPES_ROUTINE.map(t => `<button type="button" data-v="${t}" aria-pressed="${type === t}">${t}</button>`).join('')}
+      </div></div>
+    <div class="champ"><label>Rythme conseillé</label>
+      <select class="f" id="rtFrq">
+        <option value="">— À préciser —</option>
+        ${FREQUENCES.map(f => `<option value="${f[0]}" ${f[0] === x.frequence ? 'selected' : ''}>${f[1]}</option>`).join('')}
+      </select></div>
+    <div class="duo">
+      <div class="champ"><label>Semaines conseillées</label>
+        <input class="f" id="rtSem" type="number" min="0" value="${x.duree_semaines || ''}" placeholder="0"></div>
+      <div class="champ"><label>Statut</label>
+        <select class="f" id="rtSta">${['Brouillon', 'Actif', 'Archivé'].map(s =>
+          `<option ${s === x.statut ? 'selected' : ''}>${s}</option>`).join('')}</select></div>
+    </div>
+    <p class="consigne">Un rythme et des semaines, pas des dates : une routine se conseille,
+      c'est le pratiquant qui la posera dans sa semaine.</p>
+    <div class="champ"><label>Description</label><textarea class="f" id="rtDes" rows="3">${x.description}</textarea></div>
+    <div class="champ"><label>Vidéo de la routine entière</label>
+      <input class="f" id="rtVid" value="${x.video || ''}" placeholder="https://vimeo.com/…"></div>
+    <div class="champ"><label>Page source</label>
+      <input class="f" id="rtSrc" value="${x.source || ''}" placeholder="https://…"></div>
+    <div class="barre"><button class="btn" id="rtAnn">Annuler</button>
+      <button class="btn plein" id="rtOk" style="flex:1">Enregistrer</button></div>
+    ${r ? '<div class="barre"><button class="btn danger" id="rtDel">Supprimer la routine</button></div>' : ''}`);
+
+  pastilleGroupe(w, 'rttyp', v => { type = v; });
+  w.querySelector('#rtAnn').onclick = w.fermer;
+  w.querySelector('#rtOk').onclick = async function () {
+    this.disabled = true;
+    try {
+      const res = await sauverRoutine({
+        id: x.id || undefined,
+        nom: w.querySelector('#rtNom').value,
+        type,
+        frequence: w.querySelector('#rtFrq').value,
+        duree_semaines: w.querySelector('#rtSem').value,
+        statut: w.querySelector('#rtSta').value,
+        description: w.querySelector('#rtDes').value,
+        video: w.querySelector('#rtVid').value,
+        source: w.querySelector('#rtSrc').value
+      });
+      w.fermer(); toast('Routine enregistrée');
+      S.coach.routine = x.id || res.id; S.rt = null; vueCoach();
+    } catch (err) {
+      toast(err.message === 'NOM_REQUIS' ? 'Le nom est obligatoire' : err.message);
+      this.disabled = false;
+    }
+  };
+  if (r) w.querySelector('#rtDel').onclick = async function () {
+    this.disabled = true;
+    try {
+      await supprimerRoutine(x.id);
+      w.fermer(); toast('Routine supprimée');
+      S.coach.routine = null; S.rt = null; vueCoach();
+    } catch (err) { toast(err.message); this.disabled = false; }
+  };
+}
+
+/** L'écran d'une routine : sa fiche, puis ses exercices — une seule séance. */
+async function vueRoutine() {
+  let r, cat;
+  try {
+    [r, cat] = await Promise.all([
+      dataRoutine(S.coach.routine),
+      S.cat ? null : dataCatalogue()
+    ]);
+  } catch (err) {
+    $('#zone').innerHTML = `<div class="empty">${err.message === 'ROUTINE_INTROUVABLE'
+      ? 'Cette routine n\'existe plus.' : 'Impossible de charger.<br>' + err.message}</div>`;
+    return;
+  }
+  S.routine = r;
+  if (cat) S.cat = cat;
+  // L'éditeur travaille sur une copie : tant qu'on n'a pas enregistré, la routine
+  // en base ne bouge pas, et « Annuler » se résume à quitter l'écran.
+  if (!S.rt || S.rt.id !== r.id) {
+    S.rt = { id: r.id, exercices: marquerExosRoutine(JSON.parse(JSON.stringify(r.exercices))) };
+  }
+
+  $('#zone').innerHTML = `
+    <div class="card" style="display:block;margin-bottom:16px">
+      <div class="nom">${r.nom}</div>
+      <div class="meta">${[r.type, libelleFrequence(r.frequence),
+        r.duree_semaines ? r.duree_semaines + ' semaines' : '', r.statut].filter(Boolean).join(' · ')}</div>
+      ${r.description ? `<p class="consigne" style="margin-top:8px">${r.description}</p>` : ''}
+      ${lecteur(r.video)}
+      <div class="barre">
+        <button class="btn" id="rtEdit">Modifier la fiche</button>
+        ${r.source ? `<a class="btn contact" href="${r.source}" target="_blank" rel="noopener">Source ↗</a>` : ''}
+      </div>
+    </div>
+    <div id="edit"></div>`;
+
+  $('#rtEdit').onclick = () => modalRoutine(r);
+  peindreEditeurRoutine();
+}
+
+/** Les `_uid` servent au glisser-déposer, comme dans l'éditeur de programme. */
+function marquerExosRoutine(exos) {
+  exos.forEach(e => { if (!e._uid) e._uid = 'r' + (++_uid); });
+  return exos;
+}
+
+function peindreEditeurRoutine() {
+  const z = $('#edit');
+  const exos = S.rt.exercices;
+  z.innerHTML = `
+    <div class="eyebrow" style="margin:4px 0 12px">Exercices de la routine</div>
+    ${exos.map((e, i) => `
+      <div class="ligne" data-ruid="${e._uid}">
+        <span class="poignee prise" data-poignee="rexo" title="Déplacer" aria-label="Déplacer ${e.nom}">⠿</span>
+        <div class="g" data-rex="${i}">
+          <div class="nom">${e.nom}</div>
+          <div class="meta">${[
+            (e.series || 1) + ' × ' + ((e.duree_s ? duree(e.duree_s) : e.reps_cible) || '—'),
+            e.repos_s ? 'repos ' + e.repos_s + ' s' : ''].filter(Boolean).join(' · ')}</div>
+        </div>
+        <button class="poignee" data-delrex="${i}" aria-label="Retirer ${e.nom}">✕</button>
+      </div>`).join('') || `<div class="empty" style="padding:14px 0">Aucun exercice.
+        Une routine peut n'en porter qu'un.</div>`}
+    <button class="btn" id="rtAddExo" style="width:100%;margin-top:10px">＋ exercice</button>
+    <div class="barre">
+      <button class="btn plein" id="rtSave" style="flex:1">Enregistrer la routine</button>
+    </div>`;
+
+  z.querySelectorAll('[data-delrex]').forEach(b => b.onclick = () => {
+    exos.splice(Number(b.dataset.delrex), 1); peindreEditeurRoutine();
+  });
+  lignesCliquables(z, '[data-rex]', l => modalExerciceRoutine(Number(l.dataset.rex)));
+  triable(z, '.ligne[data-ruid]', 'rexo', () => {
+    const ordre = [...z.querySelectorAll('.ligne[data-ruid]')].map(l => l.dataset.ruid);
+    S.rt.exercices = ordre.map(u => exos.find(e => e._uid === u)).filter(Boolean);
+    peindreEditeurRoutine();
+  });
+  $('#rtAddExo').onclick = choisirExerciceRoutine;
+  $('#rtSave').onclick = enregistrerRoutine;
+}
+
+/**
+ * Le choix d'un exercice pour une routine part des types hors musculation — c'est
+ * ce dont une routine est faite — mais ne les impose pas : le gainage, lui, vit
+ * au catalogue de musculation et a toute sa place dans un renforcement.
+ */
+function choisirExerciceRoutine() {
+  let type = '';
+  const m = modal('Ajouter un exercice', `
+    <div class="sous" data-role="rxtyp" style="margin-bottom:10px">
+      <button type="button" data-v="" aria-pressed="true">Tous</button>
+      ${TYPES_EXO.map(t => `<button type="button" data-v="${t}" aria-pressed="false">${t}</button>`).join('')}
+    </div>
+    <div class="recherche"><input class="f" id="rxq" placeholder="Rechercher"></div>
+    <div id="rxlist"></div>`);
+
+  const peindre = () => {
+    const f = (m.querySelector('#rxq').value || '').toLowerCase();
+    const vus = (S.cat || []).filter(e =>
+      (!type || typeExo(e) === type) &&
+      (!f || (e.nom + ' ' + e.groupe + ' ' + e.equipement).toLowerCase().includes(f)));
+    m.querySelector('#rxlist').innerHTML = vus.map(e => `<div class="ligne" data-pickr="${e.id}">
+        <div class="g"><div class="nom">${e.nom}</div>
+          <div class="meta">${[typeExo(e), e.groupe, e.equipement].filter(Boolean).join(' · ')}</div></div>
+        <span class="poignee">＋</span></div>`).join('') || `<div class="empty">Rien ne correspond.</div>`;
+    lignesCliquables(m, '[data-pickr]', l => {
+      const e = (S.cat || []).find(x => String(x.id) === l.dataset.pickr);
+      S.rt.exercices.push({ exercice_id: e.id, nom: e.nom, series: 1, reps_cible: '10',
+                            duree_s: '', repos_s: 0, _uid: 'r' + (++_uid) });
+      m.fermer(); peindreEditeurRoutine();
+    });
+  };
+  pastilleGroupe(m, 'rxtyp', v => { type = v; peindre(); });
+  peindre();
+  m.querySelector('#rxq').oninput = peindre;
+}
+
+/** Séries, répétitions ou durée, repos : le mini-programme d'un exercice. */
+function modalExerciceRoutine(i) {
+  const e = S.rt.exercices[i];
+  const w = modal(e.nom, `
+    <div class="duo">
+      <div class="champ"><label>Séries</label>
+        <input class="f" id="rxSer" type="number" min="1" value="${e.series || 1}"></div>
+      <div class="champ"><label>Repos (s)</label>
+        <input class="f" id="rxRep" type="number" min="0" step="5" value="${e.repos_s || ''}" placeholder="0"></div>
+    </div>
+    <div class="duo">
+      <div class="champ"><label>Répétitions</label>
+        <input class="f" id="rxRps" value="${e.reps_cible || ''}" placeholder="10"></div>
+      <div class="champ"><label>ou durée (s)</label>
+        <input class="f" id="rxDur" value="${e.duree_s || ''}" placeholder="30"></div>
+    </div>
+    <p class="consigne">Une durée renseignée l'emporte : l'exercice se tient, il ne se compte pas.</p>
+    <div class="barre"><button class="btn" id="rxAnn">Annuler</button>
+      <button class="btn plein" id="rxOk" style="flex:1">Appliquer</button></div>`);
+  w.querySelector('#rxAnn').onclick = w.fermer;
+  w.querySelector('#rxOk').onclick = () => {
+    e.series = Number(w.querySelector('#rxSer').value) || 1;
+    e.repos_s = Number(w.querySelector('#rxRep').value) || 0;
+    e.reps_cible = w.querySelector('#rxRps').value.trim();
+    e.duree_s = w.querySelector('#rxDur').value.trim();
+    w.fermer(); peindreEditeurRoutine();
+  };
+}
+
+async function enregistrerRoutine() {
+  const btn = $('#rtSave');
+  btn.disabled = true;
+  try {
+    await sauverRoutine({ id: S.rt.id, nom: S.routine.nom, type: S.routine.type,
+      frequence: S.routine.frequence, duree_semaines: S.routine.duree_semaines,
+      statut: S.routine.statut, description: S.routine.description,
+      video: S.routine.video, source: S.routine.source,
+      exercices: S.rt.exercices });
+    toast('Routine enregistrée');
+    S.rt = null; vueRoutine();
+  } catch (err) { toast(err.message); btn.disabled = false; }
 }
 
 // ── Maxis d'un pratiquant ────────────────────────────────────

@@ -104,6 +104,17 @@ service cloud.firestore {
       allow read, write: if estCoach();
     }
 
+    // ── Routines (conseils hors programme) ─────────────────────────────
+    // Mobilité, étirements, renforcement : des mini-programmes d'une séance que
+    // le coach conseille en dehors du programme. Lecture ouverte à tout compte
+    // connecté, comme le catalogue d'exercices — ce sont des fiches génériques,
+    // et cette ouverture évite le piège des modèles, coach-only, dont il faut
+    // recopier le contenu chez le pratiquant à l'attribution.
+    match /routines/{routineId} {
+      allow read: if request.auth != null;
+      allow write: if estCoach();
+    }
+
     // ── Modèles génériques ─────────────────────────────────────────────
     // Jamais lus/écrits directement par le pratiquant : il voit sa copie dans
     // attributions/{id}/programme, pas le modèle source.

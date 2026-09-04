@@ -1463,6 +1463,67 @@ cliquables sous ces nouveaux noms — Trapèzes, Fessier, Ischio-jambier — san
 bouger d'un pixel ; seul le rectangle Dos, avant d'un seul bloc du haut du dos
 aux lombaires, a été coupé en deux pour isoler ces dernières.
 
+## 8 duovicies. Routines : ce qui se conseille hors séance
+
+Ce qui manquait se voit dans le déroulé d'un rendez-vous : le pratiquant parle
+d'une douleur — celle-là même que le profil sait déjà situer sur la silhouette
+(§ 8 unvicies) — et le coach répond par de la mobilité, des étirements ou du
+renforcement à faire **en dehors des séances**. Rien dans l'app ne portait ce
+conseil : ni le programme, qui est un rythme de séances, ni le catalogue, qui ne
+connaît que des briques.
+
+**Une routine est un mini-programme d'une seule séance**, parfois d'un seul
+exercice. Elle se conseille avec un **rythme** (tous les jours, un jour sur deux,
+une ou deux fois par semaine) et un nombre de **semaines**, jamais avec des
+dates : c'est le pratiquant qui la posera dans son planning, ou pas.
+
+### Ce que ça change dans le catalogue
+
+Chaque exercice porte désormais un **type** — Musculation, Mobilité, Étirement,
+Renforcement — filtrable et regroupable dans la Bibliothèque. Les 171 exercices
+de départ ne portent pas le champ : **un type absent vaut « Musculation »**
+(`typeExo`), ce qui évite un script de reprise sur toute la base pour y écrire
+partout la seule valeur qu'ils pouvaient avoir. Le type ne s'affiche sur une
+carte que s'il sort de l'ordinaire — « Musculation » sur 171 lignes sur 171
+n'apprendrait rien.
+
+### Le document, pas la sous-collection
+
+`routines/{id}` porte ses exercices **dans le document**, là où un modèle les
+range dans une sous-collection `lignes`. Une routine ne se dissocie pas — c'est
+le sens du mot ici, et une seule vidéo la montre souvent en entier ; l'embarquer
+épargne une sous-collection, ses compteurs dénormalisés et une lecture par
+routine. Chaque exercice y porte son mini-programme à lui : séries, répétitions
+*ou* durée, repos.
+
+En lecture, la collection est **ouverte à tout compte connecté**, comme le
+catalogue d'exercices et contrairement aux modèles. C'est délibéré : les modèles
+sont coach-only, ce qui oblige à recopier leur contenu chez le pratiquant à
+l'attribution (§ 8, « Pièges ») ; une routine est une fiche générique, l'ouvrir
+en lecture évite ce piège d'entrée de jeu.
+
+### Les rythmes portent leurs jours
+
+`FREQUENCES` associe à chaque rythme les jours qu'il vise. « Un jour sur deux »
+ne se calcule pas sur une semaine de sept : partir du lundi ou du mardi donne
+deux rythmes différents, et un vrai J+2 glisserait de semaine en semaine — d'où
+deux variantes fixes (lun/mer/ven/dim et mar/jeu/sam) plutôt qu'un calcul qui
+dérive. Pour « une » et « deux fois par semaine », les jours ne sont qu'un point
+de départ : le pratiquant posera les siens.
+
+### Ce qui est livré, ce qui suit
+
+Livré : le type d'exercice, l'onglet **Routines** du coach (liste avec recherche,
+filtres et regroupement comme les deux autres listes ; appui long sur une carte
+pour la fiche, comme les modèles), et l'éditeur d'une routine — fiche, vidéo
+d'ensemble, exercices réglables et réordonnables.
+
+À suivre : (2) l'attribution à un pratiquant et la carte d'accueil « ma dernière
+routine », entre *Mon programme* et le bouton de consignation, avec *Voir le
+détail* / *Toutes mes routines* ; (3) la planification par le pratiquant — heure
+et jours, dans le planning récurrent qui existe déjà (§ 8) — et le suivi
+« faite ».
+
 ## 9. Parti pris visuel — charte Wellness Sport Club
 
 L'app reprend l'identité de **Wellness Sport Club** (`wellness-sportclub.fr`),
