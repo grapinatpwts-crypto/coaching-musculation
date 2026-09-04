@@ -738,6 +738,21 @@ séance est ouverte. La durée est pré-remplie depuis l'heure de début ; resse
 notes sont libres. Les exercices jamais commencés restent simplement non commencés :
 aucune notion d'échec.
 
+**Corriger une série déjà validée.** Les pastilles de séries de l'écran de saisie
+(« 2 · 10 × 65 kg ») sont cliquables tant que la séance est ouverte, et bordées de
+pointillés pour le dire ; la modale corrige les répétitions ou la durée et la
+charge, ou supprime la série — un double appui en avait enregistré deux. Sans ça,
+13 répétitions tapées pour 3 restaient dans l'historique, et faussaient au passage
+le 1RM estimé qui s'en nourrit.
+
+Les règles ouvrent l'`update` d'une série dans la **même fenêtre que sa
+suppression** — la séance encore ouverte — et sur **les trois seuls champs de
+performance** (`reps`, `duree_s`, `charge`) : ni l'exercice visé, ni la ligne de
+programme, ni l'horodatage ne se réécrivent. Une séance close reste un historique
+que seul un admin retouche. `serie_num` n'est pas renuméroté après une
+suppression : il ordonne, il ne compte pas — c'est l'écran qui numérote ce qu'il
+affiche.
+
 **Ne rien terminer du tout.** La séance reste ouverte et se reprend le jour même.
 Le lendemain, `seanceOuverte_` ne la voit plus — elle filtre sur la date — et une
 nouvelle séance démarre. L'ancienne garde sa `duree_min` vide, ce qui la distingue
@@ -840,6 +855,14 @@ L'ajustement se pose depuis l'écran de saisie : le pratiquant change la charge,
 bouton propose de la garder. Un second appui revient à la charge du programme.
 L'ajustement est rattaché à l'attribution en cours : un nouveau programme repart
 des valeurs du coach.
+
+**Zéro est une charge, pas une absence de charge.** L'effacement se signalait par
+un `0`, ce qui rendait impossible de se fixer **le poids du corps** sur un
+mouvement que le coach a lesté : « Garder 0 kg » rendait la main au programme au
+lieu d'enregistrer le choix. C'est maintenant `null` qui efface, et la
+**présence du document** qui fait foi à la lecture (`perso !== undefined`, non
+`perso > 0`). Le bouton dit « Garder le poids du corps comme ma charge », et la
+carte affiche « poids du corps · votre charge » plutôt que de se taire.
 
 ## 8 nonies. Bibliothèque de départ
 

@@ -196,6 +196,14 @@ service cloud.firestore {
         // annulation échouait sur un « droits insuffisants ». Une séance close, elle,
         // reste un historique que seul un admin réécrit.
         allow delete: if maSeanceOuverte(seanceId) && statutOk();
+        // Corriger une série qu'on vient de saisir — 13 répétitions tapées pour
+        // 3 — était impossible : il fallait supprimer et refaire. Même fenêtre
+        // que la suppression, la séance encore ouverte, et seulement les trois
+        // champs qui portent la performance : ni l'exercice visé, ni la ligne de
+        // programme, ni l'horodatage ne se réécrivent.
+        allow update: if maSeanceOuverte(seanceId) && statutOk()
+          && request.resource.data.diff(resource.data)
+               .affectedKeys().hasOnly(['reps', 'duree_s', 'charge']);
         allow update, delete: if estAdmin();
       }
     }

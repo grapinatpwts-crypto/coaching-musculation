@@ -417,6 +417,10 @@ header h2{font-size:30px;text-transform:uppercase;line-height:1}
 .sets{display:flex;flex-wrap:wrap;gap:8px;margin-top:14px;min-height:34px}
 .set{background:var(--plate);border:1px solid var(--edge);border-radius:8px;padding:7px 11px;font-size:14px;
   font-variant-numeric:tabular-nums}
+/* Corrigeable : le trait pointillé sous le chiffre dit qu'on peut y toucher,
+   sans en faire un bouton plein qui rivaliserait avec « Valider ». */
+.set.corrigeable{color:inherit;font-family:inherit;
+  border-style:dashed;border-color:var(--dust);cursor:pointer}
 .close{font-size:15px;color:var(--dust);padding:10px 4px}
 
 /* Minuteur de repos — île flottante au-dessus de la nav, pas un bandeau qui
@@ -690,8 +694,12 @@ async function ajusterCharge(exerciceId, charge) {
   const att = await attributionActive(S.email);
   if (!att) throw new Error('AUCUNE_ATTRIBUTION');
   const ref = doc(db, 'attributions', att.id, 'ajustements', exerciceId);
-  const val = Number(charge) || 0;
-  if (!val) { await deleteDoc(ref); return { charge: 0, efface: true }; }
+  // `null` efface l'ajustement, et lui seul. Zéro était l'ancien signal
+  // d'effacement : impossible alors de se fixer **le poids du corps** comme
+  // charge sur un exercice que le coach a lesté — le bouton « Garder 0 kg »
+  // rendait la main au programme au lieu d'enregistrer le choix.
+  if (charge === null || charge === undefined) { await deleteDoc(ref); return { efface: true }; }
+  const val = Math.max(0, Number(charge) || 0);
   await setDoc(ref, { charge: val, maj_le: serverTimestamp() });
   return { charge: val };
 }
@@ -3311,8 +3319,11 @@ async function dataSeance(jour) {
     })).then(Object.fromEntries)
   ]);
 
+  // La présence du document fait foi, pas sa valeur : un ajustement à 0 kg — le
+  // poids du corps sur un mouvement que le coach a lesté — est un choix, pas une
+  // absence de choix.
   const ajustes = {};
-  ajustSnap.docs.forEach(d => { ajustes[d.id] = Number(d.data().charge) || 0; });
+  ajustSnap.docs.forEach(d => { ajustes[d.id] = Math.max(0, Number(d.data().charge) || 0); });
 
   const maxis = {};
   maxisSnap.docs.forEach(d => {
@@ -3356,7 +3367,9 @@ async function dataSeance(jour) {
       : lignesDuJour.filter(l => l.exercice_id === id).map(l => l.ligne_id));
 
     const seriesSnap = await getDocs(collection(db, 'seances', ouverte.id, 'series'));
-    seriesSnap.docs.map(d => d.data())
+    // `id` suit la série jusqu'à l'écran : sans lui, corriger une saisie
+    // demanderait de retrouver le document à tâtons.
+    seriesSnap.docs.map(d => ({ id: d.id, ...d.data() }))
       .sort((a, b) => Number(a.serie_num) - Number(b.serie_num))
       .forEach(s => {
         let cle = parLigne[s.ligne_id] ? s.ligne_id : null;
@@ -3366,8 +3379,8 @@ async function dataSeance(jour) {
           cle = (libre || candidates[0] || {}).ligne_id;
         }
         if (!cle) return;
-        (faits[cle] = faits[cle] || [])
-          .push({ reps: Number(s.reps) || 0, charge: Number(s.charge) || 0, duree_s: Number(s.duree_s) || 0 });
+        (faits[cle] = faits[cle] || []).push({ id: s.id,
+          reps: Number(s.reps) || 0, charge: Number(s.charge) || 0, duree_s: Number(s.duree_s) || 0 });
       });
   }
 
@@ -3380,7 +3393,7 @@ async function dataSeance(jour) {
       let charge = Number(l.charge_cible) || 0;
       if (pct > 0 && rm && rm.kg > 0) charge = Math.round(rm.kg * pct / 100 / 2.5) * 2.5;
       const perso = ajustes[l.exercice_id];
-      const ajuste = perso > 0;
+      const ajuste = perso !== undefined;
       const chargeCoach = charge;
       if (ajuste) charge = perso;
       const passe = historiques[l.exercice_id] || [];
@@ -3466,11 +3479,36 @@ async function enregistrerSerie(seanceId, exerciceId, ligneId, p) {
   const charge = Number(p.charge);
   if (!(reps > 0) && !(duree > 0)) throw new Error('VALEURS_INVALIDES');
   if (!(charge >= 0)) throw new Error('VALEURS_INVALIDES');
-  await addDoc(collection(db, 'seances', seanceId, 'series'), {
+  // L'identifiant revient à l'appelant : c'est lui qui permettra de corriger la
+  // série sans recharger toute la séance.
+  const ref = await addDoc(collection(db, 'seances', seanceId, 'series'), {
     email: S.email, exercice_id: exerciceId, ligne_id: ligneId || '',
     serie_num: Number(p.serie_num) || 1,
     reps: reps || '', duree_s: duree || '', charge, horodatage: serverTimestamp()
   });
+  return { id: ref.id };
+}
+
+/**
+ * Corrige une série déjà enregistrée, tant que la séance est ouverte. On ne
+ * touche qu'aux trois champs de performance : `serie_num` garde sa valeur, même
+ * après la suppression d'une série du milieu — le numéro sert à ordonner, pas à
+ * compter, et l'écran renumérote ce qu'il affiche.
+ */
+async function corrigerSerie(seanceId, serieId, p) {
+  const { db, doc, updateDoc } = FB;
+  const reps = Number(p.reps) || 0;
+  const duree = Number(p.duree_s) || 0;
+  const charge = Number(p.charge);
+  if (!(reps > 0) && !(duree > 0)) throw new Error('VALEURS_INVALIDES');
+  if (!(charge >= 0)) throw new Error('VALEURS_INVALIDES');
+  await updateDoc(doc(db, 'seances', seanceId, 'series', serieId),
+    { reps: reps || '', duree_s: duree || '', charge });
+}
+
+async function supprimerSerie(seanceId, serieId) {
+  const { db, doc, deleteDoc } = FB;
+  await deleteDoc(doc(db, 'seances', seanceId, 'series', serieId));
 }
 
 /** Clôt une ligne de programme sans exiger que toutes les séries soient
@@ -3550,16 +3588,19 @@ function majOrigine(e, charge) {
   else if (e.pct_rm) dit = `${e.pct_rm} % du max — votre max n'est pas connu, à vous de juger`;
   else if (e.charge_cible) dit = 'Charge prévue par le coach';
 
+  // « Garder 0 kg » se dit mal quand c'est le corps qui fait la charge.
+  const garder = charge > 0 ? `Garder ${charge} kg comme ma charge`
+    : 'Garder le poids du corps comme ma charge';
   z.innerHTML = `${dit ? `<span class="dit">${dit}</span>` : ''}
     ${change || e.charge_ajustee
-      ? `<button class="perso" id="garder">${change ? 'Garder ' + charge + ' kg comme ma charge' : 'Revenir à la charge du programme'}</button>`
+      ? `<button class="perso" id="garder">${change ? garder : 'Revenir à la charge du programme'}</button>`
       : ''}`;
 
   const g = $('#garder');
   if (g) g.onclick = async function () {
     this.disabled = true;
     try {
-      await ajusterCharge(e.exercice_id, change ? charge : 0);
+      await ajusterCharge(e.exercice_id, change ? charge : null);
       if (change) { e.charge_coach = e.charge_coach || e.charge_cible; e.charge_cible = charge; e.charge_ajustee = true; }
       else { e.charge_cible = e.charge_coach || 0; e.charge_ajustee = false; }
       toast(change ? 'Charge enregistrée' : 'Retour à la charge du programme');
@@ -3569,6 +3610,10 @@ function majOrigine(e, charge) {
 }
 
 function chargeTexte(e) {
+  // Une charge ajustée à zéro se dit, elle ne se tait pas : « poids du corps »
+  // sur un mouvement que le coach avait lesté est une information, et sans elle
+  // la carte paraissait avoir perdu la consigne.
+  if (e.charge_ajustee && !e.charge_cible) return 'poids du corps · votre charge';
   if (!e.charge_cible) return '';
   if (e.charge_ajustee) return e.charge_cible + ' kg · votre charge';
   if (!e.pct_rm) return e.charge_cible + ' kg';
@@ -4067,8 +4112,17 @@ async function ouvrirLogger(i) {
     btn.disabled = fige || complet || (auTemps && ecoule === 0);
     const fin = L.querySelector('#finir');
     if (fin) fin.disabled = fige;
-    $('#sets').innerHTML = faitsDe(e).map((x, n) =>
-      `<span class="set">${n + 1} · ${x.duree_s ? duree(x.duree_s) : x.reps + ' × ' + x.charge + ' kg'}</span>`).join('');
+    // Les séries déjà saisies sont cliquables tant que la séance est ouverte :
+    // on se trompe de chiffre, on le corrige sur place. Figées, elles redeviennent
+    // du simple texte — l'historique d'une séance close ne se retouche pas ici.
+    $('#sets').innerHTML = faitsDe(e).map((x, n) => {
+      const texte = `${n + 1} · ${x.duree_s ? duree(x.duree_s) : x.reps + ' × ' + x.charge + ' kg'}`;
+      return fige || !x.id ? `<span class="set">${texte}</span>`
+        : `<button type="button" class="set corrigeable" data-set="${n}"
+             aria-label="Corriger la série ${n + 1}">${texte}</button>`;
+    }).join('');
+    $('#sets').querySelectorAll('[data-set]').forEach(b =>
+      b.onclick = () => modalCorrigerSerie(e, Number(b.dataset.set), maj));
   };
   maj();
 
@@ -4144,9 +4198,9 @@ async function ouvrirLogger(i) {
       const num = faitsDe(e).length + 1;
       const p = { serie_num:num, charge };
       if (auTemps) p.duree_s = ecoule; else p.reps = reps;
-      await enregistrerSerie(S.seanceId, e.exercice_id, e.ligne_id, p);
+      const { id } = await enregistrerSerie(S.seanceId, e.exercice_id, e.ligne_id, p);
       (S.faits[e.ligne_id] = S.faits[e.ligne_id] || [])
-        .push(auTemps ? { duree_s:ecoule, charge } : { reps, charge });
+        .push(auTemps ? { id, duree_s:ecoule, charge } : { id, reps, charge });
       if (auTemps) { ecoule = 0; const g = L.querySelector('#go'); if (g) g.textContent = 'Démarrer'; }
       maj();
       suite();
@@ -4154,6 +4208,58 @@ async function ouvrirLogger(i) {
       toast('Non enregistré : ' + err.message);
       this.disabled = false;
     }
+  };
+}
+
+/**
+ * Corriger une série déjà validée, pendant la séance. Le geste manquait : une
+ * faute de frappe — 13 répétitions pour 3 — restait dans l'historique, et il
+ * n'y avait aucun moyen de la reprendre. Supprimer est offert dans la même
+ * modale : une série validée deux fois par un double appui n'a pas de valeur à
+ * corriger, elle est à retirer.
+ */
+function modalCorrigerSerie(e, index, apres) {
+  const x = faitsDe(e)[index];
+  if (!x || !x.id) return;
+  const auTemps = !!x.duree_s;
+  const w = modal(`Série ${index + 1} · ${e.nom}`, `
+    <div class="duo">
+      <div class="champ"><label>${auTemps ? 'Durée (s)' : 'Répétitions'}</label>
+        <input class="f" id="csVal" type="number" min="1"
+          value="${auTemps ? x.duree_s : x.reps}"></div>
+      <div class="champ"><label>Charge (kg)</label>
+        <input class="f" id="csChg" type="number" min="0" step="2.5" value="${x.charge || ''}" placeholder="0"></div>
+    </div>
+    <p class="consigne">C'est ce qui a été fait qu'on corrige, pas ce qui était prévu :
+      la consigne du coach ne bouge pas.</p>
+    <div class="barre"><button class="btn" id="csAnn">Annuler</button>
+      <button class="btn plein" id="csOk" style="flex:1">Enregistrer</button></div>
+    <div class="barre"><button class="btn danger" id="csDel">Supprimer cette série</button></div>`);
+
+  w.querySelector('#csAnn').onclick = w.fermer;
+  w.querySelector('#csOk').onclick = async function () {
+    const v = Number(w.querySelector('#csVal').value) || 0;
+    const charge = Number(w.querySelector('#csChg').value) || 0;
+    if (v <= 0) return toast(auTemps ? 'Il faut une durée' : 'Il faut des répétitions');
+    this.disabled = true;
+    try {
+      await corrigerSerie(S.seanceId, x.id, auTemps ? { duree_s: v, charge } : { reps: v, charge });
+      if (auTemps) x.duree_s = v; else x.reps = v;
+      x.charge = charge;
+      w.fermer(); toast('Série corrigée'); apres();
+    } catch (err) { toast(err.message); this.disabled = false; }
+  };
+  w.querySelector('#csDel').onclick = async function () {
+    this.disabled = true;
+    try {
+      await supprimerSerie(S.seanceId, x.id);
+      // Retirée de la liste locale : le compteur « 2/4 » et les numéros affichés
+      // se recalculent depuis elle, sans relire la séance.
+      const liste = S.faits[e.ligne_id] || [];
+      const i = liste.findIndex(s => s.id === x.id);
+      if (i !== -1) liste.splice(i, 1);
+      w.fermer(); toast('Série supprimée'); apres();
+    } catch (err) { toast(err.message); this.disabled = false; }
   };
 }
 
