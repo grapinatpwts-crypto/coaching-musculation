@@ -4094,7 +4094,7 @@ async function ouvrirLogger(i) {
 
   let reps = Number(String(e.reps_cible).split('-')[0]) || 10;
   let charge = e.dernier ? e.dernier.charge : (e.charge_cible || (auTemps ? 0 : 20));
-  let ecoule = 0, chrono = null, tourne = false;
+  let ecoule = 0, chrono = null, tourne = false, prep = 0;
 
   const L = $('#logger');
   L.classList.remove('hidden');
@@ -4135,7 +4135,12 @@ async function ouvrirLogger(i) {
     // on arrête plutôt que d'écrire dans un DOM qui n'existe plus.
     const champ = auTemps ? $('#vChrono') : $('#vReps');
     if (!champ || L.classList.contains('hidden')) { clearInterval(chrono); chrono = null; return; }
-    if (auTemps) {
+    if (auTemps && prep > 0) {
+      // Pendant la mise en place, le grand chiffre décompte la préparation :
+      // c'est ce qu'on regarde à cet instant, pas la durée à tenir.
+      champ.textContent = prep;
+      champ.classList.add('court');
+    } else if (auTemps) {
       const reste = cible ? Math.max(0, cible - ecoule) : ecoule;
       champ.textContent = duree(reste);
       champ.classList.toggle('court', cible > 0 && tourne && reste <= 5);
@@ -4170,13 +4175,51 @@ async function ouvrirLogger(i) {
 
   if (auTemps) {
     const go = L.querySelector('#go');
-    const stop = (libelle) => { clearInterval(chrono); chrono = null; tourne = false; go.textContent = libelle; maj(); };
-    go.onclick = () => {
-      if (tourne) return stop('Reprendre');
+    const etiquette = L.querySelector('.stepper.chrono .eyebrow');
+    const titre = () => { if (etiquette) etiquette.textContent = cible ? 'À tenir' : 'Durée'; };
+
+    const stop = (libelle) => {
+      clearInterval(chrono); chrono = null; tourne = false; prep = 0;
+      titre(); go.textContent = libelle; maj();
+    };
+
+    const partir = () => {
       tourne = true; go.textContent = 'Arrêter'; maj();
       chrono = setInterval(() => {
         ecoule++;
-        if (cible && ecoule >= cible) { ecoule = cible; bip(); stop('Terminé'); return; }
+        // Temps atteint : la série s'enregistre seule et le repos part. Tenir une
+        // planche jusqu'au bout puis chercher « Valider » les mains au sol n'avait
+        // aucun sens — le geste manquant était justement celui qu'on ne peut pas
+        // faire dans cette position.
+        if (cible && ecoule >= cible) {
+          clearInterval(chrono); chrono = null; tourne = false;
+          ecoule = cible; maj(); bip(1175, .8);
+          // Séance pas démarrée : rien à écrire, on s'arrête là comme avant.
+          if (!S.seanceId) return stop('Terminé');
+          go.textContent = 'Démarrer';
+          return validerSerie();
+        }
+        maj();
+      }, 1000);
+    };
+
+    go.onclick = () => {
+      if (tourne || prep > 0) return stop(ecoule ? 'Reprendre' : 'Démarrer');
+      // Cinq secondes pour se mettre en place : poser le téléphone, prendre la
+      // position. Sans elles, les premières secondes de la planche se passaient
+      // à s'installer, et le temps tenu ne valait pas ce qu'il annonçait.
+      prep = PREPA_S;
+      go.textContent = 'Annuler';
+      if (etiquette) etiquette.textContent = 'Préparation';
+      maj();
+      chrono = setInterval(() => {
+        prep--;
+        if (prep <= 0) {
+          clearInterval(chrono); chrono = null; prep = 0;
+          titre(); bip(1175, .8);
+          return partir();
+        }
+        if (prep <= 3 && bipDecompteActif()) bip();
         maj();
       }, 1000);
     };
@@ -4232,10 +4275,15 @@ async function ouvrirLogger(i) {
     } catch (err) { toast(err.message); this.disabled = false; }
   };
 
-  L.querySelector('.valider').onclick = async function () {
-    this.disabled = true;
-    clearInterval(chrono); chrono = null; tourne = false;
-    if (!(await assurerSeanceActive())) { this.disabled = false; return; }
+  /**
+   * Enregistre la série en cours, puis enchaîne. Deux chemins y mènent : le
+   * bouton, et la fin du temps sur un exercice chronométré — d'où la mise en
+   * commun, pour qu'ils ne divergent pas.
+   */
+  const validerSerie = async (btn) => {
+    if (btn) btn.disabled = true;
+    clearInterval(chrono); chrono = null; tourne = false; prep = 0;
+    if (!(await assurerSeanceActive())) { if (btn) btn.disabled = false; return; }
     try {
       const num = faitsDe(e).length + 1;
       const p = { serie_num:num, charge };
@@ -4248,9 +4296,11 @@ async function ouvrirLogger(i) {
       suite();
     } catch (err) {
       toast('Non enregistré : ' + err.message);
-      this.disabled = false;
+      if (btn) btn.disabled = false;
     }
   };
+
+  L.querySelector('.valider').onclick = function () { validerSerie(this); };
 }
 
 /**
@@ -4502,6 +4552,9 @@ function majPastilles() {
 // ── Minuteurs : pause dans le bloc, repos de fin de tour ──────
 // Anneau en SVG : le rayon fixe (22) donne une circonférence constante,
 // dashoffset recalculé à chaque seconde pour vider l'anneau au fil du temps.
+// Le temps de se mettre en position avant qu'un exercice chronométré ne parte.
+const PREPA_S = 5;
+
 const REPOS_C = 2 * Math.PI * 22;
 
 /**

@@ -400,6 +400,20 @@ Une valeur numérique donne un décompte (le gainage à 45 s), la valeur `max` u
 chrono qui monte jusqu'à l'échec. La série enregistrée porte alors `duree_s` au lieu
 de `reps` — c'est pour ça que `logSerie_` accepte l'un **ou** l'autre.
 
+**Cinq secondes de préparation** (`PREPA_S`) avant que le décompte ne parte :
+« Démarrer » lance d'abord une mise en place — le grand chiffre décompte 5, 4, 3,
+2, 1, l'étiquette dit *Préparation*, le bouton devient *Annuler* — puis le bip de
+départ et l'exercice commence. Sans elles, les premières secondes de la planche se
+passaient à poser le téléphone et à s'installer : le temps tenu ne valait pas ce
+qu'il annonçait. Le décompte sonore des trois dernières secondes vaut aussi pour
+cette mise en place, il suit le même réglage.
+
+**Le temps écoulé enregistre la série et lance le repos**, sans passer par le
+bouton. C'était le geste manquant, et pour cause : chercher « Valider » les mains
+au sol, en planche, n'est pas faisable. Les deux chemins — le bouton et la fin du
+temps — passent par la même fonction (`validerSerie`) pour qu'ils ne divergent
+pas. Séance pas encore démarrée, rien à écrire : le chrono s'arrête comme avant.
+
 ## 6. Accès aux données — fonctions `index.html`
 
 Plus d'API : chaque écran appelle le SDK Firestore directement. La table ci-dessous
