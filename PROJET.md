@@ -151,6 +151,22 @@ consomment. Les sous-sections qui suivent restent donc valables mot pour mot.
 l'app. Les jours sont triés par jour de semaine (`triJours`), pas alphabétiquement —
 sinon « Jeudi » passait avant « Lundi ».
 
+**Le jour de la semaine vit dans cet intitulé, et ce n'est pas qu'un tri.** C'est
+lui qui place la séance dans la semaine du pratiquant, dans son bandeau d'accueil
+et dans son calendrier (`rangJour`, cherché n'importe où dans la chaîne, sans
+casse). Un programme importé sous « Séance 1, 2, 3 » — le nommage des dix
+programmes types — n'apparaissait donc **nulle part** dans sa semaine, et rien ne
+le disait : la convention n'était écrite que dans une phrase de la modale de
+création.
+
+Le coach le choisit maintenant sur des **pastilles Lun…Dim**, à la création
+comme au renommage, et voit l'intitulé qui en sortira avant de valider
+(`jourSemaineDe` / `libelleSansJour` / `composerJour` font l'aller-retour entre
+les deux formes). Le modèle de données ne change pas : c'est toujours une chaîne.
+« Aucun » reste possible — un modèle se compose parfois avant de savoir quels
+jours le pratiquant pourra tenir — mais l'éditeur affiche alors franchement ce
+que ça coûte.
+
 ### Les blocs
 
 `bloc` regroupe les lignes qui s'enchaînent. **Plusieurs lignes partageant le même
@@ -646,9 +662,11 @@ L'enregistrement **réécrit un jour entier** : les lignes existantes de ce coup
 pratiquants ne bougent pas. Les numéros de bloc et d'ordre sont renumérotés à
 l'écriture — l'éditeur n'a pas à les tenir à jour.
 
-**Renommer un jour** — modèle ou programme attribué — se fait par un **appui long
-sur son onglet** (550 ms, le même geste que la pastille de séries ; le `title` de
-l'onglet le dit). C'est la seule écriture de l'éditeur qui ne passe *pas* par la
+**Déplacer ou renommer une séance** — modèle ou programme attribué — se fait par
+un **appui long sur son onglet** (550 ms, le même geste que la pastille de
+séries ; le `title` de l'onglet le dit). C'est le même geste pour les deux,
+puisque le jour vit dans l'intitulé : changer la pastille de jour déplace la
+séance dans la semaine, le toast le dit (« Séance déplacée au vendredi »). C'est la seule écriture de l'éditeur qui ne passe *pas* par la
 réécriture ci-dessus : elle met à jour le champ `jour` des lignes **en place**,
 document par document. `ligne_id` est l'identifiant de ces documents et chaque
 série enregistrée le porte (§ « Une ligne, un compteur ») : les recréer sous un

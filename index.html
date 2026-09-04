@@ -4790,6 +4790,33 @@ function rangJour(j) {
 }
 
 /**
+ * Le jour de la semaine **est** dans l'intitulé : c'est lui qui place la séance
+ * dans la semaine du pratiquant, ordonne les onglets et nourrit le calendrier.
+ * C'était une convention de nommage que seule une phrase de la modale disait —
+ * un programme importé sous « Séance 1, 2, 3 » n'apparaissait donc nulle part
+ * dans sa semaine, sans que rien ne l'explique. Ces trois fonctions permettent
+ * de l'exposer comme un vrai champ, sans changer le modèle de données.
+ */
+function jourSemaineDe(libelle) {
+  const i = rangJour(libelle);
+  return i === -1 ? '' : SEMAINE[i];
+}
+
+/** Ce que devient l'intitulé une fois son jour retiré : « Mercredi — Haut » → « Haut ». */
+function libelleSansJour(libelle) {
+  const j = jourSemaineDe(libelle);
+  if (!j) return String(libelle || '').trim();
+  return String(libelle).replace(new RegExp(j, 'i'), '').replace(/^\s*[—–-]\s*/, '').trim();
+}
+
+/** L'inverse : « Mercredi » + « Haut » → « Mercredi — Haut ». */
+function composerJour(jourSemaine, libelle) {
+  const reste = String(libelle || '').trim();
+  if (!jourSemaine) return reste;
+  return reste ? `${jourSemaine} — ${reste}` : jourSemaine;
+}
+
+/**
  * « Mercredi — Séance 2 » → « Séance 2 ». Dans une case de calendrier large de
  * quelques dizaines de pixels, le jour est déjà donné par la colonne : le
  * répéter mangerait la seule place utile. Un libellé sans tiret est rendu tel
@@ -6770,6 +6797,9 @@ function peindreEditeur() {
   z.innerHTML = `
     <div class="eyebrow" style="margin:4px 0 12px">${ed.jour}${ed.neuf ? ' · nouveau' : ''}${
       dureeJour(ed.blocs) ? ' · ' + dureeTexte(dureeJour(ed.blocs)) : ''}</div>
+    ${jourSemaineDe(ed.jour) ? '' : `<p class="consigne" style="margin:-6px 0 12px">
+      <strong>Aucun jour de la semaine.</strong> ${AVERTISSEMENT_SANS_JOUR}
+      Appui long sur l'onglet pour le poser.</p>`}
     ${ed.blocs.map((b, i) => `
       <div class="bloc" data-buid="${b._uid}">
         <div class="entete">
@@ -8417,26 +8447,39 @@ async function renommerLignesJour(refLignes, ancien, nouveau) {
 }
 
 /**
- * Renommer un jour, ouvert par un **appui long sur son onglet** — le geste
- * existait déjà sur la pastille de séries, autant garder le même. Un bouton de
- * plus dans la barre de l'éditeur aurait chargé un écran déjà dense pour une
- * action rare, et l'onglet est justement là où se lit l'intitulé qu'on veut
- * changer.
+ * Déplacer une séance dans la semaine, ou la renommer — c'est le même geste,
+ * puisque le jour vit dans l'intitulé. Ouvert par un **appui long sur l'onglet**,
+ * comme la fiche d'un modèle : un bouton de plus aurait chargé un écran déjà
+ * dense, et l'onglet est là où se lit ce qu'on veut changer.
  */
 function modalRenommerJour(ancien, refresh) {
-  const w = modal('Renommer le jour', `
+  let jsem = jourSemaineDe(ancien);
+  const w = modal('Jour et intitulé', `
+    ${champJourSemaine(jsem)}
     <div class="champ"><label>Intitulé</label>
-      <input class="f" id="rj" value="${ancien}" list="lrj">
-      <datalist id="lrj">${SEMAINE.map(j => `<option>${j} — </option>`).join('')}</datalist></div>
-    <p class="consigne">Le jour de la semaine doit apparaître dans l'intitulé : c'est lui
-      qui donne l'ordre d'affichage. Les séances déjà faites gardent l'ancien intitulé —
-      c'est ce qui s'est passé, ça ne se réécrit pas.</p>
+      <input class="f" id="rj" value="${libelleSansJour(ancien)}" placeholder="Haut du corps"></div>
+    <p class="consigne" id="rjApercu"></p>
+    <p class="consigne">Changer le jour <strong>déplace la séance</strong> dans la semaine du
+      pratiquant. Les séances déjà faites gardent l'ancien intitulé — c'est ce qui s'est
+      passé, ça ne se réécrit pas.</p>
     <div class="barre"><button class="btn" id="rjAnn">Annuler</button>
-      <button class="btn plein" id="rjOk" style="flex:1">Renommer</button></div>`);
+      <button class="btn plein" id="rjOk" style="flex:1">Enregistrer</button></div>`);
+
+  const champ = w.querySelector('#rj');
+  const apercu = () => {
+    const v = composerJour(jsem, champ.value);
+    w.querySelector('#rjApercu').textContent = v
+      ? (jsem ? `S'appellera « ${v} ».` : `S'appellera « ${v} ». ` + AVERTISSEMENT_SANS_JOUR)
+      : 'Choisissez un jour, un intitulé, ou les deux.';
+  };
+  pastilleGroupe(w, 'jsem', v => { jsem = v; apercu(); });
+  champ.oninput = apercu;
+  apercu();
+
   w.querySelector('#rjAnn').onclick = w.fermer;
   w.querySelector('#rjOk').onclick = async function () {
-    const v = w.querySelector('#rj').value.trim();
-    if (!v) return toast('Donnez un intitulé');
+    const v = composerJour(jsem, champ.value);
+    if (!v) return toast('Donnez un jour ou un intitulé');
     if (v === ancien) return w.fermer();
     this.disabled = true;
     const { db, collection } = FB;
@@ -8447,7 +8490,9 @@ function modalRenommerJour(ancien, refresh) {
       // L'éditeur ouvert sur ce jour doit suivre, sinon la vue le croit disparu
       // et rebascule sur le premier jour du programme.
       if (S.ed && S.ed.jour === ancien) S.ed.jour = v;
-      toast('Jour renommé'); w.fermer(); refresh();
+      toast(jsem && jsem !== jourSemaineDe(ancien) ? 'Séance déplacée au ' + jsem.toLowerCase()
+        : 'Séance enregistrée');
+      w.fermer(); refresh();
     } catch (err) {
       toast(err.message === 'JOUR_EXISTE' ? 'Un jour porte déjà cet intitulé'
         : err.message === 'JOUR_INTROUVABLE' ? 'Ce jour n\'a plus de ligne à renommer'
@@ -8484,18 +8529,51 @@ function chargerJour(jour) {
   };
 }
 
+/**
+ * Le choix du jour de la semaine, en pastilles, partagé par la création et le
+ * renommage d'une séance. « Aucun » existe et n'est pas un oubli : les dix
+ * programmes types nomment leurs séances « Séance 1, 2, 3 », et un modèle se
+ * compose parfois avant de savoir quels jours le pratiquant pourra tenir.
+ */
+function champJourSemaine(actuel) {
+  return `<div class="champ"><label>Jour de la semaine</label>
+    <div class="sous" data-role="jsem" style="margin-bottom:0;flex-wrap:wrap">
+      <button type="button" data-v="" aria-pressed="${!actuel}">Aucun</button>
+      ${SEMAINE.map(j => `<button type="button" data-v="${j}"
+        aria-pressed="${j === actuel}">${j.slice(0, 3)}</button>`).join('')}
+    </div></div>`;
+}
+
+/** Ce que dit un jour non rattaché à la semaine — la vérité, sans dramatiser. */
+const AVERTISSEMENT_SANS_JOUR = `Sans jour de la semaine, la séance reste modifiable
+  ici mais n'apparaît ni dans la semaine du pratiquant, ni dans son calendrier :
+  rien ne dit quand la faire.`;
+
 function modalNouveauJour() {
-  const w = modal('Nouveau jour', `
+  let jsem = '';
+  const w = modal('Nouvelle séance', `
+    ${champJourSemaine(jsem)}
     <div class="champ"><label>Intitulé</label>
-      <input class="f" id="nj" placeholder="Lundi — Haut du corps" list="lj">
-      <datalist id="lj">${SEMAINE.map(j => `<option>${j} — </option>`).join('')}</datalist></div>
-    <p class="consigne">Le jour de la semaine doit apparaître dans l'intitulé : c'est lui qui donne l'ordre d'affichage.</p>
+      <input class="f" id="nj" placeholder="Haut du corps"></div>
+    <p class="consigne" id="njApercu"></p>
     <div class="barre"><button class="btn" id="njAnn">Annuler</button>
       <button class="btn plein" id="njOk" style="flex:1">Créer</button></div>`);
+
+  const champ = w.querySelector('#nj');
+  const apercu = () => {
+    const v = composerJour(jsem, champ.value);
+    w.querySelector('#njApercu').textContent = v
+      ? (jsem ? `S'appellera « ${v} ».` : `S'appellera « ${v} ». ` + AVERTISSEMENT_SANS_JOUR)
+      : 'Choisissez un jour, un intitulé, ou les deux.';
+  };
+  pastilleGroupe(w, 'jsem', v => { jsem = v; apercu(); });
+  champ.oninput = apercu;
+  apercu();
+
   w.querySelector('#njAnn').onclick = w.fermer;
   w.querySelector('#njOk').onclick = () => {
-    const v = w.querySelector('#nj').value.trim();
-    if (!v) return toast('Donnez un intitulé');
+    const v = composerJour(jsem, champ.value);
+    if (!v) return toast('Donnez un jour ou un intitulé');
     chargerJour(v);
     S.ed.neuf = true; S.ed.blocs = [];
     w.fermer();
