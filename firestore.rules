@@ -91,6 +91,15 @@ service cloud.firestore {
         allow read: if estMoi(email) || estCoach();
         allow write: if estMoi(email) && statutOk();
       }
+
+      // Routines conseillées : même règle que les 1RM — le coach conseille, le
+      // pratiquant lit. Ce qu'il décide d'en faire (l'inscrire dans sa semaine,
+      // à quelle heure) vivra dans ses `recurrences`, déjà self-service : rien
+      // à ouvrir ici en écriture.
+      match /routines/{routineId} {
+        allow read: if estMoi(email) || estCoach();
+        allow write: if estCoach();
+      }
     }
 
     // ── Catalogue d'exercices ──────────────────────────────────────────

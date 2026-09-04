@@ -1502,6 +1502,14 @@ sont coach-only, ce qui oblige à recopier leur contenu chez le pratiquant à
 l'attribution (§ 8, « Pièges ») ; une routine est une fiche générique, l'ouvrir
 en lecture évite ce piège d'entrée de jeu.
 
+### Le catalogue des routines
+
+Un onglet **Routines** s'ajoute à la navigation du coach, à côté de Modèles :
+liste avec recherche, filtres (type, rythme, vidéo) et regroupement comme les
+deux autres listes, appui long sur une carte pour sa fiche comme les modèles, et
+un éditeur — fiche, vidéo d'ensemble, exercices réglables et réordonnables au
+doigt. Une routine peut n'en porter qu'un seul, l'écran ne s'en offusque pas.
+
 ### Les rythmes portent leurs jours
 
 `FREQUENCES` associe à chaque rythme les jours qu'il vise. « Un jour sur deux »
@@ -1511,18 +1519,42 @@ deux variantes fixes (lun/mer/ven/dim et mar/jeu/sam) plutôt qu'un calcul qui
 dérive. Pour « une » et « deux fois par semaine », les jours ne sont qu'un point
 de départ : le pratiquant posera les siens.
 
-### Ce qui est livré, ce qui suit
+### Conseiller, pas attribuer
 
-Livré : le type d'exercice, l'onglet **Routines** du coach (liste avec recherche,
-filtres et regroupement comme les deux autres listes ; appui long sur une carte
-pour la fiche, comme les modèles), et l'éditeur d'une routine — fiche, vidéo
-d'ensemble, exercices réglables et réordonnables.
+Une routine se **conseille** depuis l'onglet *Routines* de la fiche d'un
+athlète : on choisit dans le catalogue, on dit **pourquoi** (« suite à ta douleur
+d'épaule, avant la séance, jamais après ») et on coche *Facturée* le cas échéant.
+Les routines en **Brouillon ne sont pas proposées** — une fiche en chantier n'a
+rien à faire chez un pratiquant. Le coach peut ensuite changer la note, passer la
+routine en *Terminée* ou *Arrêtée*, ou la retirer.
 
-À suivre : (2) l'attribution à un pratiquant et la carte d'accueil « ma dernière
-routine », entre *Mon programme* et le bouton de consignation, avec *Voir le
-détail* / *Toutes mes routines* ; (3) la planification par le pratiquant — heure
-et jours, dans le planning récurrent qui existe déjà (§ 8) — et le suivi
-« faite ».
+`pratiquants/{email}/routines/{id}` ne copie que de quoi afficher une liste — nom,
+type, rythme, semaines — plus la note, le statut et la facturation. **Le contenu
+n'est pas recopié** : il se relit dans `routines/{id}`, ouverte en lecture. Une
+routine retouchée profite donc à tous ceux à qui elle a été conseillée, ce qui est
+le comportement voulu — un conseil s'affine, il ne se fige pas comme un programme
+daté. Règles : lecture par le concerné ou le coach, écriture coach, exactement
+comme les 1RM.
+
+### Côté pratiquant
+
+Une carte **Ma routine** s'intercale à l'accueil entre *Mon programme* et le
+bouton de consignation : la dernière routine encore en cours, sa raison d'être,
+puis *Voir le détail* et *Toutes mes routines*. Une routine terminée ou arrêtée
+quitte l'accueil mais reste consultable dans la liste, rangée sous « Passées » —
+on y revient pour retrouver un mouvement.
+
+Le détail montre la note du coach, la description, la **vidéo d'ensemble** et les
+exercices avec leurs séries, répétitions ou durée et repos. Si la routine a
+disparu du catalogue, l'écran le dit (« Parlez-en à votre coach ») au lieu de
+rester vide — la leçon du § 8 sur les lectures sans `try/catch`.
+
+### Ce qui reste
+
+L'étape 3 : la **planification** par le pratiquant — choisir ses jours et son
+heure, dans le planning récurrent qui existe déjà (§ 8) — et le suivi « faite ».
+Rien n'est ouvert en écriture au pratiquant sur ses routines : ce qu'il en
+décidera vivra dans ses `recurrences`, déjà self-service.
 
 ## 9. Parti pris visuel — charte Wellness Sport Club
 

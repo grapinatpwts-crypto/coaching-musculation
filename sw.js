@@ -5,7 +5,7 @@
  * hors ligne (persistentLocalCache, voir le module de bootstrap dans index.html).
  * Incrémentez CACHE à chaque mise en ligne pour forcer la mise à jour.
  */
-const CACHE = 'coaching-fitness-v32';
+const CACHE = 'coaching-fitness-v33';
 const SHELL = ['./', './index.html', './manifest.json', './icon-192.png', './icon-512.png',
                './assets/monogramme-w.png'];
 

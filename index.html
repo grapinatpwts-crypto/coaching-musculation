@@ -1584,11 +1584,12 @@ function semaineCourante(jours, seances, recurrences, prev, activites) {
 async function dataAccueil() {
   const { db, collection, query, where, getDocs } = FB;
   const email = S.email;
-  const [att, seancesSnap, activites, recurrences] = await Promise.all([
+  const [att, seancesSnap, activites, recurrences, routines] = await Promise.all([
     attributionActive(email),
     getDocs(query(collection(db, 'seances'), where('email', '==', email))),
     dataActivites(email, { depuis: new Date(Date.now() - 30 * 86400000).toISOString() }),
-    dataRecurrences()
+    dataRecurrences(),
+    dataRoutinesPratiquant(email)
   ]);
   const seances = seancesSnap.docs.map(d => d.data());
 
@@ -1626,6 +1627,12 @@ async function dataAccueil() {
     prochaine: prochaine ? { jour: prochaine.jour, dans: prochaine.dans,
       duree_estimee: estimerDuree(blocsBruts(att, prochaine.jour)) } : null,
     programme: att ? { id: att.id, nom: att.nom, date_debut: versDate(att.date_debut), duree_semaines: dureeS } : null,
+    // La liste est déjà triée de la plus récente à la plus ancienne : la dernière
+    // encore en cours est celle que l'accueil montre. Terminée ou arrêtée, une
+    // routine reste consultable dans « Toutes mes routines », mais n'occupe plus
+    // l'accueil — c'est du passé, pas une consigne du jour.
+    routine: routines.find(r => r.statut === 'Conseillée') || null,
+    nbRoutines: routines.length,
     progression,
     nbSeances: seances.length,
     derniere: triees.length ? versDate(triees[triees.length - 1].date) : null,
@@ -2041,6 +2048,58 @@ async function supprimerRoutine(id) {
   await deleteDoc(doc(db, 'routines', id));
 }
 
+/**
+ * Les routines conseillées à un pratiquant. Le contenu — exercices, vidéo —
+ * reste dans `routines/{id}`, que tout compte connecté peut lire : on ne copie
+ * ici que de quoi afficher une liste sans aller chercher la collection, plus ce
+ * que le coach a dit en la conseillant. Une routine retouchée profite donc à
+ * tous ceux à qui elle a été conseillée — c'est un conseil, pas un contrat daté
+ * comme un programme.
+ */
+async function dataRoutinesPratiquant(email) {
+  const { db, collection, getDocs } = FB;
+  const snap = await getDocs(collection(db, 'pratiquants', email, 'routines'));
+  const list = [];
+  snap.forEach(d => {
+    // `estimate` : une routine tout juste conseillée n'a pas encore l'heure du
+    // serveur, et sans lui elle passerait pour la plus ancienne de la liste.
+    const r = d.data({ serverTimestamps: 'estimate' });
+    list.push({
+      id: d.id, routine_id: r.routine_id || '', nom: r.nom || '', type: r.type || '',
+      frequence: r.frequence || '', duree_semaines: Number(r.duree_semaines) || 0,
+      note: r.note || '', statut: r.statut || 'Conseillée', paye: r.paye === true,
+      conseillee_le: versDate(r.conseillee_le)
+    });
+  });
+  return list.sort((a, b) => new Date(b.conseillee_le || 0) - new Date(a.conseillee_le || 0));
+}
+
+async function conseillerRoutine(email, routine, p) {
+  const { db, collection, addDoc, serverTimestamp } = FB;
+  if (!routine || !routine.id) throw new Error('ROUTINE_REQUISE');
+  const ref = await addDoc(collection(db, 'pratiquants', email, 'routines'), {
+    routine_id: routine.id, nom: routine.nom, type: routine.type || '',
+    frequence: routine.frequence || '', duree_semaines: Number(routine.duree_semaines) || 0,
+    note: String((p && p.note) || '').trim(), statut: 'Conseillée',
+    paye: !!(p && p.paye), conseillee_le: serverTimestamp()
+  });
+  return { id: ref.id };
+}
+
+async function majRoutinePratiquant(email, id, patch) {
+  const { db, doc, updateDoc } = FB;
+  const data = {};
+  if (patch.note !== undefined) data.note = String(patch.note || '').trim();
+  if (patch.statut !== undefined) data.statut = String(patch.statut || '').trim();
+  if (patch.paye !== undefined) data.paye = patch.paye === true;
+  await updateDoc(doc(db, 'pratiquants', email, 'routines', id), data);
+}
+
+async function retirerRoutinePratiquant(email, id) {
+  const { db, doc, deleteDoc } = FB;
+  await deleteDoc(doc(db, 'pratiquants', email, 'routines', id));
+}
+
 /** Supprime un modèle et ses lignes. Les programmes déjà attribués — des
  *  copies — ne sont pas touchés, seul le lien d'origine devient orphelin. */
 async function supprimerModele(id) {
@@ -2315,6 +2374,8 @@ async function rendre() {
   if (S.vue === 'accueil') return vueAccueil();
   if (S.vue === 'seance') return vueSeance();
   if (S.vue === 'programmes') return vueMesProgrammes();
+  if (S.vue === 'routines') return vueMesRoutines();
+  if (S.vue === 'routine') return vueMaRoutine();
   if (S.vue === 'calendrier') return vueCalendrier();
   if (S.vue === 'progres') return vueProgres();
 }
@@ -2401,6 +2462,19 @@ async function vueAccueil() {
         </div>
       </div>` : ''}
 
+    ${a.routine ? `
+      <div class="eyebrow" style="margin-top:26px">Ma routine</div>
+      <div class="card" style="display:block">
+        <div class="nom gros">${a.routine.nom}</div>
+        <div class="meta">${[a.routine.type, libelleFrequence(a.routine.frequence),
+          a.routine.duree_semaines ? a.routine.duree_semaines + ' semaines' : ''].filter(Boolean).join(' · ')}</div>
+        ${a.routine.note ? `<div class="note-coach">${a.routine.note}</div>` : ''}
+        <div class="barre">
+          <button class="btn" id="detailRoutine" style="flex:1">Voir le détail</button>
+          <button class="btn" id="toutesRoutines">Toutes mes routines</button>
+        </div>
+      </div>` : ''}
+
     <div class="barre" style="margin-top:26px">
       <button class="btn plein" id="consigner" style="flex:1">＋ Consigner une activité</button>
     </div>
@@ -2419,6 +2493,10 @@ async function vueAccueil() {
   const bt = $('#tous'); if (bt) bt.onclick = () => { S.vue = 'programmes'; rendre(); };
   $('#consigner').onclick = () => modalActivite(null);
   $('#gererPlanning').onclick = () => modalPlanningRecurrent(a.recurrences);
+  const br = $('#detailRoutine');
+  if (br) br.onclick = () => { S.maRoutine = a.routine; S.vue = 'routine'; rendre(); };
+  const bmr = $('#toutesRoutines');
+  if (bmr) bmr.onclick = () => { S.vue = 'routines'; rendre(); };
   $('#zone').querySelectorAll('[data-jsem]').forEach(b =>
     b.onclick = () => { S.jour = b.dataset.jsem; S.vue = 'seance'; rendre(); });
   $('#zone').querySelectorAll('[data-act]').forEach(b =>
@@ -2696,6 +2774,90 @@ async function vueMesProgrammes() {
         </div>
       </div>`).join('') || `<div class="empty" style="padding:14px 0">Aucun jour composé.</div>`}
     </details>`).join('') || `<div class="empty">Aucun programme pour l'instant.</div>`;
+}
+
+/**
+ * Mes routines, côté pratiquant. Celles en cours d'abord : une routine terminée
+ * ou arrêtée reste consultable — on y revient pour retrouver un mouvement — mais
+ * elle ne se mêle pas à ce qui est conseillé aujourd'hui.
+ */
+async function vueMesRoutines() {
+  const app = $('#app');
+  app.innerHTML = `<header><h2>Mes routines</h2>
+    <button class="close" id="retourAccueil">← Accueil</button></header>
+    <div id="zone"><div class="empty">Chargement…</div></div>`;
+  $('#retourAccueil').onclick = () => { S.vue = 'accueil'; rendre(); };
+
+  let list;
+  try { list = await dataRoutinesPratiquant(S.email); }
+  catch (err) { $('#zone').innerHTML = `<div class="empty">Impossible de charger.<br>${err.message}</div>`; return; }
+
+  const carte = r => `<div class="ligne" data-mr="${r.id}">
+    <div class="g">
+      <div class="nom">${r.nom}</div>
+      <div class="meta">${[r.type, libelleFrequence(r.frequence),
+        r.duree_semaines ? r.duree_semaines + ' semaines' : '',
+        r.conseillee_le ? 'depuis le ' + new Date(r.conseillee_le).toLocaleDateString('fr-FR') : ''
+        ].filter(Boolean).join(' · ')}</div>
+      ${r.note ? `<div class="note-coach">${r.note}</div>` : ''}
+    </div>
+    <span class="fleche-carte">›</span>
+  </div>`;
+
+  const encours = list.filter(r => r.statut === 'Conseillée');
+  const passees = list.filter(r => r.statut !== 'Conseillée');
+  $('#zone').innerHTML = list.length ? `
+    ${encours.length ? `<div class="eyebrow" style="margin-bottom:10px">En cours</div>
+      ${encours.map(carte).join('')}` : ''}
+    ${passees.length ? `<div class="eyebrow" style="margin:22px 0 10px">Passées</div>
+      ${passees.map(carte).join('')}` : ''}`
+    : `<div class="empty">Aucune routine conseillée pour l'instant.</div>`;
+
+  lignesCliquables($('#zone'), '[data-mr]', l => {
+    S.maRoutine = list.find(r => r.id === l.dataset.mr); S.vue = 'routine'; rendre();
+  });
+}
+
+/**
+ * Le détail d'une routine, côté pratiquant. Le contenu est relu dans
+ * `routines/{id}` — la collection est ouverte en lecture, contrairement aux
+ * modèles : rien n'a été recopié chez lui à conseiller, il lit la source.
+ */
+async function vueMaRoutine() {
+  const r = S.maRoutine;
+  const app = $('#app');
+  app.innerHTML = `<header><h2>${r ? r.nom : 'Routine'}</h2>
+    <button class="close" id="retourRoutines">← Mes routines</button></header>
+    <div id="zone"><div class="empty">Chargement…</div></div>`;
+  $('#retourRoutines').onclick = () => { S.vue = 'routines'; rendre(); };
+  if (!r) { $('#zone').innerHTML = `<div class="empty">Aucune routine.</div>`; return; }
+
+  let source;
+  try { source = await dataRoutine(r.routine_id); }
+  catch (err) {
+    $('#zone').innerHTML = `<div class="empty">${err.message === 'ROUTINE_INTROUVABLE'
+      ? 'Cette routine n\'est plus disponible. Parlez-en à votre coach.'
+      : 'Impossible de charger.<br>' + err.message}</div>`;
+    return;
+  }
+
+  $('#zone').innerHTML = `
+    <div class="card" style="display:block;margin-bottom:16px">
+      <div class="meta">${[source.type, libelleFrequence(source.frequence),
+        source.duree_semaines ? source.duree_semaines + ' semaines' : ''].filter(Boolean).join(' · ')}</div>
+      ${r.note ? `<div class="note-coach" style="margin-top:8px">${r.note}</div>` : ''}
+      ${source.description ? `<p class="consigne" style="margin-top:8px">${source.description}</p>` : ''}
+      ${lecteur(source.video)}
+    </div>
+    ${source.exercices.length ? `<div class="eyebrow" style="margin-bottom:10px">Les exercices</div>` : ''}
+    ${source.exercices.map(e => `<div class="ligne">
+      <div class="g">
+        <div class="nom">${e.nom}</div>
+        <div class="meta">${[
+          (e.series || 1) + ' × ' + ((e.duree_s ? duree(e.duree_s) : e.reps_cible) || '—'),
+          e.repos_s ? 'repos ' + e.repos_s + ' s' : ''].filter(Boolean).join(' · ')}</div>
+      </div>
+    </div>`).join('') || `<div class="empty">Cette routine n'a pas encore d'exercice.</div>`}`;
 }
 
 // ── Vue séance ───────────────────────────────────────────────
@@ -4428,6 +4590,7 @@ async function vueCoach() {
       <button data-s="fiche" aria-pressed="${c.sous === 'fiche'}">Fiche</button>
       <button data-s="profil" aria-pressed="${c.sous === 'profil'}">Profil</button>
       <button data-s="programme" aria-pressed="${c.sous === 'programme'}">Programme</button>
+      <button data-s="routines" aria-pressed="${c.sous === 'routines'}">Routines</button>
       <button data-s="maxis" aria-pressed="${c.sous === 'maxis'}">Maxis</button>
       <button data-s="calendrier" aria-pressed="${c.sous === 'calendrier'}">Calendrier</button>
       <button data-s="historique" aria-pressed="${c.sous === 'historique'}">Historique</button>
@@ -4442,6 +4605,7 @@ async function vueCoach() {
   if (c.sous === 'fiche') return vueFiche();
   if (c.sous === 'profil') return vueProfil();
   if (c.sous === 'programme') return vueProgramme();
+  if (c.sous === 'routines') return vueRoutinesAthlete();
   if (c.sous === 'maxis') return vueMaxis();
   if (c.sous === 'calendrier') {
     $('#zone').innerHTML = `<div id="calzone"></div>`;
@@ -7023,6 +7187,129 @@ async function enregistrerRoutine() {
     toast('Routine enregistrée');
     S.rt = null; vueRoutine();
   } catch (err) { toast(err.message); btn.disabled = false; }
+}
+
+// ── Routines conseillées à un athlète (côté coach) ───────────
+/** Une routine conseillée, telle qu'elle se lit dans une liste. */
+function ligneRoutineConseillee(r) {
+  return `<div class="ligne" data-rc="${r.id}">
+    <div class="g">
+      <div class="nom">${r.nom}</div>
+      <div class="meta">${[
+        r.type, libelleFrequence(r.frequence),
+        r.duree_semaines ? r.duree_semaines + ' semaines' : '',
+        r.conseillee_le ? 'le ' + new Date(r.conseillee_le).toLocaleDateString('fr-FR') : ''
+      ].filter(Boolean).join(' · ')}</div>
+      ${r.note ? `<div class="note-coach">${r.note}</div>` : ''}
+    </div>
+    ${r.paye ? '<span class="tag">Facturée</span>' : ''}
+    <span class="tag ${r.statut === 'Conseillée' ? '' : 'warn'}">${r.statut}</span>
+  </div>`;
+}
+
+async function vueRoutinesAthlete() {
+  const email = S.coach.email;
+  let conseillees, catalogue;
+  try {
+    [conseillees, catalogue] = await Promise.all([dataRoutinesPratiquant(email), dataRoutines()]);
+  } catch (err) {
+    $('#zone').innerHTML = `<div class="empty">Impossible de charger.<br>${err.message}</div>`; return;
+  }
+  S.routines = catalogue;
+  S.routinesAthlete = conseillees;
+
+  $('#zone').innerHTML = `
+    <p class="consigne">Une routine se conseille, elle ne se planifie pas d'ici : c'est
+      ${S.coach.nom || 'le pratiquant'} qui décidera de l'inscrire dans sa semaine, et à quelle heure.</p>
+    <div class="barre" style="margin-top:0">
+      <button class="btn plein" id="rcAjout" style="flex:1">＋ Conseiller une routine</button></div>
+    ${conseillees.map(ligneRoutineConseillee).join('')
+      || `<div class="empty">Aucune routine conseillée.</div>`}`;
+
+  $('#rcAjout').onclick = modalConseillerRoutine;
+  lignesCliquables($('#zone'), '[data-rc]',
+    l => modalRoutineConseillee(conseillees.find(r => r.id === l.dataset.rc)));
+}
+
+/**
+ * Conseiller une routine : on choisit dans le catalogue, on dit pourquoi. Les
+ * routines en brouillon ne sont pas proposées — une fiche encore en chantier
+ * n'a rien à faire chez un pratiquant.
+ */
+function modalConseillerRoutine() {
+  const dispo = (S.routines || []).filter(r => r.statut !== 'Brouillon');
+  let choisie = null;
+  const w = modal('Conseiller une routine', `
+    <div class="recherche"><input class="f" id="rcq" placeholder="Rechercher une routine"></div>
+    <div id="rclist" style="max-height:46vh;overflow:auto"></div>
+    <div class="champ" style="margin-top:12px"><label>Pourquoi cette routine</label>
+      <textarea class="f" id="rcNote" rows="3"
+        placeholder="Ce que vous lui diriez en la lui montrant — la douleur visée, ce à quoi faire attention"></textarea></div>
+    <label class="paye"><input type="checkbox" id="rcPaye"><span>Facturée</span></label>
+    <div class="barre"><button class="btn" id="rcAnn">Annuler</button>
+      <button class="btn plein" id="rcOk" style="flex:1">Conseiller</button></div>`);
+
+  const peindre = () => {
+    const f = (w.querySelector('#rcq').value || '').toLowerCase();
+    const vus = dispo.filter(r => !f || (r.nom + ' ' + r.type).toLowerCase().includes(f));
+    w.querySelector('#rclist').innerHTML = vus.map(r => `<div class="ligne" data-pickrt="${r.id}"
+        aria-pressed="${choisie === r.id}" style="${choisie === r.id ? 'border-color:var(--rouge)' : ''}">
+        <div class="g"><div class="nom">${r.nom}</div>
+          <div class="meta">${[r.type, libelleFrequence(r.frequence),
+            r.exercices.length + ' exercice' + (r.exercices.length > 1 ? 's' : '')].filter(Boolean).join(' · ')}</div></div>
+      </div>`).join('') || `<div class="empty">${dispo.length
+        ? 'Rien ne correspond.' : 'Aucune routine active. Créez-en une dans l\'onglet Routines.'}</div>`;
+    lignesCliquables(w.querySelector('#rclist'), '[data-pickrt]', l => { choisie = l.dataset.pickrt; peindre(); });
+  };
+  peindre();
+  w.querySelector('#rcq').oninput = peindre;
+  w.querySelector('#rcAnn').onclick = w.fermer;
+  w.querySelector('#rcOk').onclick = async function () {
+    if (!choisie) return toast('Choisissez une routine');
+    this.disabled = true;
+    try {
+      await conseillerRoutine(S.coach.email, dispo.find(r => r.id === choisie), {
+        note: w.querySelector('#rcNote').value,
+        paye: w.querySelector('#rcPaye').checked
+      });
+      w.fermer(); toast('Routine conseillée'); vueRoutinesAthlete();
+    } catch (err) { toast(err.message); this.disabled = false; }
+  };
+}
+
+/** Ce que le coach peut encore changer une fois la routine conseillée. */
+function modalRoutineConseillee(r) {
+  const w = modal(r.nom, `
+    <div class="meta" style="margin:-6px 0 12px">${[r.type, libelleFrequence(r.frequence),
+      r.duree_semaines ? r.duree_semaines + ' semaines' : ''].filter(Boolean).join(' · ')}</div>
+    <div class="champ"><label>Pourquoi cette routine</label>
+      <textarea class="f" id="rcnNote" rows="3">${r.note || ''}</textarea></div>
+    <div class="champ"><label>Statut</label>
+      <select class="f" id="rcnSta">${['Conseillée', 'Terminée', 'Arrêtée'].map(s =>
+        `<option ${s === r.statut ? 'selected' : ''}>${s}</option>`).join('')}</select></div>
+    <label class="paye"><input type="checkbox" id="rcnPaye" ${r.paye ? 'checked' : ''}><span>Facturée</span></label>
+    <div class="barre"><button class="btn" id="rcnAnn">Annuler</button>
+      <button class="btn plein" id="rcnOk" style="flex:1">Enregistrer</button></div>
+    <div class="barre"><button class="btn danger" id="rcnDel">Retirer</button></div>`);
+  w.querySelector('#rcnAnn').onclick = w.fermer;
+  w.querySelector('#rcnOk').onclick = async function () {
+    this.disabled = true;
+    try {
+      await majRoutinePratiquant(S.coach.email, r.id, {
+        note: w.querySelector('#rcnNote').value,
+        statut: w.querySelector('#rcnSta').value,
+        paye: w.querySelector('#rcnPaye').checked
+      });
+      w.fermer(); toast('Enregistré'); vueRoutinesAthlete();
+    } catch (err) { toast(err.message); this.disabled = false; }
+  };
+  w.querySelector('#rcnDel').onclick = async function () {
+    this.disabled = true;
+    try {
+      await retirerRoutinePratiquant(S.coach.email, r.id);
+      w.fermer(); toast('Routine retirée'); vueRoutinesAthlete();
+    } catch (err) { toast(err.message); this.disabled = false; }
+  };
 }
 
 // ── Maxis d'un pratiquant ────────────────────────────────────
