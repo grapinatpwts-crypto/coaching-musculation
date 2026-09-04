@@ -6384,7 +6384,7 @@ async function vueModeles() {
 }
 
 function carteModele(m) {
-  return `<div class="ligne" data-md="${m.id}">
+  return `<div class="ligne" data-md="${m.id}" title="${m.nom} — appui long pour la fiche">
     <div class="g">
       <div class="nom">${m.nom}</div>
       <div class="meta">${[
@@ -6453,8 +6453,14 @@ function vueListeModeles() {
         cle_de: m => (m.difficulte || '').trim() || SANS_DIF, ordre: ordreSelon(DIFFICULTES, SANS_DIF) }
     ],
     carte: carteModele,
+    // Appui court : ouvrir le modèle. Appui long : sa fiche, où se change le nom —
+    // le même geste que le renommage d'un jour, un cran plus haut. Renommer était
+    // déjà possible par « Modifier la fiche », mais il fallait ouvrir le modèle
+    // pour l'atteindre : trois écrans pour corriger un mot.
     branche: z => z.querySelectorAll('[data-md]').forEach(l =>
-      l.onclick = () => { S.coach.modele = l.dataset.md; S.ed = null; vueCoach(); })
+      appuiLong(l,
+        () => { S.coach.modele = l.dataset.md; S.ed = null; vueCoach(); },
+        () => modalModele((S.modeles || []).find(m => String(m.id) === l.dataset.md))))
   };
 }
 

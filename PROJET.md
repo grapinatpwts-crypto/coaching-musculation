@@ -571,6 +571,11 @@ les valeurs déjà utilisées lui sont proposées. Rien n'est figé dans le code
 l'ordre d'affichage des quatre difficultés usuelles — les autres viennent ensuite,
 « Sans difficulté » en dernier.
 
+Sur une carte de la liste : appui court pour ouvrir le modèle, **appui long pour sa
+fiche** — nom compris. La fiche était déjà là (bouton « Modifier la fiche » dans le
+modèle ouvert), mais corriger un mot demandait d'ouvrir le modèle d'abord. Même
+geste que le renommage d'un jour, un cran plus haut dans la hiérarchie.
+
 **Programme.** Un pratiquant, un jour, des blocs. Le nombre de tours et le repos se
 saisissent sur l'en-tête du bloc ; chaque exercice ouvre une fiche où l'on règle
 répétitions *ou* durée, charge, cadence et pause. La cadence s'y prévisualise en
