@@ -1746,6 +1746,39 @@ async function dataCalendrier(email, p) {
   return seances.concat(libres).sort((a, b) => new Date(a.date) - new Date(b.date));
 }
 
+/**
+ * Le détail d'une séance passée : ses séries, regroupées par exercice et dans
+ * l'ordre où elles ont été faites. Les noms viennent du catalogue, pas du
+ * programme : une séance vieille de six mois peut appartenir à une attribution
+ * supprimée depuis, et l'exercice, lui, existe toujours.
+ */
+async function dataDetailSeance(seanceId) {
+  const { db, collection, getDocs } = FB;
+  const [snap, cat] = await Promise.all([
+    getDocs(collection(db, 'seances', seanceId, 'series')),
+    catalogueParId()
+  ]);
+  const series = snap.docs.map(d => d.data())
+    .sort((a, b) => (Number(a.serie_num) || 0) - (Number(b.serie_num) || 0));
+
+  // Regroupées par LIGNE quand elle existe : deux passages du même exercice
+  // dans un bloc restent deux entrées, comme pendant la séance.
+  const ordre = [];
+  const parCle = {};
+  series.forEach(s => {
+    const cle = s.ligne_id || s.exercice_id;
+    if (!parCle[cle]) {
+      const ex = cat[s.exercice_id] || {};
+      parCle[cle] = { nom: ex.nom || s.exercice_id, groupe: ex.groupe || '', series: [] };
+      ordre.push(cle);
+    }
+    parCle[cle].series.push({
+      reps: Number(s.reps) || 0, charge: Number(s.charge) || 0, duree_s: Number(s.duree_s) || 0
+    });
+  });
+  return ordre.map(cle => parCle[cle]);
+}
+
 /** Enregistre une activité libre du pratiquant courant. Sans id, une création. */
 async function sauverActivite(p) {
   const { db, doc, collection, addDoc, updateDoc, serverTimestamp } = FB;
@@ -2164,6 +2197,23 @@ async function retirerRoutinePratiquant(email, id) {
  * du jour : cocher deux fois le même jour réécrit le même document au lieu d'en
  * empiler deux, et la liste se lit sans tri ni dédoublonnage.
  */
+/**
+ * Toutes les exécutions de routines d'un pratiquant, rangées par jour. Une
+ * lecture par routine conseillée : elles se comptent sur les doigts d'une main,
+ * et c'est ce qui permet au calendrier de dire « faite » plutôt que de laisser
+ * une routine cochée le matin s'afficher encore « au planning » le soir.
+ */
+async function dataFaitsRoutines(email) {
+  const routines = await dataRoutinesPratiquant(email);
+  const listes = await Promise.all(routines.map(r =>
+    dataFaitsRoutine(email, r.id).catch(() => [])));
+  const parJour = {};
+  routines.forEach((r, i) => listes[i].forEach(cle => {
+    (parJour[cle] = parJour[cle] || []).push({ id: r.id, nom: r.nom });
+  }));
+  return parJour;
+}
+
 async function dataFaitsRoutine(email, id) {
   const { db, collection, getDocs } = FB;
   const snap = await getDocs(collection(db, 'pratiquants', email, 'routines', id, 'faits'));
@@ -2696,6 +2746,10 @@ async function vueAccueil() {
     this.disabled = true;
     try {
       await marquerRoutineFaite(S.email, a.routine.id, cleJour(new Date()), !a.routine.faitAujourdhui);
+      // Le calendrier tient ses exécutions en cache : le vider force la relecture,
+      // sinon la routine cochée ici y resterait « au planning » jusqu'au prochain
+      // chargement complet.
+      S.cal = null;
       rendre();
     } catch (err) { toast(err.message); this.disabled = false; }
   };
@@ -3119,6 +3173,7 @@ async function vueMaRoutine() {
     this.disabled = true;
     try {
       await marquerRoutineFaite(S.email, r.id, aujourdhui, !faitAujourdhui);
+      S.cal = null;   // même raison que sur la carte d'accueil
       vueMaRoutine();
     } catch (err) { toast(err.message); this.disabled = false; }
   };
@@ -4842,6 +4897,18 @@ async function vueCalendrier(email) {
 }
 
 /** Rend le calendrier dans #calzone. Les séances sont chargées une fois, sur un an. */
+/** Les routines cochées ce jour-là qui ne figuraient pas au planning. */
+function routinesHorsPlanning(c, cle, prevues) {
+  return ((c.routinesFaites || {})[cle] || [])
+    .filter(x => !(prevues || []).some(r => r.routine_id === x.id));
+}
+
+/** Cette routine-là a-t-elle été cochée ce jour-là ? */
+function routineFaiteLe(c, cle, routineId) {
+  if (!routineId) return false;
+  return ((c.routinesFaites || {})[cle] || []).some(x => x.id === routineId);
+}
+
 async function peindreCalendrier() {
   const z = $('#calzone');
   const c = S.cal;
@@ -4851,12 +4918,13 @@ async function peindreCalendrier() {
     try {
       // Le planning est une intention, l'historique un fait : deux collections,
       // deux lectures, réunies seulement à l'affichage.
-      const [faits, planifs, prev] = await Promise.all([
+      const [faits, planifs, prev, routines] = await Promise.all([
         dataCalendrier(c.email || S.email, p),
         dataRecurrences(c.email || S.email),
-        dataPrevisions(c.email || S.email)
+        dataPrevisions(c.email || S.email),
+        dataFaitsRoutines(c.email || S.email).catch(() => ({}))
       ]);
-      c.seances = faits; c.planifs = planifs; c.prev = prev;
+      c.seances = faits; c.planifs = planifs; c.prev = prev; c.routinesFaites = routines;
     }
     catch (err) { z.innerHTML = `<div class="empty">Impossible de charger.<br>${err.message}</div>`; return; }
   }
@@ -4940,7 +5008,8 @@ async function peindreCalendrier() {
       </div>`).join('') + (prevues.length ? prevues.map(r => `
       <div class="card" style="display:block;margin-top:14px">
         <div class="entete" style="margin-bottom:4px">
-          <span class="chip libre">Au planning</span>
+          <span class="chip ${routineFaiteLe(c, c.sel, r.routine_id) ? '' : 'libre'}">${
+            routineFaiteLe(c, c.sel, r.routine_id) ? 'Faite' : 'Au planning'}</span>
           <span class="meta" style="flex:1;text-align:right">${
             dateDeCle(c.sel).toLocaleDateString('fr-FR', { weekday:'long', day:'numeric', month:'long' })}</span>
         </div>
@@ -4950,7 +5019,15 @@ async function peindreCalendrier() {
           ${r.duree_min ? `<span class="set">${r.duree_min} min</span>` : ''}
         </div>
         ${r.notes ? `<p class="consigne" style="margin-top:10px">${r.notes}</p>` : ''}
-      </div>`).join('') : '') + (ss.length
+      </div>`).join('') : '') + (routinesHorsPlanning(c, c.sel, prevues).map(x => `
+      <div class="card" style="display:block;margin-top:14px">
+        <div class="entete" style="margin-bottom:4px">
+          <span class="chip">Routine faite</span>
+          <span class="meta" style="flex:1;text-align:right">${
+            dateDeCle(c.sel).toLocaleDateString('fr-FR', { weekday:'long', day:'numeric', month:'long' })}</span>
+        </div>
+        <div class="nom">${x.nom}</div>
+      </div>`).join('')) + (ss.length
       ? ss.map(s => s.type === 'activite'
         ? `<div class="card libre" style="display:block;margin-top:14px">
             <div class="entete" style="margin-bottom:4px">
@@ -4976,12 +5053,57 @@ async function peindreCalendrier() {
               ${s.ressenti ? `<span class="set">${s.ressenti}</span>` : ''}
             </div>
             ${s.notes ? `<p class="consigne" style="margin-top:10px">${s.notes}</p>` : ''}
+            ${s.nbSeries ? `<div class="barre" style="margin-top:10px">
+              <button class="btn" data-sdet="${s.id}" style="flex:1">Voir le détail</button></div>` : ''}
           </div>`).join('')
       : '') + (ss.length || prevues.length || seances.length
         ? '' : `<div class="empty" style="padding:24px 0">Rien ce jour-là.</div>`);
 
     cablerActionsSeance(c, seances);
+    $('#detail').querySelectorAll('[data-sdet]').forEach(b => b.onclick = () =>
+      modalDetailSeance(ss.find(x => x.id === b.dataset.sdet)));
   }
+}
+
+/**
+ * Ce qui a été fait ce jour-là, exercice par exercice. En lecture seule : une
+ * séance close est un historique, et la corriger se fait pendant qu'elle est
+ * ouverte (voir « Rien n'oblige à aller au bout »). Le calendrier n'en montrait
+ * que le total — 35 séries, 24 940 kg — sans jamais dire lesquelles.
+ */
+async function modalDetailSeance(s) {
+  if (!s) return;
+  const w = modal(s.jour || 'Séance', `
+    <div class="meta" style="margin:-6px 0 12px">${
+      new Date(s.date).toLocaleDateString('fr-FR', { weekday:'long', day:'numeric', month:'long' })}</div>
+    <div class="sets">
+      <span class="set">${s.nbSeries} série${s.nbSeries > 1 ? 's' : ''}</span>
+      ${s.volume ? `<span class="set">${s.volume} kg soulevés</span>` : ''}
+      ${s.duree_min ? `<span class="set">${s.duree_min} min</span>` : ''}
+      ${s.ressenti ? `<span class="set">${s.ressenti}</span>` : ''}
+    </div>
+    ${s.notes ? `<p class="consigne" style="margin-top:10px">${s.notes}</p>` : ''}
+    <div id="dsList" style="margin-top:12px"><div class="empty" style="padding:14px 0">Chargement…</div></div>
+    <div class="barre"><button class="btn plein" id="dsOk" style="flex:1">Fermer</button></div>`);
+  w.querySelector('#dsOk').onclick = w.fermer;
+
+  let exos;
+  try { exos = await dataDetailSeance(s.id); }
+  catch (err) {
+    const z = w.querySelector('#dsList');
+    if (z) z.innerHTML = `<div class="empty">Impossible de charger le détail.<br>${err.message}</div>`;
+    return;
+  }
+  const z = w.querySelector('#dsList');
+  if (!z) return;   // fermée pendant la lecture
+  z.innerHTML = exos.map(x => `<div class="ligne">
+      <div class="g">
+        <div class="nom">${x.nom}</div>
+        <div class="meta">${x.series.map(v =>
+          v.duree_s ? duree(v.duree_s) + (v.charge ? ' · ' + v.charge + ' kg' : '')
+            : v.reps + ' × ' + (v.charge ? v.charge + ' kg' : 'poids du corps')).join(' · ')}</div>
+      </div>
+    </div>`).join('') || `<div class="empty" style="padding:14px 0">Aucune série enregistrée.</div>`;
 }
 
 /**
@@ -5062,8 +5184,21 @@ function itemsDuJour(c, date, faits) {
   // dirait deux fois la même chose, une fois en fait et une fois en projet.
   if (!items.some(x => x.coach)) previsionsDuJour(c.prev, date).forEach(x => items.push(x));
 
-  planifsDuJour(c.planifs, date).forEach(r =>
-    items.push({ nom: r.sport, coach: false, fait: false, heure: r.heure || '' }));
+  const cle = cleJour(date);
+  const routines = (c.routinesFaites || {})[cle] || [];
+  const planifs = planifsDuJour(c.planifs, date);
+  planifs.forEach(r => items.push({ nom: r.sport, coach: false,
+    // Une routine cochée le matin ne doit pas rester « prévue » le soir : le
+    // planning dit l'intention, la coche dit le fait.
+    fait: !!r.routine_id && routines.some(x => x.id === r.routine_id),
+    heure: r.heure || '' }));
+
+  // Faite sans être au planning — on la fait quand on peut : elle a eu lieu,
+  // elle a sa place dans la journée.
+  routines.forEach(x => {
+    if (planifs.some(r => r.routine_id === x.id)) return;
+    items.push({ nom: x.nom, coach: false, fait: true, heure: '' });
+  });
   return items;
 }
 

@@ -676,6 +676,24 @@ Un jour qui porte les deux montre les deux points. Le bilan du mois compte les
 séances et les activités **séparément** : mélanger ce que le coach a prescrit et ce
 que le pratiquant a ajouté de lui-même fausserait la lecture de l'assiduité.
 
+**Une séance passée s'ouvre en lecture seule** : « Voir le détail » sur sa carte
+liste ses exercices et leurs séries — « 12 × 65 kg · 10 × 65 kg », « 45 s · 40 s ».
+Le calendrier n'en montrait que les totaux, sans jamais dire lesquelles. Les noms
+viennent du **catalogue**, pas du programme : une séance de l'an dernier peut
+appartenir à une attribution supprimée depuis, l'exercice, lui, existe toujours.
+Rien ne s'y modifie — corriger une série se fait pendant que la séance est
+ouverte, pas six mois plus tard.
+
+**Une routine cochée bascule de « prévu » à « eu lieu ».** L'aplat et le contour
+valent aussi pour elle : tant qu'elle est seulement au planning, son étiquette est
+en contour et sa carte dit *Au planning* ; cochée, elle passe en aplat et dit
+*Faite*. Sans ça, une routine faite le matin s'affichait encore comme à faire le
+soir. Le calendrier lit les exécutions (`dataFaitsRoutines`, une lecture par
+routine conseillée) en même temps que le reste, et **cocher vide son cache**
+(`S.cal = null`) — sinon l'écran serait resté sur l'état d'avant. Une routine
+faite un jour où elle n'était pas prévue apparaît quand même : on la fait quand
+on peut, elle a eu lieu.
+
 ### Ce qui n'est pas fait
 
 Le programme reste attaché à un email. Composer le même programme pour douze
