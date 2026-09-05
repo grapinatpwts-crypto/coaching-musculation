@@ -1771,6 +1771,14 @@ dessus reconstitue l'ordre réel d'exécution — vérifié sur la même séance
 l'ordre chronologique retrouvé (10 h 09 → 11 h 39) correspondant exactement au
 déroulé du programme.
 
+**Un exercice qui revient deux fois dans la séance — lourd puis léger — montrait
+son fil deux fois, mot pour mot.** Pas un doublon d'écriture ni de lecture :
+le fil porte sur l'**exercice** (`exercice_id`), pas sur le passage, donc les
+deux blocs de « Développé couché » d'une même séance partagent le même fil et
+la même unique lettre du pratiquant. Affichée sous chacun, elle donnait
+l'impression d'un bug de sauvegarde. `dataDetailSeance` ne la pose maintenant
+que sous la **première** occurrence de l'exercice dans la séance.
+
 ## 9. Parti pris visuel — charte Wellness Sport Club
 
 L'app reprend l'identité de **Wellness Sport Club** (`wellness-sportclub.fr`),

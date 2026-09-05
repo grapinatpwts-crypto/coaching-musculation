@@ -1805,7 +1805,16 @@ async function dataDetailSeance(seanceId, email) {
   const fils = await Promise.all(idsVus.map(id => dataCommentaires(email, id).catch(() => [])));
   const filDeId = {};
   idsVus.forEach((id, i) => { filDeId[id] = fils[i]; });
-  ordre.forEach(cle => { parCle[cle].commentaires = filDeId[parCle[cle].exercice_id] || []; });
+  // Un même exercice revient parfois deux fois dans la séance — lourd puis
+  // léger. Le fil est le même (il porte sur l'exercice, pas sur le passage) :
+  // le montrer sous les deux répéterait le même mot deux fois, on ne le pose
+  // que sous le premier.
+  const dejaMontre = new Set();
+  ordre.forEach(cle => {
+    const id = parCle[cle].exercice_id;
+    parCle[cle].commentaires = (id && !dejaMontre.has(id)) ? (filDeId[id] || []) : [];
+    if (id) dejaMontre.add(id);
+  });
 
   return ordre.map(cle => parCle[cle]);
 }
