@@ -1770,14 +1770,18 @@ async function dataCalendrier(email, p) {
  * programme : une séance vieille de six mois peut appartenir à une attribution
  * supprimée depuis, et l'exercice, lui, existe toujours.
  */
-async function dataDetailSeance(seanceId) {
+async function dataDetailSeance(seanceId, email) {
   const { db, collection, getDocs } = FB;
   const [snap, cat] = await Promise.all([
     getDocs(collection(db, 'seances', seanceId, 'series')),
     catalogueParId()
   ]);
+  // `serie_num` repart de 1 à chaque exercice (voir `enregistrerSerie`) : y
+  // trier globalement mélangeait les exercices entre eux. `horodatage` est le
+  // seul champ qui grandit sur toute la séance, dans l'ordre où elle a été
+  // faite.
   const series = snap.docs.map(d => d.data())
-    .sort((a, b) => (Number(a.serie_num) || 0) - (Number(b.serie_num) || 0));
+    .sort((a, b) => dateDe(a.horodatage) - dateDe(b.horodatage));
 
   // Regroupées par LIGNE quand elle existe : deux passages du même exercice
   // dans un bloc restent deux entrées, comme pendant la séance.
@@ -1794,6 +1798,15 @@ async function dataDetailSeance(seanceId) {
       reps: Number(s.reps) || 0, charge: Number(s.charge) || 0, duree_s: Number(s.duree_s) || 0
     });
   });
+
+  // Le fil de chaque exercice, affiché tel quel sous son résumé : une séance
+  // close est un historique, il n'y a rien à y écrire depuis ici.
+  const idsVus = [...new Set(ordre.map(cle => parCle[cle].exercice_id).filter(Boolean))];
+  const fils = await Promise.all(idsVus.map(id => dataCommentaires(email, id).catch(() => [])));
+  const filDeId = {};
+  idsVus.forEach((id, i) => { filDeId[id] = fils[i]; });
+  ordre.forEach(cle => { parCle[cle].commentaires = filDeId[parCle[cle].exercice_id] || []; });
+
   return ordre.map(cle => parCle[cle]);
 }
 
@@ -5116,9 +5129,10 @@ async function peindreCalendrier() {
  * ouverte (voir « Rien n'oblige à aller au bout »). Le calendrier n'en montrait
  * que le total — 35 séries, 24 940 kg — sans jamais dire lesquelles.
  *
- * Le fil de commentaires de chaque exercice reste ouvert ici : c'est le même
- * fil que pendant la séance en direct (un exercice, pas une séance), et il n'y
- * avait aucun moyen d'y revenir une fois la séance refermée.
+ * Le fil de commentaires de chaque exercice s'affiche ici, sous son résumé :
+ * c'est le même fil que pendant la séance en direct (un exercice, pas une
+ * séance), mais en lecture seule — une séance close n'a plus de bouton pour y
+ * répondre, elle le montre directement.
  */
 async function modalDetailSeance(s, email) {
   if (!s) return;
@@ -5137,7 +5151,7 @@ async function modalDetailSeance(s, email) {
   w.querySelector('#dsOk').onclick = w.fermer;
 
   let exos;
-  try { exos = await dataDetailSeance(s.id); }
+  try { exos = await dataDetailSeance(s.id, email); }
   catch (err) {
     const z = w.querySelector('#dsList');
     if (z) z.innerHTML = `<div class="empty">Impossible de charger le détail.<br>${err.message}</div>`;
@@ -5145,18 +5159,23 @@ async function modalDetailSeance(s, email) {
   }
   const z = w.querySelector('#dsList');
   if (!z) return;   // fermée pendant la lecture
-  z.innerHTML = exos.map(x => `<div class="ligne">
+  const jeSuisCoach = !!S.moi.estCoach;
+  z.innerHTML = exos.map(x => `<div class="ligne" style="align-items:flex-start">
       <div class="g">
         <div class="nom">${x.nom}</div>
         <div class="meta">${x.series.map(v =>
           v.duree_s ? duree(v.duree_s) + (v.charge ? ' · ' + v.charge + ' kg' : '')
             : v.reps + ' × ' + (v.charge ? v.charge + ' kg' : 'poids du corps')).join(' · ')}</div>
+        ${x.commentaires && x.commentaires.length ? `<div class="fil" style="margin:8px 0 0;max-height:none">${
+          x.commentaires.map(c => {
+            const demoi = (c.auteur === 'coach') === jeSuisCoach;
+            return `<div class="bulle ${demoi ? 'moi' : 'coach'}" style="max-width:100%">
+              <span class="qui">${c.auteur === 'coach' ? (S.moi.coach || 'Coach') : 'Pratiquant'} · ${
+                new Date(c.date).toLocaleDateString('fr-FR', { day:'numeric', month:'short' })}</span>
+              ${c.texte}</div>`;
+          }).join('')}</div>` : ''}
       </div>
-      ${x.exercice_id ? `<button class="btn" data-dscom="${x.exercice_id}" data-dsnom="${x.nom}">${
-        enAttente(x.exercice_id) ? enAttente(x.exercice_id) + ' à lire' : 'Commentaires'}</button>` : ''}
     </div>`).join('') || `<div class="empty" style="padding:14px 0">Aucune série enregistrée.</div>`;
-  z.querySelectorAll('[data-dscom]').forEach(b => b.onclick = () =>
-    modalCommentaires(b.dataset.dscom, b.dataset.dsnom, email || null));
 }
 
 /**

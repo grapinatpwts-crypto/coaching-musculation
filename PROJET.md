@@ -1745,16 +1745,31 @@ vérification. Vérifié pareillement : la routine du compte de Guillaume, coch�
 la veille et le jour même, ressort « fait » ces deux jours-là, et le dimanche
 suivant — pas encore coché — reste à blanc.
 
-## 8 quatervicies. Rouvrir une séance passée ne rouvrait pas son fil de commentaires
+## 8 quatervicies. Rouvrir une séance passée ne montrait pas son fil de commentaires
 
-`modalDetailSeance` (§ le détail d'une séance close, au calendrier) ne
-chargeait que les séries — poids, répétitions, durée — sans jamais interroger
+`modalDetailSeance` (le détail d'une séance close, au calendrier) ne chargeait
+que les séries — poids, répétitions, durée — sans jamais interroger
 `commentaires`. Un commentaire porte sur un **exercice** (`email` +
-`exercice_id`), pas sur une séance : c'est le même fil qu'en séance en direct,
-seul le bouton pour y entrer manquait une fois la séance refermée. Signalé le
-5 septembre 2026, corrigé en ajoutant un bouton *Commentaires* par exercice
-dans la fiche, câblé sur `modalCommentaires` — coach et pratiquant y ouvrent le
-même fil que pendant la séance.
+`exercice_id`), pas sur une séance : c'est le même fil qu'en séance en direct.
+Signalé le 5 septembre 2026, une première fois corrigé avec un bouton
+*Commentaires* par exercice — mais un bouton qui ouvre un fil **éditable**
+(textarea, bouton Envoyer) n'a pas sa place dans un historique : une séance
+close ne se répond pas, elle se relit. Renvoyé le jour même : le fil s'affiche
+maintenant **directement** sous le résumé de l'exercice, en bulles lecture
+seule (même style que `modalCommentaires`, sans le formulaire), sans bouton
+pour y entrer.
+
+**L'ordre des exercices ne suivait pas non plus celui de la séance.**
+`dataDetailSeance` triait les séries par `serie_num` — un compteur qui repart
+de 1 à *chaque* exercice (`enregistrerSerie` : `faitsDe(e).length + 1`), donc
+sans aucun sens une fois comparé entre deux exercices différents. L'ordre
+affiché dépendait alors de l'ordre de retour de Firestore, à peu près
+arbitraire — vérifié sur une vraie séance : neuf lignes dans un ordre qui ne
+correspondait à rien. `horodatage`, écrit à chaque série (`enregistrerSerie`)
+et jamais lu ici, est le seul champ qui grandit sur toute la séance : trier
+dessus reconstitue l'ordre réel d'exécution — vérifié sur la même séance,
+l'ordre chronologique retrouvé (10 h 09 → 11 h 39) correspondant exactement au
+déroulé du programme.
 
 ## 9. Parti pris visuel — charte Wellness Sport Club
 
