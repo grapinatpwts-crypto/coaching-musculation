@@ -1537,13 +1537,6 @@ function seanceTermineeAujourdhui(seances, jour) {
     s.duree_min !== '' && s.duree_min != null);
 }
 
-/** A-t-on déjà clos ce jour de programme à cette date précise ? */
-function seanceFaiteCeJourLa(seances, jour, date) {
-  const fin = new Date(date.getTime() + 86400000);
-  return seances.some(s => String(s.jour) === String(jour) && dateDe(s.date) >= date && dateDe(s.date) < fin &&
-    s.duree_min !== '' && s.duree_min != null);
-}
-
 /**
  * Les sept jours de la semaine en cours, lundi à dimanche — pour le bandeau
  * d'accueil : quel jour de programme tombe où et s'il est déjà fait, plus le
@@ -1593,16 +1586,29 @@ function semaineCourante(jours, seances, recurrences, prev, activites) {
     (actParCle[k] = actParCle[k] || []).push(a);
   });
 
+  // Un fait prime sur une intention (même principe que `itemsDuJour` au
+  // calendrier) : le pratiquant choisit librement quelle séance du programme
+  // il fait, pas forcément celle du jour assigné par son nom. « Lundi —
+  // Séance 1 » faite un vendredi restait « à faire » ici pour toujours, faute
+  // de correspondre au jour projeté pour ce vendredi-là.
+  const seanceParCle = {};
+  seances.forEach(s => {
+    if (s.duree_min === '' || s.duree_min == null) return;
+    const k = cleJour(dateDe(s.date));
+    if (!seanceParCle[k]) seanceParCle[k] = s;
+  });
+
   return [0, 1, 2, 3, 4, 5, 6].map(i => {
     const date = new Date(lundi.getTime() + i * 86400000);
+    const faite = seanceParCle[cleJour(date)];
     // Le bandeau lit le programme par la même lucarne que le calendrier :
     // fenêtre du programme et exceptions comprises. Sans ça, une séance
     // déplacée serait à deux endroits, et une séance supprimée toujours là.
-    const prevues = previsionsDuJour(prev, date);
-    const jour = prev ? (prevues[0] ? prevues[0].prevu.jour : null) : (parRang[i] || null);
+    const prevues = faite ? [] : previsionsDuJour(prev, date);
+    const jour = faite ? faite.jour : (prev ? (prevues[0] ? prevues[0].prevu.jour : null) : (parRang[i] || null));
     return { jour, annulee: !!(prevues[0] && prevues[0].annulee),
              aujourdhui: date.toDateString() === new Date().toDateString(),
-             fait: jour ? seanceFaiteCeJourLa(seances, jour, date) : false,
+             fait: !!faite,
              recurrences: recParRang[i] || [],
              activites: actParCle[cleJour(date)] || [] };
   });
@@ -1769,7 +1775,7 @@ async function dataDetailSeance(seanceId) {
     const cle = s.ligne_id || s.exercice_id;
     if (!parCle[cle]) {
       const ex = cat[s.exercice_id] || {};
-      parCle[cle] = { nom: ex.nom || s.exercice_id, groupe: ex.groupe || '', series: [] };
+      parCle[cle] = { nom: ex.nom || s.exercice_id, groupe: ex.groupe || '', exercice_id: s.exercice_id, series: [] };
       ordre.push(cle);
     }
     parCle[cle].series.push({
@@ -5088,7 +5094,7 @@ async function peindreCalendrier() {
 
     cablerActionsSeance(c, seances);
     $('#detail').querySelectorAll('[data-sdet]').forEach(b => b.onclick = () =>
-      modalDetailSeance(ss.find(x => x.id === b.dataset.sdet)));
+      modalDetailSeance(ss.find(x => x.id === b.dataset.sdet), c.email));
   }
 }
 
@@ -5097,8 +5103,12 @@ async function peindreCalendrier() {
  * séance close est un historique, et la corriger se fait pendant qu'elle est
  * ouverte (voir « Rien n'oblige à aller au bout »). Le calendrier n'en montrait
  * que le total — 35 séries, 24 940 kg — sans jamais dire lesquelles.
+ *
+ * Le fil de commentaires de chaque exercice reste ouvert ici : c'est le même
+ * fil que pendant la séance en direct (un exercice, pas une séance), et il n'y
+ * avait aucun moyen d'y revenir une fois la séance refermée.
  */
-async function modalDetailSeance(s) {
+async function modalDetailSeance(s, email) {
   if (!s) return;
   const w = modal(s.jour || 'Séance', `
     <div class="meta" style="margin:-6px 0 12px">${
@@ -5130,7 +5140,11 @@ async function modalDetailSeance(s) {
           v.duree_s ? duree(v.duree_s) + (v.charge ? ' · ' + v.charge + ' kg' : '')
             : v.reps + ' × ' + (v.charge ? v.charge + ' kg' : 'poids du corps')).join(' · ')}</div>
       </div>
+      ${x.exercice_id ? `<button class="btn" data-dscom="${x.exercice_id}" data-dsnom="${x.nom}">${
+        enAttente(x.exercice_id) ? enAttente(x.exercice_id) + ' à lire' : 'Commentaires'}</button>` : ''}
     </div>`).join('') || `<div class="empty" style="padding:14px 0">Aucune série enregistrée.</div>`;
+  z.querySelectorAll('[data-dscom]').forEach(b => b.onclick = () =>
+    modalCommentaires(b.dataset.dscom, b.dataset.dsnom, email || null));
 }
 
 /**

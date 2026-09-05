@@ -1713,6 +1713,38 @@ séance aurait demandé plus de gestes que le mouvement lui-même. Le coach retr
 le décompte en ouvrant la routine conseillée dans la fiche de l'athlète — une
 lecture faite à ce moment-là seulement, pas pour peindre la liste entière.
 
+## 8 tervicies. Un fait ne se reconnaît pas à son nom, mais à sa date
+
+Le pratiquant choisit librement **quelle** séance du programme il fait, pas
+forcément celle assignée à ce jour-là par son intitulé — « Lundi — Séance 1 »
+un vendredi, par exemple. Signalé le 5 septembre 2026 : le bandeau « Cette
+semaine » de l'accueil montrait ces séances comme jamais faites, pour toujours,
+parce qu'il comparait le jour **projeté** (celui que le programme attend ce
+jour de la semaine) au jour **réellement enregistré**, et n'affichait « fait »
+qu'en cas d'égalité des deux.
+
+`itemsDuJour`, au calendrier, ne se trompait pas : il regarde d'abord ce qui a
+été enregistré à une date, peu importe l'intitulé, et ne retombe sur la
+projection que si rien n'a été fait ce jour-là — un fait prime toujours sur une
+intention. `semaineCourante` (bandeau d'accueil) applique maintenant la même
+règle plutôt que sa propre comparaison par intitulé.
+
+Vérifié avec `firebase-admin` sur le vrai compte de Guillaume : quatre séances
+réellement faites sur des jours ne correspondant à aucune des leurs, toutes
+ressorties « fait » après correction, la semaine sans rien de fait restant
+correctement à blanc.
+
+## 8 quatervicies. Rouvrir une séance passée ne rouvrait pas son fil de commentaires
+
+`modalDetailSeance` (§ le détail d'une séance close, au calendrier) ne
+chargeait que les séries — poids, répétitions, durée — sans jamais interroger
+`commentaires`. Un commentaire porte sur un **exercice** (`email` +
+`exercice_id`), pas sur une séance : c'est le même fil qu'en séance en direct,
+seul le bouton pour y entrer manquait une fois la séance refermée. Signalé le
+5 septembre 2026, corrigé en ajoutant un bouton *Commentaires* par exercice
+dans la fiche, câblé sur `modalCommentaires` — coach et pratiquant y ouvrent le
+même fil que pendant la séance.
+
 ## 9. Parti pris visuel — charte Wellness Sport Club
 
 L'app reprend l'identité de **Wellness Sport Club** (`wellness-sportclub.fr`),
