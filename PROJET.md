@@ -1734,6 +1734,17 @@ réellement faites sur des jours ne correspondant à aucune des leurs, toutes
 ressorties « fait » après correction, la semaine sans rien de fait restant
 correctement à blanc.
 
+**Même défaut, une deuxième fois le même après-midi, sur les routines.** Une
+récurrence née d'une routine planifiée (§ 8 duovicies) se coche dans son propre
+`faits/{AAAA-MM-JJ}` (§ 8 duovicies, « Faite, et rien de plus ») — le bandeau ne
+relisait jamais cette sous-collection et affichait `fait: false` en dur pour
+toute récurrence, cochée ou non. `itemsDuJour` au calendrier, lui, croise déjà
+`routine_id` avec les faits du jour : `semaineCourante` reçoit maintenant les
+mêmes faits (`dataFaitsRoutines`, un par routine, en une passe) et fait la même
+vérification. Vérifié pareillement : la routine du compte de Guillaume, cochée
+la veille et le jour même, ressort « fait » ces deux jours-là, et le dimanche
+suivant — pas encore coché — reste à blanc.
+
 ## 8 quatervicies. Rouvrir une séance passée ne rouvrait pas son fil de commentaires
 
 `modalDetailSeance` (§ le détail d'une séance close, au calendrier) ne

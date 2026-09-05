@@ -1543,7 +1543,7 @@ function seanceTermineeAujourdhui(seances, jour) {
  * planning récurrent (arts martiaux, club...) qui tombe ce jour-là. Évite
  * d'aller au calendrier juste pour voir où on en est cette semaine.
  */
-function semaineCourante(jours, seances, recurrences, prev, activites) {
+function semaineCourante(jours, seances, recurrences, prev, activites, routinesFaites) {
   const lundi = new Date();
   lundi.setDate(lundi.getDate() - ((lundi.getDay() + 6) % 7));
   lundi.setHours(0, 0, 0, 0);
@@ -1600,17 +1600,24 @@ function semaineCourante(jours, seances, recurrences, prev, activites) {
 
   return [0, 1, 2, 3, 4, 5, 6].map(i => {
     const date = new Date(lundi.getTime() + i * 86400000);
-    const faite = seanceParCle[cleJour(date)];
+    const cle = cleJour(date);
+    const faite = seanceParCle[cle];
     // Le bandeau lit le programme par la même lucarne que le calendrier :
     // fenêtre du programme et exceptions comprises. Sans ça, une séance
     // déplacée serait à deux endroits, et une séance supprimée toujours là.
     const prevues = faite ? [] : previsionsDuJour(prev, date);
     const jour = faite ? faite.jour : (prev ? (prevues[0] ? prevues[0].prevu.jour : null) : (parRang[i] || null));
+    // Une récurrence née d'une routine (§ 8 duovicies) se coche à part, dans
+    // ses propres `faits` — sans relire ça, le bandeau la disait « prévue »
+    // pour toujours, même juste après l'avoir cochée faite.
+    const faitesCe = (routinesFaites || {})[cle] || [];
+    const recs = (recParRang[i] || []).map(r => ({ ...r,
+      fait: !!(r.routine_id && faitesCe.some(x => x.id === r.routine_id)) }));
     return { jour, annulee: !!(prevues[0] && prevues[0].annulee),
              aujourdhui: date.toDateString() === new Date().toDateString(),
              fait: !!faite,
-             recurrences: recParRang[i] || [],
-             activites: actParCle[cleJour(date)] || [] };
+             recurrences: recs,
+             activites: actParCle[cle] || [] };
   });
 }
 
@@ -1665,9 +1672,14 @@ async function dataAccueil() {
   const faits = routine ? await dataFaitsRoutine(email, routine.id) : [];
   const semaineCles = joursDeLaSemaine();
 
+  // Toutes les routines faites, par jour — pas que celle du dessus : une
+  // récurrence du bandeau (§ 8 duovicies) peut venir de n'importe laquelle,
+  // passée ou en cours.
+  const routinesFaites = await dataFaitsRoutines(email);
+
   return {
     jours,
-    semaine: semaineCourante(jours, seances, recurrences, prev, activites),
+    semaine: semaineCourante(jours, seances, recurrences, prev, activites, routinesFaites),
     recurrences,
     prochaine: prochaine ? { jour: prochaine.jour, dans: prochaine.dans,
       duree_estimee: estimerDuree(blocsBruts(att, prochaine.jour)) } : null,
@@ -2614,7 +2626,7 @@ async function vueAccueil() {
   const itemsSemaine = j => (j.jour
     ? [{ nom: nomCourt(j.jour), coach: true, fait: j.fait, annulee: j.annulee, heure: '' }] : [])
     .concat((j.activites || []).map(x => ({ nom: x.sport, coach: false, fait: true, heure: '' })))
-    .concat((j.recurrences || []).map(r => ({ nom: r.sport, coach: false, fait: false, heure: r.heure || '' })));
+    .concat((j.recurrences || []).map(r => ({ nom: r.sport, coach: false, fait: !!r.fait, heure: r.heure || '' })));
   $('#zone').innerHTML = `
     ${S.moi.messageCoach ? `
     <div class="mot-accueil">
